@@ -1,34 +1,33 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { lazy, Suspense } from 'react'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import ThemeToggle from '@/components/theme-toggle'
+
+const FormPage = lazy(() => import('@/pages/form-page'))
+const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <BrowserRouter>
+      <TooltipProvider>
+        <div className="fixed top-4 right-4 z-50">
+          <ThemeToggle />
+        </div>
+        <Suspense
+          fallback={
+            <div className="flex min-h-screen items-center justify-center">
+              <p className="text-muted-foreground">Loading...</p>
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/form/:slug" element={<FormPage />} />
+            <Route path="/dashboard/:slug?" element={<DashboardPage />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </TooltipProvider>
+    </BrowserRouter>
   )
 }
 
