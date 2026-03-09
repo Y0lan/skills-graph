@@ -1,50 +1,101 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+- Version change: 1.0.0 → 1.1.0
+- Modified sections:
+  - Tech Constraints: pinned React + shadcn/ui + Recharts stack
+  - I. Modern & Beautiful UI: added shadcn/ui component rules
+- Templates requiring updates:
+  - .specify/templates/plan-template.md ✅ no update needed (generic)
+  - .specify/templates/spec-template.md ✅ no update needed (generic)
+  - .specify/templates/tasks-template.md ✅ no update needed (generic)
+- Follow-up TODOs: none
+-->
+
+# Radiant Graph Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Modern & Beautiful UI
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+All user-facing pages MUST follow modern web design standards:
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+- Dark mode and light mode MUST both be supported with a
+  user-togglable theme switcher
+- Layout MUST be responsive and work on desktop screens
+  (mobile is not a priority but layout MUST NOT break)
+- Visual hierarchy MUST be clear: typography, spacing, and
+  color contrast MUST meet WCAG AA at minimum
+- The radar/radiant chart MUST be the visual centerpiece of
+  the application
+- Prefer subtle animations and transitions over static UI
+  where they add clarity
+- All interactive components (buttons, inputs, cards,
+  dialogs, etc.) MUST use shadcn/ui — no custom components
+  when a shadcn/ui primitive exists
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### II. Clean & Optimized Code
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+Code MUST be concise, readable, and free of dead code:
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+- No unused imports, variables, or commented-out blocks
+- Functions MUST do one thing; files MUST have a single
+  clear responsibility
+- Avoid premature abstraction — inline is fine until
+  duplication actually occurs
+- Bundle size and runtime performance MUST be considered:
+  lazy-load heavy dependencies (e.g., chart library)
+- Consistent formatting enforced via tooling (Prettier,
+  ESLint or equivalent)
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### III. Simplicity First
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+This is a quick internal tool, not a product. Scope MUST
+stay minimal:
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+- Local-first: no external database or cloud service
+  required to run
+- Data persistence via flat file (JSON) is acceptable
+- No authentication required — this runs on a trusted
+  local network
+- Features MUST directly serve the goal: collect skill
+  ratings via a form and display them as a radar graph
+- If a feature does not help visualize team skills, it is
+  out of scope
+
+## Tech Constraints
+
+- **Runtime**: Node.js (LTS)
+- **Frontend**: React + TypeScript
+- **UI components**: shadcn/ui (built on Radix UI primitives)
+- **Styling**: Tailwind CSS — shadcn/ui's default styling
+  system; use its theming for dark/light mode
+- **Charting**: Recharts (radar/spider chart) — already a
+  shadcn/ui-compatible React charting library
+- **Storage**: Local JSON file on disk — no database server
+- **Build tool**: Vite
+- **Package manager**: npm, pnpm, or bun
+
+## Development Workflow
+
+- Commit often with clear messages
+- Keep PRs small and focused on a single concern
+- Lint and format before every commit
+- Manual browser testing is sufficient — automated tests
+  are optional given the project scope
+- Ship working increments: form first, then chart, then
+  polish
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution is lightweight by design. It captures the
+project's quality bar without ceremony:
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+- Amendments are made by editing this file directly
+- No formal approval process — the project owner decides
+- Any change to principles MUST be reflected in active
+  specs and plans
+- Version follows semver: MAJOR for principle
+  removals/redefinitions, MINOR for additions, PATCH for
+  wording fixes
+
+**Version**: 1.1.0 | **Ratified**: 2026-03-09 | **Last Amended**: 2026-03-09
