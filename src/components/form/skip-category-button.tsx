@@ -7,6 +7,7 @@ interface SkipCategoryButtonProps {
   isSkipped: boolean
   onSkip: () => void
   onUnskip: () => void
+  onNext?: () => void
 }
 
 export default function SkipCategoryButton({
@@ -14,6 +15,7 @@ export default function SkipCategoryButton({
   isSkipped,
   onSkip,
   onUnskip,
+  onNext,
 }: SkipCategoryButtonProps) {
   const [confirming, setConfirming] = useState(false)
 
@@ -45,6 +47,7 @@ export default function SkipCategoryButton({
           onClick={() => {
             onSkip()
             setConfirming(false)
+            onNext?.()
           }}
         >
           Oui, ignorer

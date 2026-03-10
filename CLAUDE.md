@@ -11,6 +11,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-09
 - N/A (no data changes) (005-fix-form-layout)
 - TypeScript 5.x (frontend + backend) + React 19, Vite 7, shadcn/ui (Radix UI), Tailwind CSS, Lucide icons, next-themes, React Router DOM, React Hook Form (006-minimal-header)
 - SQLite (better-sqlite3) — existing `evaluations` table, existing `DELETE /api/ratings/:slug` endpoint (006-minimal-header)
+- TypeScript 5.x + React 19, shadcn/ui (Radix UI AlertDialog), Tailwind CSS, Lucide icons, react-router-dom (006-minimal-header)
+- N/A (uses existing `DELETE /api/ratings/:slug` endpoint) (006-minimal-header)
 
 - TypeScript 5.x (frontend + backend) + React 19, shadcn/ui (Radix UI), (001-team-skill-radar)
 
@@ -30,8 +32,8 @@ npm test && npm run lint
 TypeScript 5.x (frontend + backend): Follow standard conventions
 
 ## Recent Changes
+- 006-minimal-header: Added TypeScript 5.x + React 19, shadcn/ui (Radix UI AlertDialog), Tailwind CSS, Lucide icons, react-router-dom
 - 006-minimal-header: Added TypeScript 5.x (frontend + backend) + React 19, Vite 7, shadcn/ui (Radix UI), Tailwind CSS, Lucide icons, next-themes, React Router DOM, React Hook Form
-- 005-fix-form-layout: Added TypeScript 5.x + React 19 + shadcn/ui (Radix UI), Tailwind CSS, Lucide icons
 - 005-fix-form-layout: Added TypeScript 5.x + React 19 + shadcn/ui (Radix UI), Tailwind CSS, Lucide icons
 
 

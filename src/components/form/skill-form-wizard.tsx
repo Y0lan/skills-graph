@@ -177,12 +177,14 @@ export default function SkillFormWizard({
           <CategoryStep
             key={category.id}
             category={category}
+            stepNumber={step + 1}
             ratings={ratings}
             isSkipped={isSkipped(category.id)}
             calibrationPrompt={calibrationPrompts[category.id]}
             onRatingChange={setRating}
             onSkip={() => toggleSkipCategory(category.id)}
             onUnskip={() => toggleSkipCategory(category.id)}
+            onNext={() => setStep((s) => Math.min(s + 1, REVIEW_STEP))}
           />
         )
       )}

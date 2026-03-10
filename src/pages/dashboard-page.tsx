@@ -101,11 +101,9 @@ export default function DashboardPage() {
       <AppHeader
         headerActions={
           member ? (
-            <Button variant="outline" size="sm" className="gap-1.5" asChild>
-              <Link to={`/form/${member.slug}`}>
-                <ClipboardEdit className="h-4 w-4" />
-                Modifier
-              </Link>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/form/${member.slug}`} />}>
+              <ClipboardEdit className="h-4 w-4" />
+              Modifier
             </Button>
           ) : undefined
         }

@@ -5,34 +5,40 @@ import SkipCategoryButton from './skip-category-button'
 
 interface CategoryStepProps {
   category: SkillCategory
+  stepNumber: number
   ratings: Record<string, number>
   isSkipped: boolean
   calibrationPrompt?: { text: string; tools?: string[] }
   onRatingChange: (skillId: string, value: number) => void
   onSkip: () => void
   onUnskip: () => void
+  onNext?: () => void
 }
 
 export default function CategoryStep({
   category,
+  stepNumber,
   ratings,
   isSkipped,
   calibrationPrompt,
   onRatingChange,
   onSkip,
   onUnskip,
+  onNext,
 }: CategoryStepProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">
-          {category.emoji} {category.label}
+        <h2 className="flex items-center gap-2.5 text-xl font-bold">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{stepNumber}</span>
+          {category.label}
         </h2>
         <SkipCategoryButton
           categoryLabel={category.label}
           isSkipped={isSkipped}
           onSkip={onSkip}
           onUnskip={onUnskip}
+          onNext={onNext}
         />
       </div>
 

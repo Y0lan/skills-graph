@@ -43,36 +43,42 @@ export default function ProgressBar({
       </div>
 
       {/* Step pills */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+      <div className="flex flex-wrap gap-1.5">
         {steps.map((stepInfo, i) => {
           const isActive = i === currentStep
+          const isSkipped = stepInfo.isSkipped
           const isComplete =
-            stepInfo.isSkipped || stepInfo.ratedCount === stepInfo.totalCount
+            !isSkipped && stepInfo.ratedCount === stepInfo.totalCount
+          // Show short label: first word only (or full if short)
+          const shortLabel = stepInfo.label.split(/\s+/)[0]
 
           return (
             <button
               key={i}
               type="button"
               onClick={() => onStepClick(i)}
+              title={stepInfo.label}
               className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer',
+                'flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer',
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30'
-                  : isComplete
-                    ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400'
-                    : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  : isSkipped
+                    ? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-400'
+                    : isComplete
+                      ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400'
+                      : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
-              <span>{stepInfo.emoji}</span>
-              <span className="whitespace-nowrap">{stepInfo.label}</span>
+              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
+              <span className="max-w-[5rem] truncate">{shortLabel}</span>
               {stepInfo.isSkipped ? (
-                <SkipForward className="ml-0.5 h-3 w-3 opacity-60" />
+                <SkipForward className="h-3 w-3 shrink-0 opacity-60" />
               ) : isComplete ? (
-                <Check className="ml-0.5 h-3 w-3" />
+                <Check className="h-3 w-3 shrink-0" />
               ) : (
                 <span
                   className={cn(
-                    'ml-0.5 tabular-nums',
+                    'shrink-0 tabular-nums',
                     isActive ? 'text-primary-foreground/80' : 'opacity-60',
                   )}
                 >
