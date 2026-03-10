@@ -4,19 +4,16 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
 import { ratingsRouter } from './routes/ratings.js'
+import { categoriesRouter } from './routes/categories.js'
+import { membersRouter } from './routes/members.js'
+import { aggregatesRouter } from './routes/aggregates.js'
+import { catalogRouter } from './routes/catalog.js'
+import { initDatabase } from './lib/db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = 3001
-const DATA_DIR = path.join(__dirname, 'data')
-const DATA_FILE = path.join(DATA_DIR, 'ratings.json')
 
-// Auto-create data directory and file if missing
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true })
-}
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, '{}', 'utf-8')
-}
+initDatabase()
 
 const app = express()
 
@@ -25,6 +22,10 @@ app.use(express.json())
 
 // API routes
 app.use('/api/ratings', ratingsRouter)
+app.use('/api/categories', categoriesRouter)
+app.use('/api/members', membersRouter)
+app.use('/api/aggregates', aggregatesRouter)
+app.use('/api/catalog', catalogRouter)
 
 // Serve static files in production
 const distPath = path.join(__dirname, '..', 'dist')

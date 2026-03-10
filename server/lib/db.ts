@@ -1,0 +1,192 @@
+import Database from 'better-sqlite3'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+import { seedCatalog } from './seed-catalog.js'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DATA_DIR = path.join(__dirname, '..', 'data')
+const DB_PATH = path.join(DATA_DIR, 'ratings.db')
+const JSON_PATH = path.join(DATA_DIR, 'ratings.json')
+
+export interface MemberEvaluation {
+  ratings: Record<string, number>
+  experience: Record<string, number>
+  skippedCategories: string[]
+  submittedAt: string | null
+}
+
+let db: Database.Database
+
+export function getDb(): Database.Database {
+  return db
+}
+
+export function initDatabase(): void {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+  }
+
+  db = new Database(DB_PATH)
+  db.pragma('journal_mode = WAL')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS evaluations (
+      slug TEXT PRIMARY KEY,
+      ratings TEXT NOT NULL DEFAULT '{}',
+      experience TEXT NOT NULL DEFAULT '{}',
+      skipped_categories TEXT NOT NULL DEFAULT '[]',
+      submitted_at TEXT
+    )
+  `)
+
+  // Catalog tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      sort_order INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS calibration_prompts (
+      category_id TEXT PRIMARY KEY REFERENCES categories(id),
+      text TEXT NOT NULL,
+      tools TEXT NOT NULL DEFAULT '[]'
+    );
+
+    CREATE TABLE IF NOT EXISTS skills (
+      id TEXT PRIMARY KEY,
+      category_id TEXT NOT NULL REFERENCES categories(id),
+      label TEXT NOT NULL,
+      sort_order INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_descriptors (
+      skill_id TEXT NOT NULL REFERENCES skills(id),
+      level INTEGER NOT NULL CHECK(level BETWEEN 0 AND 5),
+      label TEXT NOT NULL,
+      description TEXT NOT NULL,
+      PRIMARY KEY (skill_id, level)
+    );
+
+    CREATE TABLE IF NOT EXISTS rating_scale (
+      value INTEGER PRIMARY KEY CHECK(value BETWEEN 0 AND 5),
+      label TEXT NOT NULL,
+      short_label TEXT NOT NULL,
+      description TEXT NOT NULL
+    );
+  `)
+
+  // Auto-seed if categories table is empty
+  const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
+  if (count === 0) {
+    seedCatalog(db)
+  }
+
+  // One-time migration from ratings.json
+  if (fs.existsSync(JSON_PATH)) {
+    try {
+      const raw = fs.readFileSync(JSON_PATH, 'utf-8')
+      const data: Record<string, MemberEvaluation> = JSON.parse(raw)
+
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO evaluations (slug, ratings, experience, skipped_categories, submitted_at)
+        VALUES (?, ?, ?, ?, ?)
+      `)
+
+      const migrate = db.transaction(() => {
+        for (const [slug, entry] of Object.entries(data)) {
+          insert.run(
+            slug,
+            JSON.stringify(entry.ratings ?? {}),
+            JSON.stringify(entry.experience ?? {}),
+            JSON.stringify(entry.skippedCategories ?? []),
+            entry.submittedAt ?? null,
+          )
+        }
+      })
+
+      migrate()
+      fs.renameSync(JSON_PATH, JSON_PATH + '.migrated')
+      console.log(`Migrated ${Object.keys(data).length} evaluations from ratings.json to SQLite`)
+    } catch (err) {
+      console.error('Failed to migrate ratings.json:', err)
+    }
+  }
+
+  console.log('Database initialized at', DB_PATH)
+}
+
+export function getAllEvaluations(): Record<string, MemberEvaluation> {
+  const rows = db.prepare('SELECT * FROM evaluations').all() as {
+    slug: string
+    ratings: string
+    experience: string
+    skipped_categories: string
+    submitted_at: string | null
+  }[]
+
+  const result: Record<string, MemberEvaluation> = {}
+  for (const row of rows) {
+    result[row.slug] = {
+      ratings: JSON.parse(row.ratings),
+      experience: JSON.parse(row.experience),
+      skippedCategories: JSON.parse(row.skipped_categories),
+      submittedAt: row.submitted_at,
+    }
+  }
+  return result
+}
+
+export function getEvaluation(slug: string): MemberEvaluation | null {
+  const row = db.prepare('SELECT * FROM evaluations WHERE slug = ?').get(slug) as {
+    slug: string
+    ratings: string
+    experience: string
+    skipped_categories: string
+    submitted_at: string | null
+  } | undefined
+
+  if (!row) return null
+
+  return {
+    ratings: JSON.parse(row.ratings),
+    experience: JSON.parse(row.experience),
+    skippedCategories: JSON.parse(row.skipped_categories),
+    submittedAt: row.submitted_at,
+  }
+}
+
+export function upsertEvaluation(
+  slug: string,
+  ratings: Record<string, number>,
+  experience: Record<string, number>,
+  skippedCategories: string[],
+): MemberEvaluation {
+  db.prepare(`
+    INSERT INTO evaluations (slug, ratings, experience, skipped_categories)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(slug) DO UPDATE SET
+      ratings = excluded.ratings,
+      experience = excluded.experience,
+      skipped_categories = excluded.skipped_categories
+  `).run(
+    slug,
+    JSON.stringify(ratings),
+    JSON.stringify(experience),
+    JSON.stringify(skippedCategories),
+  )
+
+  return getEvaluation(slug)!
+}
+
+export function submitEvaluation(slug: string): MemberEvaluation | null {
+  const now = new Date().toISOString()
+  db.prepare('UPDATE evaluations SET submitted_at = ? WHERE slug = ?').run(now, slug)
+  return getEvaluation(slug)
+}
+
+export function deleteEvaluation(slug: string): void {
+  db.prepare('DELETE FROM evaluations WHERE slug = ?').run(slug)
+}

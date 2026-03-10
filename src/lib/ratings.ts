@@ -1,4 +1,4 @@
-import { type SkillCategory, skillCategories, allSkills } from '@/data/skill-catalog'
+import type { SkillCategory, Skill } from '@/data/skill-catalog'
 import { teamMembers } from '@/data/team-roster'
 
 export interface MemberRatings {
@@ -123,10 +123,14 @@ export interface SkillGapData {
   riskColor: RiskColor
 }
 
-export function skillsGapData(allRatings: AllRatings): SkillGapData[] {
+export function skillsGapData(
+  allRatings: AllRatings,
+  categories: SkillCategory[],
+  skills: Skill[],
+): SkillGapData[] {
   const memberLookup = new Map(teamMembers.map((m) => [m.slug, m]))
 
-  return allSkills.map((skill) => {
+  return skills.map((skill) => {
     const teamAvg = teamAveragePerSkill(skill.id, allRatings)
 
     let countAt3Plus = 0
@@ -150,7 +154,7 @@ export function skillsGapData(allRatings: AllRatings): SkillGapData[] {
     const riskColor: RiskColor =
       countAt3Plus <= 1 ? 'red' : countAt3Plus <= 3 ? 'yellow' : 'green'
 
-    const cat = skillCategories.find((c) => c.id === skill.categoryId)
+    const cat = categories.find((c) => c.id === skill.categoryId)
 
     return {
       skillId: skill.id,

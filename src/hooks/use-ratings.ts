@@ -14,6 +14,7 @@ interface UseRatingsReturn {
       skippedCategories: string[]
     },
   ) => Promise<MemberRatings | null>
+  resetRatings: (slug: string) => Promise<boolean>
 }
 
 export function useRatings(): UseRatingsReturn {
@@ -78,7 +79,26 @@ export function useRatings(): UseRatingsReturn {
     [],
   )
 
-  return { data, loading, error, fetchRatings, submitRatings }
+  const resetRatings = useCallback(async (slug: string): Promise<boolean> => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/ratings/${slug}`, { method: 'DELETE' })
+      if (!res.ok) {
+        throw new Error('Failed to reset ratings')
+      }
+      setData(null)
+      return true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setError(msg)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  return { data, loading, error, fetchRatings, submitRatings, resetRatings }
 }
 
 // Hook for fetching all ratings (dashboard)

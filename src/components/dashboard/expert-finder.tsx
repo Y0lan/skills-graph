@@ -1,0 +1,272 @@
+import { useState, useMemo, useRef } from 'react'
+import { Check, X, Search } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { useCatalog } from '@/hooks/use-catalog'
+import { rankMembersBySkills, type ExpertResult } from '@/lib/expert-finder'
+import type { TeamMemberAggregateResponse } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+interface ExpertFinderProps {
+  members: TeamMemberAggregateResponse[]
+}
+
+/** Return a Tailwind class for a skill score badge. */
+function scoreColorClass(score: number | null): string {
+  if (score === null) return 'bg-muted text-muted-foreground'
+  if (score >= 4) return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+  if (score >= 3) return 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+  if (score >= 2) return 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+  if (score >= 1) return 'bg-red-500/20 text-red-600 dark:text-red-400'
+  return 'bg-muted text-muted-foreground'
+}
+
+export default function ExpertFinder({ members }: ExpertFinderProps) {
+  const { categories: skillCategories, skillById } = useCatalog()
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  /** Resolve a skill id to its label from the catalog. */
+  const skillLabel = (skillId: string): string => {
+    return skillById.get(skillId)?.label ?? skillId
+  }
+
+  // Build the flat skill list sorted alphabetically with category metadata
+  const allSkills = useMemo(() => {
+    return skillCategories
+      .flatMap((cat) =>
+        cat.skills.map((skill) => ({
+          id: skill.id,
+          label: skill.label,
+          categoryId: cat.id,
+          categoryLabel: cat.label,
+          categoryEmoji: cat.emoji,
+        })),
+      )
+      .sort((a, b) => a.label.localeCompare(b.label, 'fr'))
+  }, [skillCategories])
+
+  // Filter skills by search query
+  const filteredSkills = useMemo(() => {
+    if (!searchQuery.trim()) return allSkills
+    const q = searchQuery.toLowerCase()
+    return allSkills.filter(
+      (s) => s.label.toLowerCase().includes(q) || s.categoryLabel.toLowerCase().includes(q),
+    )
+  }, [allSkills, searchQuery])
+
+  // Ranking results
+  const results: ExpertResult[] = useMemo(
+    () => rankMembersBySkills(members, selectedSkillIds),
+    [members, selectedSkillIds],
+  )
+
+  const toggleSkill = (skillId: string) => {
+    setSelectedSkillIds((prev) =>
+      prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId],
+    )
+  }
+
+  const removeSkill = (skillId: string) => {
+    setSelectedSkillIds((prev) => prev.filter((id) => id !== skillId))
+  }
+
+  const clearAll = () => {
+    setSelectedSkillIds([])
+  }
+
+  // Check if any results have at least one match
+  const hasResults = results.some((r) => r.matchCount > 0)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Search className="h-5 w-5" />
+          Recherche d'experts
+        </CardTitle>
+        <CardDescription>
+          Trouvez les membres de l'équipe les plus qualifiés pour des compétences spécifiques
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Search bar + dropdown skill picker */}
+        <div className="relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Rechercher une compétence par nom..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={(e) => {
+                // Keep open if clicking inside the dropdown
+                if (dropdownRef.current?.contains(e.relatedTarget as Node)) return
+                setIsSearchFocused(false)
+              }}
+              className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground hover:border-ring/50 focus:border-ring focus:ring-3 focus:ring-ring/50"
+            />
+          </div>
+
+          {/* Dropdown list */}
+          {isSearchFocused && (
+            <div
+              ref={dropdownRef}
+              className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover shadow-md"
+            >
+              {filteredSkills.length === 0 ? (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  Aucune compétence trouvée.
+                </div>
+              ) : (
+                <ul className="py-1">
+                  {filteredSkills.map((skill) => {
+                    const isSelected = selectedSkillIds.includes(skill.id)
+                    return (
+                      <li key={skill.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            toggleSkill(skill.id)
+                            searchRef.current?.focus()
+                          }}
+                          className={cn(
+                            'flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent',
+                            isSelected && 'bg-accent/50',
+                          )}
+                        >
+                          <Check
+                            className={cn(
+                              'h-4 w-4 shrink-0',
+                              isSelected ? 'opacity-100' : 'opacity-0',
+                            )}
+                          />
+                          <span className="flex-1">{skill.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {skill.categoryEmoji} {skill.categoryLabel}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Selected skill badges */}
+        {selectedSkillIds.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {selectedSkillIds.map((skillId) => (
+              <Badge key={skillId} variant="secondary" className="gap-1 pr-1">
+                {skillLabel(skillId)}
+                <button
+                  type="button"
+                  onClick={() => removeSkill(skillId)}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-foreground/10"
+                >
+                  <X className="h-3 w-3" />
+                  <span className="sr-only">Retirer {skillLabel(skillId)}</span>
+                </button>
+              </Badge>
+            ))}
+            <Button variant="ghost" size="sm" onClick={clearAll} className="h-6 text-xs">
+              Tout effacer
+            </Button>
+          </div>
+        )}
+
+        {/* Empty state: no skills selected */}
+        {selectedSkillIds.length === 0 && (
+          <div className="rounded-lg border border-dashed p-8 text-center">
+            <p className="text-muted-foreground">
+              Sélectionnez des compétences pour trouver les experts de l'équipe
+            </p>
+          </div>
+        )}
+
+        {/* Empty state: skills selected but no members match */}
+        {selectedSkillIds.length > 0 && !hasResults && (
+          <div className="rounded-lg border border-dashed p-8 text-center">
+            <p className="text-muted-foreground">
+              Aucun membre n'a encore évalué ces compétences
+            </p>
+          </div>
+        )}
+
+        {/* Results table */}
+        {selectedSkillIds.length > 0 && hasResults && (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10 text-center">#</TableHead>
+                  <TableHead>Membre</TableHead>
+                  <TableHead>Rôle</TableHead>
+                  {selectedSkillIds.map((skillId) => (
+                    <TableHead key={skillId} className="text-center">
+                      {skillLabel(skillId)}
+                    </TableHead>
+                  ))}
+                  <TableHead className="text-center">Moyenne</TableHead>
+                  <TableHead className="text-center">Couverture</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {results.map((result, index) => (
+                  <TableRow key={result.slug}>
+                    <TableCell className="text-center font-medium text-muted-foreground">
+                      {index + 1}
+                    </TableCell>
+                    <TableCell className="font-medium">{result.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{result.role}</TableCell>
+                    {selectedSkillIds.map((skillId) => {
+                      const score = result.skillScores[skillId]
+                      return (
+                        <TableCell key={skillId} className="text-center">
+                          <span
+                            className={cn(
+                              'inline-flex h-6 min-w-8 items-center justify-center rounded-md px-1.5 text-xs font-medium',
+                              scoreColorClass(score),
+                            )}
+                          >
+                            {score !== null ? score.toFixed(1) : '—'}
+                          </span>
+                        </TableCell>
+                      )
+                    })}
+                    <TableCell className="text-center tabular-nums font-semibold">
+                      {result.matchCount > 0 ? result.averageScore.toFixed(1) : '—'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="text-xs">
+                        {result.matchCount}/{result.totalSelected} compétences évaluées
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}

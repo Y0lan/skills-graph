@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { useRatings } from '@/hooks/use-ratings'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
+import AppHeader from '@/components/app-header'
+import ResetConfirmDialog from '@/components/reset-confirm-dialog'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { CheckCircle2 } from 'lucide-react'
+import { CheckCircle2, LayoutDashboard, RotateCcw } from 'lucide-react'
 
 export default function FormPage() {
   const { slug } = useParams<{ slug: string }>()
   const member = slug ? findMember(slug) : undefined
-  const { data, loading, error, fetchRatings, submitRatings } = useRatings()
+  const { data, loading, error, fetchRatings, submitRatings, resetRatings } = useRatings()
   const [submitted, setSubmitted] = useState(false)
   const [ready, setReady] = useState(false)
+  const [resetKey, setResetKey] = useState(0)
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   useEffect(() => {
     if (slug && member) {
@@ -89,9 +95,51 @@ export default function FormPage() {
     )
   }
 
+  const handleReset = async () => {
+    setResetting(true)
+    const ok = await resetRatings(slug!)
+    setResetting(false)
+    if (ok) {
+      setResetDialogOpen(false)
+      setSubmitted(false)
+      setResetKey((k) => k + 1)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-3xl p-4 sm:p-8">
+      <AppHeader
+        headerActions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setResetDialogOpen(true)}
+              aria-label="Réinitialiser"
+              className="gap-1.5"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Réinitialiser
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              render={<Link to={`/dashboard/${slug}`} />}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              Dashboard
+            </Button>
+          </>
+        }
+      />
+      <ResetConfirmDialog
+        open={resetDialogOpen}
+        onOpenChange={setResetDialogOpen}
+        onConfirm={handleReset}
+        loading={resetting}
+      />
+      <div className="mx-auto max-w-3xl p-4 pt-14 sm:p-8 sm:pt-14">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{member.name}</h1>
           <p className="text-muted-foreground">
@@ -105,9 +153,13 @@ export default function FormPage() {
         </div>
 
         <SkillFormWizard
-          initialRatings={data?.ratings ?? {}}
-          initialExperience={data?.experience ?? {}}
-          initialSkippedCategories={data?.skippedCategories ?? []}
+          key={resetKey}
+          slug={slug!}
+          initialData={{
+            ratings: data?.ratings ?? {},
+            experience: data?.experience ?? {},
+            skippedCategories: data?.skippedCategories ?? [],
+          }}
           submitting={loading}
           onSubmit={async (payload) => {
             const result = await submitRatings(slug!, payload)

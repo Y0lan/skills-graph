@@ -1,0 +1,876 @@
+{
+  "ratingScale": {
+    "0": {
+      "label": "Inconnu",
+      "description": "Jamais utilisé / ne connais pas"
+    },
+    "1": {
+      "label": "Notions",
+      "description": "Je sais ce que c’est, j’ai lu à ce sujet"
+    },
+    "2": {
+      "label": "Guidé",
+      "description": "Je peux travailler dessus avec de l’aide"
+    },
+    "3": {
+      "label": "Autonome",
+      "description": "Je peux livrer des fonctionnalités de façon autonome"
+    },
+    "4": {
+      "label": "Avancé",
+      "description": "Je conçois des solutions et j’accompagne les autres"
+    },
+    "5": {
+      "label": "Expert",
+      "description": "Référent de l’équipe, définit les standards"
+    }
+  },
+  "categories": [
+    {
+      "id": "core-engineering",
+      "label": "🔥 Socle Technique",
+      "skills": [
+        {
+          "id": "java",
+          "label": "Java",
+          "descriptors": {
+            "0": "N’a jamais écrit de code Java",
+            "1": "Comprend les bases de la JVM, peut lire du code Java",
+            "2": "Corrige des bugs avec de l’aide ; connaît les collections et les bases des streams",
+            "3": "Écrit du Java 17+ idiomatique ; utilise records, sealed classes, Optional",
+            "4": "Conçoit des bibliothèques génériques ; maîtrise la concurrence et le tuning GC",
+            "5": "Définit les standards Java de l’équipe ; pilote les stratégies de montée de version JDK"
+          }
+        },
+        {
+          "id": "typescript",
+          "label": "TypeScript",
+          "descriptors": {
+            "0": "N’a jamais écrit de TypeScript",
+            "1": "Sait que TS ajoute des types à JS ; peut lire des fichiers .ts",
+            "2": "Utilise les types de base et interfaces ; a besoin d’aide pour les generics",
+            "3": "Écrit du TS strict ; utilise les utility types et discriminated unions",
+            "4": "Conçoit des bibliothèques de types partagées ; maîtrise les mapped/conditional types",
+            "5": "Définit les standards tsconfig de l’équipe ; architécte des systèmes de types complexes"
+          }
+        },
+        {
+          "id": "python",
+          "label": "Python (scripts / ETL / outils dev)",
+          "descriptors": {
+            "0": "N’a jamais écrit de Python",
+            "1": "Peut lire des scripts simples ; connaît les bases de pip",
+            "2": "Écrit des scripts avec de l’aide ; utilise requests, pandas à un niveau basique",
+            "3": "Construit des outils CLI, des scripts ETL ; gère les virtualenvs et le packaging",
+            "4": "Crée des outils internes réutilisables ; écrit une gestion d’erreurs robuste",
+            "5": "Définit les standards d’outillage Python de l’équipe ; architécte des pipelines ETL"
+          }
+        },
+        {
+          "id": "sql",
+          "label": "SQL",
+          "descriptors": {
+            "0": "N’a jamais écrit de requêtes SQL",
+            "1": "Comprend les concepts SELECT, WHERE, JOIN",
+            "2": "Écrit des requêtes basiques ; a besoin d’aide pour les sous-requêtes et les index",
+            "3": "Écrit des jointures complexes, CTEs, window functions ; lit les plans EXPLAIN",
+            "4": "Optimise les requêtes lentes ; conçoit des schémas avec une normalisation appropriée",
+            "5": "Définit les standards de modélisation de données ; maîtrise le SQL spécifique PostgreSQL"
+          }
+        },
+        {
+          "id": "bash-shell",
+          "label": "Bash / Shell",
+          "descriptors": {
+            "0": "N’a jamais écrit de scripts shell",
+            "1": "Peut exécuter des commandes basiques ; comprend les pipes et redirections",
+            "2": "Écrit des scripts simples ; a besoin d’aide pour les boucles et conditions",
+            "3": "Écrit des scripts robustes avec gestion d’erreurs, traps, parsing d’arguments",
+            "4": "Automatise des workflows complexes ; écrit des scripts portables et testables",
+            "5": "Définit les conventions de scripting de l’équipe ; auteur des scripts CI/outillage partagés"
+          }
+        },
+        {
+          "id": "git-branching",
+          "label": "Git & Stratégies de Branching",
+          "descriptors": {
+            "0": "N’a jamais utilisé Git",
+            "1": "Peut cloner, commiter, pousser sur une seule branche",
+            "2": "Utilise des feature branches ; a besoin d’aide pour résoudre les conflits de merge",
+            "3": "Rebase, cherry-pick, utilise les conventional commits avec assurance",
+            "4": "Conçoit des stratégies de branching ; gère des réécritures d’historique complexes",
+            "5": "Définit le workflow Git de l’équipe ; administre les hooks et les politiques de merge"
+          }
+        },
+        {
+          "id": "patterns-solid",
+          "label": "Patterns (SOLID, Clean Code)",
+          "descriptors": {
+            "0": "Pas familier avec les design patterns ou SOLID",
+            "1": "Peut nommer les principes SOLID ; a lu Clean Code",
+            "2": "Applique SRP et DI avec accompagnement ; reconnaît les code smells",
+            "3": "Applique les patterns naturellement ; refactore vers une architecture propre",
+            "4": "Accompagne sur le choix de patterns ; mène des initiatives de refactoring",
+            "5": "Définit les standards de codage de l’équipe ; arbitre les choix de patterns architecturaux"
+          }
+        }
+      ]
+    },
+    {
+      "id": "backend-integration",
+      "label": "⚙️ Backend & Services d’Intégration",
+      "skills": [
+        {
+          "id": "spring-boot",
+          "label": "Spring Boot (REST, Validation, Scheduling)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Spring Boot",
+            "1": "Comprend le concept d’auto-configuration ; peut lire un contrôleur",
+            "2": "Crée des endpoints REST avec de l’aide ; utilise les annotations de validation basiques",
+            "3": "Construit des APIs complètes avec gestion d’erreurs, scheduling, profiles",
+            "4": "Conçoit des starters custom ; maîtrise actuator et les conditional beans",
+            "5": "Définit les standards Spring Boot de l’équipe ; pilote les montées de version du framework"
+          }
+        },
+        {
+          "id": "jpa-hibernate",
+          "label": "JPA / Hibernate",
+          "descriptors": {
+            "0": "N’a jamais utilisé JPA ou Hibernate",
+            "1": "Connaît le concept d’ORM ; peut lire les annotations d’entités",
+            "2": "Mappe des entités avec de l’aide ; a besoin de guidance sur les stratégies de fetch",
+            "3": "Gère le lazy loading, le N+1, les migrations ; écrit du JPQL/Criteria",
+            "4": "Optimise le cache de second niveau ; conçoit la persistance multi-tenant",
+            "5": "Définit les conventions JPA de l’équipe ; résout les cas complexes de mapping"
+          }
+        },
+        {
+          "id": "ddd",
+          "label": "Domain-driven Design (DDD)",
+          "descriptors": {
+            "0": "Pas familier avec les concepts DDD",
+            "1": "Connaît les agrégats et bounded contexts comme vocabulaire",
+            "2": "Peut identifier les entités vs objets de valeur avec de l’aide",
+            "3": "Modélise les bounded contexts ; implémente agrégats et événements de domaine",
+            "4": "Mène le context mapping entre services ; conçoit des couches anti-corruption",
+            "5": "Définit les pratiques DDD de l’équipe ; anime des sessions Event Storming"
+          }
+        },
+        {
+          "id": "api-design",
+          "label": "API Design (REST, versioning, OpenAPI)",
+          "descriptors": {
+            "0": "N’a jamais conçu d’API REST",
+            "1": "Connaît les méthodes HTTP, codes de statut, bases de REST",
+            "2": "Conçoit des endpoints CRUD simples ; a besoin d’aide pour le versioning",
+            "3": "Rédige des specs OpenAPI ; implémente pagination, HATEOAS, versioning",
+            "4": "Conçoit des contrats d’API inter-services ; définit les conventions de nommage",
+            "5": "Responsable du guide API de l’équipe ; revoit tous les contrats d’API publiques"
+          }
+        },
+        {
+          "id": "messaging",
+          "label": "Messaging (Kafka / Redpanda, RabbitMQ)",
+          "descriptors": {
+            "0": "N’a jamais travaillé avec des brokers de messages",
+            "1": "Comprend les concepts pub/sub et de file d’attente",
+            "2": "Produit/consomme des messages avec de l’aide ; configuration basique des topics",
+            "3": "Gère le partitionnement, les consumer groups, les dead-letter topics",
+            "4": "Conçoit des architectures event-driven ; optimise le débit et la rétention",
+            "5": "Définit les standards messaging de l’équipe ; gère l’évolution des schémas à grande échelle"
+          }
+        },
+        {
+          "id": "bpm-orchestration",
+          "label": "BPM / Orchestration (Camunda, Temporal, Kestra)",
+          "descriptors": {
+            "0": "N’a jamais utilisé de moteur de workflow/orchestration",
+            "1": "Comprend les concepts BPMN ou l’idée de workflow-as-code",
+            "2": "Modélise des workflows simples ; déploie avec de l’aide",
+            "3": "Implémente des processus multi-étapes avec gestion d’erreurs et compensation",
+            "4": "Conçoit des sagas long-running ; intègre l’orchestration entre services",
+            "5": "Définit les patterns d’orchestration de l’équipe ; évalue les compromis entre moteurs"
+          }
+        },
+        {
+          "id": "postgresql",
+          "label": "PostgreSQL (CloudNativePG)",
+          "descriptors": {
+            "0": "N’a jamais administré PostgreSQL",
+            "1": "Sait que PostgreSQL diffère de MySQL ; utilisation basique de psql",
+            "2": "Crée des tables, index ; a besoin d’aide pour la config de l’opérateur CNPG",
+            "3": "Gère des clusters CNPG, sauvegardes, connection pooling (PgBouncer)",
+            "4": "Optimise les paramètres pg pour les workloads ; gère le failover et la réplication",
+            "5": "Définit les standards PostgreSQL de l’équipe ; architécte des topologies HA"
+          }
+        },
+        {
+          "id": "redis-dragonfly",
+          "label": "Redis / Dragonfly",
+          "descriptors": {
+            "0": "N’a jamais utilisé Redis ou Dragonfly",
+            "1": "Sait que Redis est un store clé-valeur en mémoire",
+            "2": "Utilise GET/SET basique, TTL ; a besoin d’aide pour les structures de données",
+            "3": "Implémente des stratégies de cache, pub/sub, sorted sets en production",
+            "4": "Conçoit des politiques d’éviction ; gère les topologies Sentinel/cluster",
+            "5": "Définit l’architecture de cache de l’équipe ; benchmark Redis vs Dragonfly"
+          }
+        }
+      ]
+    },
+    {
+      "id": "frontend-ui",
+      "label": "🎨 Frontend & Ingénierie UI",
+      "skills": [
+        {
+          "id": "angular",
+          "label": "Angular",
+          "descriptors": {
+            "0": "N’a jamais utilisé Angular",
+            "1": "Sait qu’Angular est basé sur les composants ; peut lire des templates",
+            "2": "Crée des composants, utilise le routing avec de l’aide ; connaît les bases des modules",
+            "3": "Construit des feature modules ; utilise signals, lazy loading, interceptors",
+            "4": "Conçoit des bibliothèques partagées ; optimise la détection de changements et la taille du bundle",
+            "5": "Définit l’architecture Angular de l’équipe ; pilote les migrations de versions majeures"
+          }
+        },
+        {
+          "id": "rxjs",
+          "label": "RxJS (vraie maîtrise)",
+          "descriptors": {
+            "0": "N’a jamais utilisé RxJS",
+            "1": "Connaît le concept Observable ; utilise un .subscribe() basique",
+            "2": "Utilise map, filter, switchMap avec de l’aide ; a du mal avec les fuites mémoire",
+            "3": "Chaîne les opérateurs couramment ; gère les subscriptions et les erreurs",
+            "4": "Conçoit des opérateurs custom ; maîtrise les higher-order observables et les schedulers",
+            "5": "Définit les patterns réactifs de l’équipe ; résout les race conditions complexes"
+          }
+        },
+        {
+          "id": "html-css-scss",
+          "label": "HTML / CSS / SCSS",
+          "descriptors": {
+            "0": "Aucune expérience en HTML/CSS",
+            "1": "Comprend les balises, sélecteurs, box model à un niveau basique",
+            "2": "Construit des mises en page simples ; a besoin d’aide pour Flexbox, Grid, SCSS nesting",
+            "3": "Crée des mises en page responsives ; utilise les variables SCSS, mixins, nommage BEM",
+            "4": "Conçoit des systèmes de thèmes ; maîtrise les custom properties CSS et les animations",
+            "5": "Définit l’architecture SCSS de l’équipe ; assure la cohérence cross-browser"
+          }
+        },
+        {
+          "id": "state-management",
+          "label": "State Management (NgRx ou équivalent)",
+          "descriptors": {
+            "0": "N’a jamais utilisé de bibliothèques de state management frontend",
+            "1": "Connaît les concepts du pattern Redux (store, actions, reducers)",
+            "2": "Crée des store slices basiques avec de l’aide ; a du mal avec les effects",
+            "3": "Implémente des feature stores, effects, selectors avec memoization",
+            "4": "Conçoit la forme d’état normalisée ; utilise les entity adapters et le router store",
+            "5": "Définit les patterns de state management de l’équipe ; évalue les alternatives basées sur les signals"
+          }
+        },
+        {
+          "id": "component-libraries",
+          "label": "Bibliothèques de Composants (PrimeNG, AG Grid)",
+          "descriptors": {
+            "0": "N’a jamais utilisé PrimeNG ou AG Grid",
+            "1": "Sait que ce sont des bibliothèques de composants UI pour Angular",
+            "2": "Utilise des composants basiques (table, dialog) avec l’aide de la doc",
+            "3": "Personnalise les thèmes, templates ; configure les column defs d’AG Grid",
+            "4": "Construit des wrappers réutilisables ; gère le virtual scroll et les row models côté serveur",
+            "5": "Définit les standards d’utilisation de composants de l’équipe ; contribue des composants custom"
+          }
+        },
+        {
+          "id": "accessibility-design-system",
+          "label": "Accessibilité & Design System",
+          "descriptors": {
+            "0": "Aucune connaissance en accessibilité ou design systems",
+            "1": "Sait que le WCAG existe ; comprend l’importance du HTML sémantique",
+            "2": "Ajoute des aria labels, alt text avec de l’aide ; suit les design tokens existants",
+            "3": "Implémente le WCAG 2.1 AA ; utilise les design tokens et les échelles d’espacement de façon cohérente",
+            "4": "Audite et remédie les problèmes d’accessibilité ; fait évoluer le design system",
+            "5": "Définit les standards a11y de l’équipe ; architécte le design system SINAPSE"
+          }
+        }
+      ]
+    },
+    {
+      "id": "platform-engineering",
+      "label": "☁️ Ingénierie Plateforme",
+      "skills": [
+        {
+          "id": "gitlab-ci",
+          "label": "GitLab CI",
+          "descriptors": {
+            "0": "N’a jamais configuré GitLab CI",
+            "1": "Sait que .gitlab-ci.yml déclenche des pipelines",
+            "2": "Écrit des jobs simples avec de l’aide ; utilise les stages prédéfinis",
+            "3": "Construit des pipelines multi-stages avec rules, caching, artifacts",
+            "4": "Conçoit des templates CI réutilisables ; gère les runners et les pipelines DAG",
+            "5": "Définit les standards CI/CD de l’équipe ; architécte des bibliothèques de pipelines partagées"
+          }
+        },
+        {
+          "id": "docker-podman",
+          "label": "Docker / Podman",
+          "descriptors": {
+            "0": "N’a jamais construit ni exécuté de conteneurs",
+            "1": "Peut faire un docker run d’une image pré-construite",
+            "2": "Écrit des Dockerfiles basiques ; a besoin d’aide pour les builds multi-stage",
+            "3": "Construit des images multi-stage optimisées ; utilise compose et le layer caching",
+            "4": "Conçoit la stratégie d’images de base ; maîtrise rootless et les build contexts",
+            "5": "Définit les standards conteneurs de l’équipe ; architécte la supply chain d’images"
+          }
+        },
+        {
+          "id": "kubernetes",
+          "label": "Kubernetes (RKE2 / EKS)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Kubernetes",
+            "1": "Connaît les pods, services, deployments comme concepts",
+            "2": "Applique des manifestes YAML avec de l’aide ; utilise kubectl pour le debug",
+            "3": "Gère les deployments, HPA, ingress, resource limits en production",
+            "4": "Conçoit des stratégies de namespaces ; gère RBAC, network policies, CRDs",
+            "5": "Définit les standards K8s de l’équipe ; architécte des topologies multi-cluster RKE2/EKS"
+          }
+        },
+        {
+          "id": "helm-kustomize",
+          "label": "Helm / Kustomize",
+          "descriptors": {
+            "0": "N’a jamais utilisé Helm ou Kustomize",
+            "1": "Sait que Helm utilise des charts avec des fichiers de values",
+            "2": "Installe des charts avec overrides ; a besoin d’aide pour écrire des templates",
+            "3": "Crée des charts custom avec helpers, conditionnels, dépendances",
+            "4": "Conçoit des chart libraries ; gère des releases multi-env via Helmfile",
+            "5": "Définit les standards Helm de l’équipe ; architécte des stratégies de promotion de charts"
+          }
+        },
+        {
+          "id": "terraform-opentofu",
+          "label": "Terraform / OpenTofu",
+          "descriptors": {
+            "0": "N’a jamais utilisé Terraform ou OpenTofu",
+            "1": "Connaît le concept d’IaC ; comprend le cycle plan/apply",
+            "2": "Écrit des ressources simples avec de l’aide ; comprend les bases du state",
+            "3": "Crée des modules, gère le remote state, utilise les workspaces",
+            "4": "Conçoit des bibliothèques de modules réutilisables ; gère les migrations et imports de state",
+            "5": "Définit les standards IaC de l’équipe ; architécte le provisionnement multi-comptes"
+          }
+        },
+        {
+          "id": "ansible",
+          "label": "Ansible",
+          "descriptors": {
+            "0": "N’a jamais utilisé Ansible",
+            "1": "Sait qu’Ansible automatise la configuration des serveurs via YAML",
+            "2": "Exécute des playbooks existants ; modifie des tasks avec de l’aide",
+            "3": "Écrit des rôles, utilise variables, handlers, templates (Jinja2)",
+            "4": "Conçoit des collections de rôles ; gère l’inventaire et l’intégration Vault",
+            "5": "Définit les standards Ansible de l’équipe ; architécte la stratégie de provisionnement des serveurs"
+          }
+        },
+        {
+          "id": "artifact-registries",
+          "label": "Registres d’Artifacts (Harbor / Nexus)",
+          "descriptors": {
+            "0": "N’a jamais géré de registres d’artifacts",
+            "1": "Sait que les registres stockent les images Docker et les packages",
+            "2": "Push/pull des images ; a besoin d’aide pour la config des projets et des accès",
+            "3": "Configure la réplication, les politiques de rétention, le scan de vulnérabilités",
+            "4": "Conçoit une stratégie multi-registres ; intègre avec la signature CI/CD",
+            "5": "Définit les standards de registres de l’équipe ; architécte les pipelines de promotion d’images"
+          }
+        }
+      ]
+    },
+    {
+      "id": "observability-reliability",
+      "label": "🔭 Observabilité & Fiabilité",
+      "skills": [
+        {
+          "id": "prometheus",
+          "label": "Prometheus (métriques)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Prometheus",
+            "1": "Sait que Prometheus scrape les endpoints de métriques",
+            "2": "Interroge les métriques basiques dans Grafana ; a besoin d’aide pour écrire du PromQL",
+            "3": "Écrit des requêtes PromQL, des recording rules ; instrumente des métriques custom",
+            "4": "Conçoit les conventions de nommage des métriques ; optimise la cardinalité et la rétention",
+            "5": "Définit les standards de métriques de l’équipe ; architécte la fédération/Thanos"
+          }
+        },
+        {
+          "id": "grafana",
+          "label": "Grafana (dashboards)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Grafana",
+            "1": "Peut consulter les dashboards existants et lire les graphiques",
+            "2": "Crée des panneaux simples avec de l’aide ; utilise les template variables",
+            "3": "Construit des dashboards de service avec alertes, annotations, drill-downs",
+            "4": "Conçoit du dashboard-as-code (Grafonnet/JSON) ; gère le provisionnement",
+            "5": "Définit les standards de dashboards de l’équipe ; architécte des layouts multi-datasource"
+          }
+        },
+        {
+          "id": "loki-elasticsearch",
+          "label": "Loki / Elasticsearch (logs)",
+          "descriptors": {
+            "0": "N’a jamais interrogé des logs centralisés",
+            "1": "Sait que les logs sont agrégés centralement ; peut les consulter dans Grafana",
+            "2": "Écrit des filtres LogQL/KQL basiques ; a besoin d’aide avec les label selectors",
+            "3": "Construit des requêtes de logs avec parsers, agrégations ; corrèle avec les traces",
+            "4": "Conçoit des pipelines de logs ; optimise la rétention et les politiques de cycle de vie des index",
+            "5": "Définit les standards de logging de l’équipe ; architécte l’agrégation de logs multi-tenant"
+          }
+        },
+        {
+          "id": "tempo-opentelemetry",
+          "label": "Tempo / OpenTelemetry (traces)",
+          "descriptors": {
+            "0": "N’a jamais travaillé avec le tracing distribué",
+            "1": "Sait que les traces connectent les requêtes entre les services",
+            "2": "Lit les waterfalls de traces dans Grafana ; a besoin d’aide pour la configuration du SDK",
+            "3": "Instrumente les services avec le SDK OTel ; configure les samplers et exporters",
+            "4": "Conçoit la propagation des traces à travers les frontières async/messaging",
+            "5": "Définit les standards de tracing de l’équipe ; architécte les pipelines OTel Collector"
+          }
+        },
+        {
+          "id": "sentry",
+          "label": "Sentry (erreurs applicatives)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Sentry",
+            "1": "Sait que Sentry capture les exceptions frontend/backend",
+            "2": "Lit les issues Sentry ; a besoin d’aide pour configurer le SDK et les source maps",
+            "3": "Configure le SDK Sentry, les breadcrumbs, le release tracking dans la CI",
+            "4": "Conçoit les règles d’alerte et d’ownership ; intègre avec les issues GitLab",
+            "5": "Définit les standards de suivi d’erreurs de l’équipe ; gère un Sentry auto-hébergé"
+          }
+        },
+        {
+          "id": "slo-sla-alerting",
+          "label": "SLO / SLA / Alerting",
+          "descriptors": {
+            "0": "Pas familier avec les concepts SLO/SLA",
+            "1": "Sait que les SLOs définissent des objectifs de fiabilité",
+            "2": "Comprend les error budgets ; a besoin d’aide pour définir SLIs et seuils",
+            "3": "Définit des SLOs pour les services ; configure des alertes multi-window burn-rate",
+            "4": "Conçoit des frameworks SLO entre services ; gère les politiques d’error budget",
+            "5": "Définit la culture SLO de l’équipe ; anime les revues de fiabilité et les postmortems"
+          }
+        },
+        {
+          "id": "capacity-resilience",
+          "label": "Capacity Planning & Patterns de Résilience",
+          "descriptors": {
+            "0": "Aucune expérience en capacity planning ou résilience",
+            "1": "Connaît les circuit breakers, retries, bulkheads comme concepts",
+            "2": "Configure les resource requests/limits basiques ; utilise Resilience4j avec de l’aide",
+            "3": "Dimensionne les services ; implémente circuit breakers et rate limiting",
+            "4": "Conçoit des modèles de capacité ; mène des chaos experiments et tests de charge",
+            "5": "Définit les standards de résilience de l’équipe ; architécte la stratégie de capacité à l’échelle de la plateforme"
+          }
+        }
+      ]
+    },
+    {
+      "id": "security-compliance",
+      "label": "🔒 Sécurité & Conformité",
+      "skills": [
+        {
+          "id": "iam-keycloak",
+          "label": "IAM (Keycloak, OAuth2 / OIDC)",
+          "descriptors": {
+            "0": "N’a jamais travaillé avec l’IAM ou OAuth2",
+            "1": "Connaît les flows OAuth2 et le concept de token JWT",
+            "2": "Intègre Spring Security avec Keycloak avec de l’aide",
+            "3": "Configure les realms, clients, mappers ; implémente le RBAC dans les services",
+            "4": "Conçoit la fédération multi-realm ; personnalise les SPIs/thèmes Keycloak",
+            "5": "Définit l’architecture IAM de l’équipe ; gère le brokering d’IdP et l’auth fine-grained"
+          }
+        },
+        {
+          "id": "secret-management",
+          "label": "Gestion des Secrets (Vault)",
+          "descriptors": {
+            "0": "N’a jamais utilisé Vault ou d’outils de gestion de secrets",
+            "1": "Sait que les secrets ne doivent pas être dans le code ou les variables d’environnement",
+            "2": "Lit les secrets depuis Vault avec de l’aide ; comprend les bases du moteur KV",
+            "3": "Configure AppRole, l’auth K8s ; gère les credentials dynamiques de base de données",
+            "4": "Conçoit les politiques de rotation des secrets ; intègre Vault Agent/CSI driver",
+            "5": "Définit les standards de gestion des secrets de l’équipe ; architécte le setup Vault HA"
+          }
+        },
+        {
+          "id": "supply-chain",
+          "label": "Supply Chain (Trivy, Snyk, Dependency-Track)",
+          "descriptors": {
+            "0": "Aucune expérience en sécurité de la supply chain logicielle",
+            "1": "Sait que les CVEs existent et que les dépendances peuvent être vulnérables",
+            "2": "Lit les rapports de scan Trivy/Snyk ; a besoin d’aide pour le triage",
+            "3": "Configure le scanning CI ; trie les CVEs, gère les SBOM avec Dependency-Track",
+            "4": "Conçoit les portes de supply chain ; définit les politiques de blocage des déploiements",
+            "5": "Définit la stratégie supply chain de l’équipe ; architécte le cycle de vie SBOM de bout en bout"
+          }
+        },
+        {
+          "id": "code-security",
+          "label": "Sécurité du Code (Gitleaks, scanning CI)",
+          "descriptors": {
+            "0": "N’a jamais utilisé d’outils SAST/scan de secrets",
+            "1": "Sait que la fuite de secrets est un risque critique",
+            "2": "Lit les rapports Gitleaks ; a besoin d’aide pour écrire des règles d’allowlist",
+            "3": "Configure Gitleaks, SAST dans la CI ; remédie les secrets détectés",
+            "4": "Conçoit les pipelines de scanning pre-commit et CI ; ensembles de règles custom",
+            "5": "Définit les standards de sécurité du code de l’équipe ; automatise les workflows de remédiation"
+          }
+        },
+        {
+          "id": "mfa-yubikey",
+          "label": "MFA / YubiKey",
+          "descriptors": {
+            "0": "Aucune expérience avec les tokens matériels MFA",
+            "1": "Sait que le MFA ajoute un second facteur d’authentification",
+            "2": "Utilise une YubiKey pour se connecter ; a besoin d’aide pour la configuration initiale",
+            "3": "Configure FIDO2/WebAuthn pour les services ; gère l’enrollment des clés",
+            "4": "Conçoit les politiques MFA entre Keycloak, GitLab, VPN",
+            "5": "Définit la stratégie MFA de l’équipe ; architécte l’authentification sans mot de passe"
+          }
+        },
+        {
+          "id": "encryption-tls",
+          "label": "Chiffrement (TLS, rotation des clés)",
+          "descriptors": {
+            "0": "Aucune expérience en chiffrement ou gestion de certificats",
+            "1": "Sait que TLS chiffre le trafic ; comprend les bases des certificats",
+            "2": "Configure TLS dans Spring Boot avec de l’aide ; utilise les bases de cert-manager",
+            "3": "Gère les issuers cert-manager ; implémente mTLS et la rotation des clés",
+            "4": "Conçoit la stratégie PKI ; automatise le cycle de vie des certificats entre clusters",
+            "5": "Définit les standards de chiffrement de l’équipe ; architécte un mesh TLS zero-trust"
+          }
+        },
+        {
+          "id": "threat-modeling",
+          "label": "Modélisation des Menaces & Sécurité API",
+          "descriptors": {
+            "0": "Aucune expérience en modélisation des menaces",
+            "1": "Connaît les risques OWASP Top 10",
+            "2": "Participe aux sessions de modélisation des menaces ; utilise STRIDE avec de l’aide",
+            "3": "Mène les analyses STRIDE ; implémente rate limiting et validation des entrées sur les API",
+            "4": "Conçoit des modèles de menaces pour les nouveaux services ; cadre les tests de pénétration",
+            "5": "Définit le processus de revue sécurité de l’équipe ; architécte la sécurité de l’API gateway"
+          }
+        }
+      ]
+    },
+    {
+      "id": "architecture-governance",
+      "label": "🏛️ Architecture, Gouvernance & Delivery",
+      "skills": [
+        {
+          "id": "c4-structurizr",
+          "label": "Architecture C4 (Structurizr)",
+          "descriptors": {
+            "0": "N’a jamais utilisé le modèle C4 ou Structurizr",
+            "1": "Connaît les niveaux context, container, component, code du C4",
+            "2": "Lit des diagrammes C4 ; écrit du DSL Structurizr basique avec de l’aide",
+            "3": "Maintient le workspace DSL ; crée des diagrammes pour les nouveaux services",
+            "4": "Conçoit une stratégie multi-workspace ; automatise la génération de diagrammes dans la CI",
+            "5": "Définit les standards C4 de l’équipe ; responsable du modèle d’architecture SINAPSE"
+          }
+        },
+        {
+          "id": "adrs",
+          "label": "ADRs (prise de décision technique)",
+          "descriptors": {
+            "0": "Pas familier avec les Architecture Decision Records",
+            "1": "Sait que les ADRs documentent les décisions techniques avec leur contexte",
+            "2": "Rédige des ADRs avec de l’aide ; suit le template existant",
+            "3": "Auteur d’ADRs bien structurés avec compromis et conséquences",
+            "4": "Anime les revues d’ADRs ; lie les décisions au C4 et à la roadmap",
+            "5": "Définit le processus ADR de l’équipe ; maintient la gouvernance du journal de décisions"
+          }
+        },
+        {
+          "id": "archimate",
+          "label": "ArchiMate (Archi)",
+          "descriptors": {
+            "0": "N’a jamais utilisé ArchiMate ou l’outil Archi",
+            "1": "Sait qu’ArchiMate modélise les couches d’architecture d’entreprise",
+            "2": "Lit des diagrammes ArchiMate ; crée des vues simples avec de l’aide",
+            "3": "Modélise les couches métier, application, technologie pour SINAPSE",
+            "4": "Conçoit des viewpoints pour les parties prenantes ; lie au C4 et aux ADRs",
+            "5": "Définit les standards ArchiMate de l’équipe ; responsable du référentiel d’architecture d’entreprise"
+          }
+        },
+        {
+          "id": "technical-documentation",
+          "label": "Documentation Technique (OpenAPI, specs)",
+          "descriptors": {
+            "0": "Aucune expérience en rédaction de specs techniques",
+            "1": "Sait que la documentation est importante ; peut lire des specs OpenAPI",
+            "2": "Rédige des specs basiques et des annotations OpenAPI avec de l’aide",
+            "3": "Produit des specs claires, diagrammes de séquence, runbooks pour les services",
+            "4": "Conçoit des templates de documentation ; revoit les specs pour leur complétude",
+            "5": "Définit les standards de documentation de l’équipe ; architécte un pipeline docs-as-code"
+          }
+        },
+        {
+          "id": "agile-scrum",
+          "label": "Agile / Scrum",
+          "descriptors": {
+            "0": "Aucune expérience avec Agile ou Scrum",
+            "1": "Connaît les sprints, standups, rétrospectives comme cérémonies",
+            "2": "Participe aux cérémonies ; rédige des user stories avec de l’aide",
+            "3": "Affine le backlog, estime les stories, anime les rétrospectives",
+            "4": "Accompagne les pratiques de l’équipe ; adapte le processus à la maturité de l’équipe",
+            "5": "Définit les pratiques Agile de l’équipe ; impulse une culture d’amélioration continue"
+          }
+        },
+        {
+          "id": "code-review",
+          "label": "Revue de Code",
+          "descriptors": {
+            "0": "N’a jamais fait de revue de code",
+            "1": "Sait que la revue de code améliore la qualité ; peut approuver des MRs simples",
+            "2": "Revoit avec une checklist ; repère les problèmes évidents",
+            "3": "Donne des retours constructifs sur le design, le nommage, la couverture de tests",
+            "4": "Revoit les préoccupations au niveau architecture ; accompagne les reviewers juniors",
+            "5": "Définit les guidelines de revue de l’équipe ; façonne les standards de merge request"
+          }
+        },
+        {
+          "id": "modular-microservices",
+          "label": "Design Modulaire / Microservices / Hexagonal",
+          "descriptors": {
+            "0": "Aucune expérience avec les styles d’architecture modulaire",
+            "1": "Sait que l’architecture hexagonale sépare ports et adapters",
+            "2": "Suit la structure modulaire existante ; a besoin d’aide pour les frontières",
+            "3": "Conçoit des services en couches hexagonales ; définit les APIs de modules",
+            "4": "Décompose les monolithes ; conçoit les patterns de communication inter-services",
+            "5": "Définit le style d’architecture de l’équipe ; arbitre les décisions de frontières de services"
+          }
+        },
+        {
+          "id": "api-governance",
+          "label": "Gouvernance API",
+          "descriptors": {
+            "0": "Aucune expérience en gouvernance API",
+            "1": "Sait que les APIs doivent être cohérentes et versionnées",
+            "2": "Suit les guidelines API existantes ; a besoin d’aide pour les revues de contrats",
+            "3": "Fait respecter les standards de nommage, pagination, erreurs dans les revues",
+            "4": "Conçoit des règles de linting (Spectral) ; gère le catalogue/portail API",
+            "5": "Définit le framework de gouvernance API de l’équipe ; détient l’autorité de design API"
+          }
+        },
+        {
+          "id": "data-modeling",
+          "label": "Modélisation de Données (modèles canoniques, agrégats DDD)",
+          "descriptors": {
+            "0": "Aucune expérience en modélisation de données ou modèles canoniques",
+            "1": "Connaît les entités, relations, bases de la normalisation",
+            "2": "Modélise des schémas simples ; a besoin d’aide pour les frontières d’agrégats",
+            "3": "Conçoit des agrégats, événements canoniques ; gère l’évolution des schémas",
+            "4": "Définit des modèles canoniques partagés entre bounded contexts",
+            "5": "Définit les standards de modélisation de données de l’équipe ; architécte le modèle de données d’entreprise"
+          }
+        }
+      ]
+    },
+    {
+      "id": "soft-skills",
+      "label": "🤝 Soft Skills & Collaboration",
+      "skills": [
+        {
+          "id": "technical-writing",
+          "label": "Rédaction Technique (specs, ADRs, runbooks)",
+          "descriptors": {
+            "0": "N’a jamais écrit de documentation technique",
+            "1": "Peut lire des specs et runbooks ; comprend leur utilité",
+            "2": "Rédige des brouillons avec relecture approfondie ; suit les templates existants",
+            "3": "Produit des specs, ADRs et runbooks clairs de façon autonome",
+            "4": "Conçoit des templates de documentation ; accompagne les autres sur la rédaction",
+            "5": "Définit les standards de rédaction de l’équipe ; établit une culture docs-as-code"
+          }
+        },
+        {
+          "id": "mentoring",
+          "label": "Mentorat & Transfert de Connaissances",
+          "descriptors": {
+            "0": "Aucune expérience en mentorat ou onboarding",
+            "1": "Comprend que le mentorat est précieux ; répond aux questions quand on lui demande",
+            "2": "Fait du pair programming avec des juniors occasionnellement ; partage ses connaissances de façon informelle",
+            "3": "Anime des sessions d’onboarding ; fournit des retours structurés régulièrement",
+            "4": "Conçoit des parcours d’apprentissage ; crée des supports de formation internes",
+            "5": "Définit la culture de partage de connaissances de l’équipe ; accompagne les mentors"
+          }
+        },
+        {
+          "id": "cross-team-communication",
+          "label": "Communication Inter-équipes",
+          "descriptors": {
+            "0": "Aucune expérience de travail au-delà des frontières d’équipe",
+            "1": "Sait que d’autres équipes existent ; assiste passivement aux réunions inter-équipes",
+            "2": "Relaie l’information entre les équipes avec guidance sur le message",
+            "3": "Coordonne les dépendances avec les autres équipes ; communique les compromis clairement",
+            "4": "Anime des sessions d’alignement inter-équipes ; résout les conflits entre équipes",
+            "5": "Définit les protocoles de communication inter-équipes ; fait le pont entre technique et métier"
+          }
+        },
+        {
+          "id": "problem-solving-debugging",
+          "label": "Résolution de Problèmes & Méthodologie de Debug",
+          "descriptors": {
+            "0": "Pas d’approche structurée du debug",
+            "1": "Utilise le debug par print/log ; sait que les breakpoints existent",
+            "2": "Suit des checklists de debug ; a besoin d’aide pour isoler les causes racines",
+            "3": "Isole systématiquement les problèmes en utilisant logs, traces et profilers",
+            "4": "Débogue des problèmes distribués complexes ; enseigne la méthodologie de debug",
+            "5": "Définit les playbooks de debug de l’équipe ; résout les problèmes de production les plus difficiles"
+          }
+        },
+        {
+          "id": "incident-response",
+          "label": "Réponse aux Incidents & Postmortem",
+          "descriptors": {
+            "0": "N’a jamais participé à une réponse à incident",
+            "1": "Connaît les niveaux de sévérité des incidents et les chemins d’escalade",
+            "2": "Participe aux incidents ; suit les runbooks avec accompagnement",
+            "3": "Mène la résolution des incidents ; rédige des postmortems blameless",
+            "4": "Conçoit les processus de réponse aux incidents ; identifie les patterns systémiques",
+            "5": "Définit la culture d’incidents de l’équipe ; impulse des améliorations de fiabilité à l’échelle de l’organisation"
+          }
+        },
+        {
+          "id": "stakeholder-communication",
+          "label": "Communication avec les Parties Prenantes",
+          "descriptors": {
+            "0": "Aucune expérience de présentation à des interlocuteurs non techniques",
+            "1": "Comprend que les parties prenantes ont besoin d’explications techniques simplifiées",
+            "2": "Prépare des points d’avancement avec de l’aide ; participe aux démos",
+            "3": "Présente l’avancement et les compromis aux parties prenantes avec assurance",
+            "4": "Gère les attentes de façon proactive ; traduit les besoins métier en plans techniques",
+            "5": "Définit la cadence de communication de l’équipe ; conseiller de confiance de la direction"
+          }
+        }
+      ]
+    },
+    {
+      "id": "domain-knowledge",
+      "label": "🏛️ Connaissances Métier (CAFAT / SINAPSE)",
+      "skills": [
+        {
+          "id": "reglementation-sociale",
+          "label": "Réglementation Sociale NC (cotisations, plafonds, assiettes)",
+          "descriptors": {
+            "0": "Aucune connaissance des règles de cotisations sociales NC",
+            "1": "Sait que la CAFAT collecte les cotisations sociales en Nouvelle-Calédonie",
+            "2": "Comprend les types de cotisations de base ; a besoin d’aide pour les calculs de taux",
+            "3": "Calcule les cotisations, plafonds, assiettes pour les cas standards",
+            "4": "Gère les cas particuliers : multi-employeurs, régimes spéciaux, exonérations",
+            "5": "Référent sur la réglementation sociale NC ; valide les règles métier dans le code"
+          }
+        },
+        {
+          "id": "processus-recouvrement",
+          "label": "Processus Recouvrement (SAED, stratégies, débits/crédits)",
+          "descriptors": {
+            "0": "Aucune connaissance des processus de recouvrement CAFAT",
+            "1": "Sait que la CAFAT recouvre les cotisations impayées des employeurs",
+            "2": "Comprend les bases du SAED ; suit les workflows débits/crédits existants",
+            "3": "Modélise les stratégies de recouvrement, plans de paiement et ajustements de solde",
+            "4": "Conçoit des workflows de recouvrement de bout en bout incluant les chemins d’escalade",
+            "5": "Référent sur les processus de recouvrement ; définit les règles métier pour SINAPSE"
+          }
+        },
+        {
+          "id": "travailleurs-independants",
+          "label": "Travailleurs Indépendants (immatriculation, radiation, régime)",
+          "descriptors": {
+            "0": "Aucune connaissance des processus des travailleurs indépendants à la CAFAT",
+            "1": "Sait que les indépendants ont un régime d’inscription spécifique",
+            "2": "Comprend le cycle de vie de l’inscription ; a besoin d’aide pour les cas particuliers",
+            "3": "Gère l’immatriculation, la radiation et les changements de régime de façon autonome",
+            "4": "Modélise les cas complexes : multi-activité, transitions de régime, arriérés",
+            "5": "Référent sur les processus TI ; valide les règles métier et les exceptions"
+          }
+        },
+        {
+          "id": "sante-ruamm",
+          "label": "Santé / RUAMM (ouverture de droits, prestations, contrôle)",
+          "descriptors": {
+            "0": "Aucune connaissance du système de couverture santé RUAMM",
+            "1": "Sait que le RUAMM fournit une couverture santé universelle en NC",
+            "2": "Comprend les bases de l’ouverture de droits ; suit les workflows de prestations existants",
+            "3": "Modélise l’éligibilité aux prestations, les règles de remboursement et les contrôles",
+            "4": "Gère les cas complexes : CMU, longue maladie, recours contre tiers",
+            "5": "Référent sur les processus RUAMM ; définit les règles du domaine santé pour SINAPSE"
+          }
+        },
+        {
+          "id": "portail-pro",
+          "label": "Portail Pro & Télé-services (DSE, CES, e-Services)",
+          "descriptors": {
+            "0": "Aucune connaissance du portail employeur CAFAT ou des e-services",
+            "1": "Sait que les employeurs déclarent les cotisations en ligne via le portail",
+            "2": "Comprend les flux de soumission DSE et CES à un niveau basique",
+            "3": "Modélise les workflows de télé-services : déclarations, paiements, attestations",
+            "4": "Conçoit des fonctionnalités portail intégrant plusieurs domaines back-office",
+            "5": "Référent sur les e-services ; définit l’UX et les règles métier du Portail Pro"
+          }
+        },
+        {
+          "id": "gue-rue",
+          "label": "GUE / RUE (registre entreprises, cadre légal)",
+          "descriptors": {
+            "0": "Aucune connaissance du registre des entreprises (GUE/RUE)",
+            "1": "Sait qu’un registre central des entreprises existe en NC",
+            "2": "Comprend l’inscription basique des employeurs et les structures juridiques",
+            "3": "Modélise le cycle de vie des entreprises : création, modification, cessation",
+            "4": "Gère les structures multi-établissements et les nuances du cadre juridique",
+            "5": "Référent sur le domaine GUE/RUE ; définit les règles du registre pour SINAPSE"
+          }
+        },
+        {
+          "id": "comptabilite-paiements",
+          "label": "Comptabilité & Paiements (mandatement, SEPA/COPS, flux bancaires)",
+          "descriptors": {
+            "0": "Aucune connaissance des processus comptables et de paiement CAFAT",
+            "1": "Sait que la CAFAT émet des paiements et gère des écritures comptables",
+            "2": "Comprend les bases du mandatement ; suit les workflows de paiement existants",
+            "3": "Modélise les ordres de paiement, flux SEPA/COPS et la réconciliation bancaire",
+            "4": "Conçoit des pipelines de paiement de bout en bout avec gestion d’erreurs et audit",
+            "5": "Référent sur le domaine comptable ; définit les règles de paiement pour SINAPSE"
+          }
+        },
+        {
+          "id": "si-legacy",
+          "label": "SI Legacy CAFAT (Visual, processus existants, migration)",
+          "descriptors": {
+            "0": "Aucune connaissance des systèmes d’information legacy CAFAT",
+            "1": "Sait que des systèmes legacy basés sur Visual existent et sont en cours de remplacement",
+            "2": "Navigue dans les écrans legacy ; comprend les processus existants basiques",
+            "3": "Mappe les processus legacy vers leurs équivalents SINAPSE ; planifie la migration de données",
+            "4": "Conçoit des stratégies de migration avec plans de rollback et validation de données",
+            "5": "Référent sur le SI legacy ; pilote l’architecture de migration et la planification de bascule"
+          }
+        },
+        {
+          "id": "urbanisation-si",
+          "label": "Urbanisation SI (plan d’urbanisation, cartographie applicative)",
+          "descriptors": {
+            "0": "Aucune connaissance des concepts d’urbanisation SI",
+            "1": "Sait que l’urbanisation cartographie les applications aux capacités métier",
+            "2": "Lit la cartographie applicative ; comprend les concepts de zone/bloc",
+            "3": "Maintient le plan d’urbanisation ; positionne les nouveaux services dans la cartographie",
+            "4": "Conçoit les règles d’intégration inter-zones ; gère l’obsolescence technologique",
+            "5": "Définit les standards d’urbanisation de l’équipe ; responsable de la cartographie SI SINAPSE"
+          }
+        }
+      ]
+    }
+  ]
+}

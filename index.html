@@ -1,10 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (() => {
+        const theme = localStorage.getItem('theme') ||
+          (window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark' : 'light');
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tmp-vite-scaffold</title>
+    <title>Radar des Comp&eacute;tences</title>
   </head>
   <body>
     <div id="root"></div>

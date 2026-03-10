@@ -1,45 +1,14 @@
 import { Router } from 'express'
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
+import { teamMembers } from '../../src/data/team-roster.js'
+import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation } from '../lib/db.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_FILE = path.join(__dirname, '..', 'data', 'ratings.json')
-
-// Hardcoded roster slugs — must match src/data/team-roster.ts
-const VALID_SLUGS = new Set([
-  'yolan-maldonado',
-  'alexandre-thomas',
-  'alan-huitel',
-  'pierre-mathieu-barras',
-  'andy-malo',
-  'steven-nguyen',
-  'matthieu-alcime',
-  'martin-vallet',
-  'nicole-nguon',
-  'bethlehem-mengistu',
-  'pierre-rossato',
-])
-
-function readData(): Record<string, unknown> {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf-8')
-    return JSON.parse(raw)
-  } catch {
-    return {}
-  }
-}
-
-function writeData(data: Record<string, unknown>): void {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8')
-}
+const VALID_SLUGS = new Set(teamMembers.map(m => m.slug))
 
 export const ratingsRouter = Router()
 
 // GET / — all ratings
 ratingsRouter.get('/', (_req, res) => {
-  const data = readData()
-  res.json(data)
+  res.json(getAllEvaluations())
 })
 
 // GET /:slug — single member
@@ -51,8 +20,7 @@ ratingsRouter.get('/:slug', (req, res) => {
     return
   }
 
-  const data = readData()
-  const memberData = data[slug] as Record<string, unknown> | undefined
+  const memberData = getEvaluation(slug)
 
   if (!memberData) {
     res.json({
@@ -112,16 +80,40 @@ ratingsRouter.put('/:slug', (req, res) => {
     return
   }
 
-  const memberData = {
-    ratings,
-    experience: expObj,
-    skippedCategories: skipped,
-    submittedAt: new Date().toISOString(),
-  }
-
-  const data = readData()
-  data[slug] = memberData
-  writeData(data)
+  const memberData = upsertEvaluation(slug, ratings, expObj, skipped)
 
   res.json(memberData)
+})
+
+// DELETE /:slug — reset evaluation (start from scratch)
+ratingsRouter.delete('/:slug', (req, res) => {
+  const { slug } = req.params
+
+  if (!VALID_SLUGS.has(slug)) {
+    res.status(404).json({ error: 'Member not found' })
+    return
+  }
+
+  deleteEvaluation(slug)
+  res.json({ ok: true })
+})
+
+// POST /:slug/submit — finalize evaluation
+ratingsRouter.post('/:slug/submit', (req, res) => {
+  const { slug } = req.params
+
+  if (!VALID_SLUGS.has(slug)) {
+    res.status(404).json({ error: 'Member not found' })
+    return
+  }
+
+  const memberData = getEvaluation(slug)
+
+  if (!memberData || Object.keys(memberData.ratings).length === 0) {
+    res.status(400).json({ error: 'No ratings to submit' })
+    return
+  }
+
+  const updated = submitEvaluation(slug)
+  res.json(updated)
 })

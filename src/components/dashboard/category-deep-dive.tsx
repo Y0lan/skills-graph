@@ -1,33 +1,45 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import RadarChart from '@/components/radar-chart'
-import { skillCategories } from '@/data/skill-catalog'
-import { teamAveragePerSkill, type AllRatings, type MemberRatings } from '@/lib/ratings'
+import { useCatalog } from '@/hooks/use-catalog'
+import type { TeamCategoryAggregateResponse, TeamMemberAggregateResponse } from '@/lib/types'
 
 interface CategoryDeepDiveProps {
-  allRatings: AllRatings
-  viewerRatings?: MemberRatings
+  categories: TeamCategoryAggregateResponse[]
+  members: TeamMemberAggregateResponse[]
+  viewerSlug?: string
 }
 
 export default function CategoryDeepDive({
-  allRatings,
-  viewerRatings,
+  categories,
+  members,
+  viewerSlug,
 }: CategoryDeepDiveProps) {
+  const { categories: skillCategories } = useCatalog()
+
+  // Find the viewer member for overlay
+  const viewer = viewerSlug
+    ? members.find((m) => m.slug === viewerSlug && m.submittedAt !== null)
+    : undefined
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {skillCategories.map((cat) => {
-        const data = cat.skills.map((skill) => ({
+        const catAgg = categories.find((c) => c.categoryId === cat.id)
+
+        const submittedMembers = members.filter((m) => m.submittedAt !== null)
+
+        // Per-skill team averages from the API
+        const teamData = cat.skills.map((skill) => ({
           label: skill.label,
-          value: teamAveragePerSkill(skill.id, allRatings),
+          value: catAgg?.skillAverages?.[skill.id] ?? catAgg?.teamAvgRank ?? 0,
           fullMark: 5,
         }))
 
-        const overlay = viewerRatings
+        // Viewer's actual per-skill ratings
+        const overlayData = viewer
           ? cat.skills.map((skill) => ({
               label: skill.label,
-              value:
-                viewerRatings.ratings[skill.id] > 0
-                  ? viewerRatings.ratings[skill.id]
-                  : 0,
+              value: viewer.skillRatings?.[skill.id] ?? 0,
               fullMark: 5,
             }))
           : undefined
@@ -38,7 +50,20 @@ export default function CategoryDeepDive({
               <CardTitle>{cat.emoji + ' ' + cat.label}</CardTitle>
             </CardHeader>
             <CardContent>
-              <RadarChart data={data} overlay={overlay} height={300} />
+              <RadarChart
+                data={teamData}
+                overlay={overlayData}
+                height={300}
+                primaryLabel="Moyenne équipe"
+                overlayLabel="Vous"
+              />
+              {submittedMembers.length > 0 && (
+                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Min : {catAgg?.minRank.toFixed(1) ?? '—'}</span>
+                  <span>Moy : {catAgg?.teamAvgRank.toFixed(1) ?? '—'}</span>
+                  <span>Max : {catAgg?.maxRank.toFixed(1) ?? '—'}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         )

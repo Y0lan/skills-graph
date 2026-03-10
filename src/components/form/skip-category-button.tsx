@@ -27,7 +27,7 @@ export default function SkipCategoryButton({
         className="gap-2"
       >
         <Undo2 className="h-4 w-4" />
-        Undo skip — rate {categoryLabel}
+        Annuler le saut — évaluer {categoryLabel}
       </Button>
     )
   }
@@ -36,7 +36,7 @@ export default function SkipCategoryButton({
     return (
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">
-          Skip all skills in {categoryLabel}?
+          Ignorer toutes les compétences de {categoryLabel} ?
         </span>
         <Button
           type="button"
@@ -47,7 +47,7 @@ export default function SkipCategoryButton({
             setConfirming(false)
           }}
         >
-          Yes, skip
+          Oui, ignorer
         </Button>
         <Button
           type="button"
@@ -55,7 +55,7 @@ export default function SkipCategoryButton({
           size="sm"
           onClick={() => setConfirming(false)}
         >
-          Cancel
+          Annuler
         </Button>
       </div>
     )
@@ -70,7 +70,7 @@ export default function SkipCategoryButton({
       className="gap-2 text-muted-foreground"
     >
       <SkipForward className="h-4 w-4" />
-      Skip this category
+      Ignorer cette catégorie
     </Button>
   )
 }

@@ -1,43 +1,41 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import RadarChart from '@/components/radar-chart'
-import { skillCategories } from '@/data/skill-catalog'
-import {
-  teamCategoryAverage,
-  categoryAverage,
-  type AllRatings,
-  type MemberRatings,
-} from '@/lib/ratings'
+import { useCatalog } from '@/hooks/use-catalog'
+import type { TeamCategoryAggregateResponse } from '@/lib/types'
 
 interface TeamOverviewProps {
-  allRatings: AllRatings
-  viewerRatings?: MemberRatings
+  categories: TeamCategoryAggregateResponse[]
+  teamSize: number
+  submittedCount: number
 }
 
 export default function TeamOverview({
-  allRatings,
-  viewerRatings,
+  categories,
+  teamSize,
+  submittedCount,
 }: TeamOverviewProps) {
-  const data = skillCategories.map((cat) => ({
-    label: `${cat.emoji} ${cat.label}`,
-    value: teamCategoryAverage(cat, allRatings),
-    fullMark: 5,
-  }))
-
-  const overlay = viewerRatings
-    ? skillCategories.map((cat) => ({
-        label: `${cat.emoji} ${cat.label}`,
-        value: categoryAverage(cat, viewerRatings.ratings),
-        fullMark: 5,
-      }))
-    : undefined
+  const { categories: skillCategories } = useCatalog()
+  const data = skillCategories.map((cat) => {
+    const agg = categories.find((c) => c.categoryId === cat.id)
+    return {
+      label: `${cat.emoji} ${cat.label}`,
+      value: agg?.teamAvgRank ?? 0,
+      fullMark: 5,
+    }
+  })
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Team Overview</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle>Vue d'ensemble de l'équipe</CardTitle>
+          <span className="text-sm text-muted-foreground">
+            {submittedCount}/{teamSize} évaluations soumises
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
-        <RadarChart data={data} overlay={overlay} height={400} />
+        <RadarChart data={data} height={400} />
       </CardContent>
     </Card>
   )

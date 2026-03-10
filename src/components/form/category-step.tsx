@@ -1,17 +1,14 @@
 import type { SkillCategory } from '@/data/skill-catalog'
-import { calibrationPrompts } from '@/data/calibration-prompts'
 import CalibrationPrompt from './calibration-prompt'
 import SkillRatingRow from './skill-rating-row'
-import ExperienceSelector from './experience-selector'
 import SkipCategoryButton from './skip-category-button'
 
 interface CategoryStepProps {
   category: SkillCategory
   ratings: Record<string, number>
-  experience: Record<string, number>
   isSkipped: boolean
+  calibrationPrompt?: string
   onRatingChange: (skillId: string, value: number) => void
-  onExperienceChange: (skillId: string, value: number) => void
   onSkip: () => void
   onUnskip: () => void
 }
@@ -19,15 +16,12 @@ interface CategoryStepProps {
 export default function CategoryStep({
   category,
   ratings,
-  experience,
   isSkipped,
+  calibrationPrompt,
   onRatingChange,
-  onExperienceChange,
   onSkip,
   onUnskip,
 }: CategoryStepProps) {
-  const prompt = calibrationPrompts[category.id]
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -42,29 +36,21 @@ export default function CategoryStep({
         />
       </div>
 
-      {prompt && <CalibrationPrompt text={prompt} />}
+      {calibrationPrompt && <CalibrationPrompt text={calibrationPrompt} />}
 
       {isSkipped ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          This category has been skipped. All skills are excluded from metrics.
+          Cette catégorie a été ignorée. Toutes les compétences sont exclues des métriques.
         </div>
       ) : (
         <div className="space-y-3">
           {category.skills.map((skill) => (
-            <div key={skill.id} className="space-y-1">
-              <SkillRatingRow
-                skill={skill}
-                value={ratings[skill.id] ?? 0}
-                onChange={(value) => onRatingChange(skill.id, value)}
-              />
-              <div className="flex items-center gap-2 pl-3">
-                <span className="text-xs text-muted-foreground">Experience:</span>
-                <ExperienceSelector
-                  value={experience[skill.id] ?? 0}
-                  onChange={(value) => onExperienceChange(skill.id, value)}
-                />
-              </div>
-            </div>
+            <SkillRatingRow
+              key={skill.id}
+              skill={skill}
+              value={ratings[skill.id] ?? 0}
+              onChange={(value) => onRatingChange(skill.id, value)}
+            />
           ))}
         </div>
       )}

@@ -7,150 +7,208 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  skillsGapData,
-  type AllRatings,
-  type RiskColor,
-  type SkillGapData,
-} from '@/lib/ratings'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Download } from 'lucide-react'
+import type { TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
+import { useCatalog } from '@/hooks/use-catalog'
 
 interface SkillsGapTableProps {
-  allRatings: AllRatings
+  members: TeamMemberAggregateResponse[]
+  categories: TeamCategoryAggregateResponse[]
 }
 
-type SortKey = keyof Pick<
-  SkillGapData,
-  'skillLabel' | 'categoryLabel' | 'teamAvg' | 'countAt3Plus' | 'riskColor'
-> | 'highest' | 'lowest'
-
-type SortDir = 'asc' | 'desc'
-
-const riskBadgeStyles: Record<RiskColor, { className: string; label: string }> = {
-  red: {
-    className: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
-    label: 'High Risk',
-  },
-  yellow: {
-    className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300',
-    label: 'Medium',
-  },
-  green: {
-    className: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-    label: 'Covered',
-  },
+interface GapRow {
+  memberName: string
+  memberSlug: string
+  role: string
+  categoryId: string
+  categoryLabel: string
+  gap: number
+  avgRank: number
+  targetRank: number
 }
 
-const riskOrder: Record<RiskColor, number> = { red: 0, yellow: 1, green: 2 }
-
-function getSortValue(row: SkillGapData, key: SortKey): string | number {
-  switch (key) {
-    case 'skillLabel':
-      return row.skillLabel.toLowerCase()
-    case 'categoryLabel':
-      return row.categoryLabel.toLowerCase()
-    case 'teamAvg':
-      return row.teamAvg
-    case 'countAt3Plus':
-      return row.countAt3Plus
-    case 'highest':
-      return row.highestRater?.value ?? -1
-    case 'lowest':
-      return row.lowestRater?.value ?? -1
-    case 'riskColor':
-      return riskOrder[row.riskColor]
+function severityBadge(gap: number) {
+  if (gap >= 2) {
+    return (
+      <Badge className="bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30">
+        Critique
+      </Badge>
+    )
   }
+  if (gap >= 1) {
+    return (
+      <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+        À améliorer
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+      OK
+    </Badge>
+  )
 }
 
-export default function SkillsGapTable({ allRatings }: SkillsGapTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('skillLabel')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+/** Inline visual bar showing gap severity proportional to 0–5 scale */
+function gapBar(gap: number) {
+  const pct = Math.min((gap / 5) * 100, 100)
 
-  const data = skillsGapData(allRatings)
+  let colorClass: string
+  if (gap >= 2) {
+    colorClass = 'bg-red-500 dark:bg-red-400'
+  } else if (gap >= 1) {
+    colorClass = 'bg-amber-500 dark:bg-amber-400'
+  } else {
+    colorClass = 'bg-emerald-500 dark:bg-emerald-400'
+  }
 
-  const sorted = [...data].sort((a, b) => {
-    const aVal = getSortValue(a, sortKey)
-    const bVal = getSortValue(b, sortKey)
-    if (aVal < bVal) return sortDir === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortDir === 'asc' ? 1 : -1
-    return 0
-  })
+  return (
+    <div className="h-2 w-16 overflow-hidden rounded-full bg-secondary">
+      <div
+        className={`h-full rounded-full transition-all ${colorClass}`}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  )
+}
 
-  function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
+export default function SkillsGapTable({ members, categories }: SkillsGapTableProps) {
+  const { categories: skillCategories } = useCatalog()
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+
+  // Build flat gap rows from member topGaps
+  const gaps: GapRow[] = []
+  for (const member of members) {
+    if (!member.submittedAt) continue
+    for (const g of member.topGaps) {
+      const catInfo = categories.find((c) => c.categoryId === g.categoryId)
+      const catMeta = skillCategories.find((c) => c.id === g.categoryId)
+      if (g.gap <= 0) continue
+      gaps.push({
+        memberName: member.name,
+        memberSlug: member.slug,
+        role: member.role,
+        categoryId: g.categoryId,
+        categoryLabel: catInfo?.categoryLabel ?? catMeta?.label ?? g.categoryId,
+        gap: g.gap,
+        avgRank: member.categoryAverages[g.categoryId] ?? 0,
+        targetRank: (member.categoryAverages[g.categoryId] ?? 0) + g.gap,
+      })
     }
   }
 
-  function sortIndicator(key: SortKey) {
-    if (sortKey !== key) return null
-    return sortDir === 'asc' ? ' \u25B2' : ' \u25BC'
+  // Sort by gap descending
+  gaps.sort((a, b) => b.gap - a.gap)
+
+  const filtered = categoryFilter
+    ? gaps.filter((g) => g.categoryId === categoryFilter)
+    : gaps
+
+  // T038: Export gaps as CSV
+  const handleExport = () => {
+    const header = 'Membre,Rôle,Catégorie,Score,Cible,Écart\n'
+    const rows = filtered
+      .map(
+        (g) =>
+          `"${g.memberName}","${g.role}","${g.categoryLabel}",${g.avgRank.toFixed(1)},${g.targetRank.toFixed(1)},${g.gap.toFixed(1)}`,
+      )
+      .join('\n')
+    const csv = header + rows
+    navigator.clipboard.writeText(csv).catch(() => {
+      // Fallback: download
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'gaps-analysis.csv'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
   }
 
-  const columns: { key: SortKey; label: string }[] = [
-    { key: 'skillLabel', label: 'Skill' },
-    { key: 'categoryLabel', label: 'Category' },
-    { key: 'teamAvg', label: 'Team Avg' },
-    { key: 'countAt3Plus', label: 'At 3+' },
-    { key: 'highest', label: 'Highest' },
-    { key: 'lowest', label: 'Lowest' },
-    { key: 'riskColor', label: 'Risk' },
-  ]
+  const uniqueCategories = [...new Set(gaps.map((g) => g.categoryId))]
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Skills Gap Analysis</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {columns.map((col) => (
-                <TableHead key={col.key}>
-                  <button
-                    type="button"
-                    className="cursor-pointer"
-                    onClick={() => handleSort(col.key)}
-                  >
-                    {col.label}
-                    {sortIndicator(col.key)}
-                  </button>
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((row) => {
-              const badge = riskBadgeStyles[row.riskColor]
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Analyse des lacunes</CardTitle>
+        <div className="flex items-center gap-2">
+          {/* T037: Category filter */}
+          <select
+            className="rounded-md border bg-background px-2 py-1 text-sm"
+            value={categoryFilter ?? ''}
+            onChange={(e) => setCategoryFilter(e.target.value || null)}
+          >
+            <option value="">Toutes les catégories</option>
+            {uniqueCategories.map((catId) => {
+              const catMeta = skillCategories.find((c) => c.id === catId)
               return (
-                <TableRow key={row.skillId}>
-                  <TableCell>{row.skillLabel}</TableCell>
-                  <TableCell>{row.categoryLabel}</TableCell>
-                  <TableCell>{row.teamAvg.toFixed(1)}</TableCell>
-                  <TableCell>{row.countAt3Plus}</TableCell>
-                  <TableCell>
-                    {row.highestRater
-                      ? `${row.highestRater.name} (${row.highestRater.value})`
-                      : '\u2014'}
-                  </TableCell>
-                  <TableCell>
-                    {row.lowestRater
-                      ? `${row.lowestRater.name} (${row.lowestRater.value})`
-                      : '\u2014'}
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={badge.className}>{badge.label}</Badge>
-                  </TableCell>
-                </TableRow>
+                <option key={catId} value={catId}>
+                  {catMeta?.emoji} {catMeta?.label ?? catId}
+                </option>
               )
             })}
-          </TableBody>
-        </Table>
+          </select>
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-2">
+            <Download className="h-3.5 w-3.5" />
+            Exporter
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {filtered.length === 0 ? (
+          <p className="py-8 text-center text-muted-foreground">
+            Aucune lacune détectée — tous les membres atteignent leurs objectifs.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Membre</TableHead>
+                <TableHead>Rôle</TableHead>
+                <TableHead>Catégorie</TableHead>
+                <TableHead className="text-right">Score</TableHead>
+                <TableHead className="text-right">Cible</TableHead>
+                <TableHead className="text-right">Écart</TableHead>
+                <TableHead>Sévérité</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((row, i) => (
+                <TableRow key={`${row.memberSlug}-${row.categoryId}-${i}`}>
+                  <TableCell className="font-medium">
+                    <a
+                      href={`/dashboard/${row.memberSlug}`}
+                      className="hover:text-primary hover:underline"
+                    >
+                      {row.memberName}
+                    </a>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{row.role}</TableCell>
+                  <TableCell>{row.categoryLabel}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.avgRank.toFixed(1)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.targetRank.toFixed(1)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-semibold">
+                    {row.gap.toFixed(1)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {severityBadge(row.gap)}
+                      {gapBar(row.gap)}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   )
