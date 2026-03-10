@@ -1,5 +1,4 @@
-import { useState, useCallback } from 'react'
-import { Button } from '@/components/ui/button'
+import { useState, useCallback, useEffect } from 'react'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillForm } from '@/hooks/use-skill-form'
 import { useAutosave } from '@/hooks/use-autosave'
@@ -9,13 +8,25 @@ import ProgressBar from './progress-bar'
 import type { StepInfo } from './progress-bar'
 import CategoryStep from './category-step'
 import ReviewStep from './review-step'
-import { ArrowLeft, ChevronLeft, ChevronRight, Send } from 'lucide-react'
+
+export interface WizardNavigation {
+  step: number
+  isFirstStep: boolean
+  isReview: boolean
+  editingFromReview: boolean
+  submitting: boolean
+  onPrev: () => void
+  onNext: () => void
+  onBackToReview: () => void
+  onSubmit: () => void
+}
 
 interface SkillFormWizardProps {
   slug: string
   initialData: SkillFormValues
   onSubmit: (data: SkillFormValues) => Promise<void>
   submitting: boolean
+  onNavigationChange?: (nav: WizardNavigation) => void
 }
 
 export default function SkillFormWizard({
@@ -23,6 +34,7 @@ export default function SkillFormWizard({
   initialData,
   onSubmit,
   submitting,
+  onNavigationChange,
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
@@ -126,6 +138,21 @@ export default function SkillFormWizard({
     await onSubmit(values)
   }
 
+  useEffect(() => {
+    onNavigationChange?.({
+      step,
+      isFirstStep: step === 0,
+      isReview: isReviewStep,
+      editingFromReview,
+      submitting,
+      onPrev: handlePrev,
+      onNext: handleNext,
+      onBackToReview: handleBackToReview,
+      onSubmit: handleSubmit,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, isReviewStep, editingFromReview, submitting])
+
   return (
     <div className="space-y-6">
       <ProgressBar
@@ -152,7 +179,7 @@ export default function SkillFormWizard({
             category={category}
             ratings={ratings}
             isSkipped={isSkipped(category.id)}
-            calibrationPrompt={calibrationPrompts[category.id]?.text}
+            calibrationPrompt={calibrationPrompts[category.id]}
             onRatingChange={setRating}
             onSkip={() => toggleSkipCategory(category.id)}
             onUnskip={() => toggleSkipCategory(category.id)}
@@ -160,44 +187,6 @@ export default function SkillFormWizard({
         )
       )}
 
-      <div className="flex items-center justify-between border-t pt-4">
-        {editingFromReview && !isReviewStep ? (
-          <Button type="button" onClick={handleBackToReview} className="gap-2 mx-auto">
-            <ArrowLeft className="h-4 w-4" />
-            Retour au récapitulatif
-          </Button>
-        ) : (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handlePrev}
-              disabled={step === 0}
-              className="gap-2"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Retour
-            </Button>
-
-            {isReviewStep ? (
-              <Button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="gap-2"
-              >
-                <Send className="h-4 w-4" />
-                {submitting ? 'Envoi en cours...' : 'Soumettre l\u2019évaluation'}
-              </Button>
-            ) : (
-              <Button type="button" onClick={handleNext} className="gap-2">
-                Suivant
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </>
-        )}
-      </div>
     </div>
   )
 }

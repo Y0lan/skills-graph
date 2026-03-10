@@ -15,7 +15,7 @@ aggregatesRouter.get('/:slug', (req, res) => {
   const result = computeMemberAggregate(slug)
 
   if (!result) {
-    res.status(404).json({ error: 'Member not found' })
+    res.status(404).json({ error: 'Membre introuvable' })
     return
   }
 

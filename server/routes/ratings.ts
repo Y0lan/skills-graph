@@ -16,7 +16,7 @@ ratingsRouter.get('/:slug', (req, res) => {
   const { slug } = req.params
 
   if (!VALID_SLUGS.has(slug)) {
-    res.status(404).json({ error: 'Member not found' })
+    res.status(404).json({ error: 'Membre introuvable' })
     return
   }
 
@@ -40,7 +40,7 @@ ratingsRouter.put('/:slug', (req, res) => {
   const { slug } = req.params
 
   if (!VALID_SLUGS.has(slug)) {
-    res.status(404).json({ error: 'Member not found' })
+    res.status(404).json({ error: 'Membre introuvable' })
     return
   }
 
@@ -48,13 +48,13 @@ ratingsRouter.put('/:slug', (req, res) => {
 
   // Validate ratings
   if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
-    res.status(400).json({ error: 'Invalid ratings: must be an object' })
+    res.status(400).json({ error: 'Évaluations invalides : doit être un objet' })
     return
   }
 
   for (const [, value] of Object.entries(ratings)) {
     if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 5) {
-      res.status(400).json({ error: 'Invalid ratings: values must be integers 0-5' })
+      res.status(400).json({ error: 'Évaluations invalides : les valeurs doivent être des entiers entre 0 et 5' })
       return
     }
   }
@@ -62,13 +62,13 @@ ratingsRouter.put('/:slug', (req, res) => {
   // Validate experience (optional)
   const expObj = experience ?? {}
   if (typeof expObj !== 'object' || Array.isArray(expObj)) {
-    res.status(400).json({ error: 'Invalid experience: must be an object' })
+    res.status(400).json({ error: 'Expérience invalide : doit être un objet' })
     return
   }
 
   for (const [, value] of Object.entries(expObj)) {
     if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 4) {
-      res.status(400).json({ error: 'Invalid experience: values must be integers 0-4' })
+      res.status(400).json({ error: 'Expérience invalide : les valeurs doivent être des entiers entre 0 et 4' })
       return
     }
   }
@@ -76,7 +76,7 @@ ratingsRouter.put('/:slug', (req, res) => {
   // Validate skippedCategories (optional)
   const skipped = skippedCategories ?? []
   if (!Array.isArray(skipped)) {
-    res.status(400).json({ error: 'Invalid skippedCategories: must be an array' })
+    res.status(400).json({ error: 'Catégories ignorées invalides : doit être un tableau' })
     return
   }
 
@@ -90,7 +90,7 @@ ratingsRouter.delete('/:slug', (req, res) => {
   const { slug } = req.params
 
   if (!VALID_SLUGS.has(slug)) {
-    res.status(404).json({ error: 'Member not found' })
+    res.status(404).json({ error: 'Membre introuvable' })
     return
   }
 
@@ -103,14 +103,14 @@ ratingsRouter.post('/:slug/submit', (req, res) => {
   const { slug } = req.params
 
   if (!VALID_SLUGS.has(slug)) {
-    res.status(404).json({ error: 'Member not found' })
+    res.status(404).json({ error: 'Membre introuvable' })
     return
   }
 
   const memberData = getEvaluation(slug)
 
   if (!memberData || Object.keys(memberData.ratings).length === 0) {
-    res.status(400).json({ error: 'No ratings to submit' })
+    res.status(400).json({ error: 'Aucune évaluation à soumettre' })
     return
   }
 

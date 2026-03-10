@@ -7,7 +7,7 @@ interface CategoryStepProps {
   category: SkillCategory
   ratings: Record<string, number>
   isSkipped: boolean
-  calibrationPrompt?: string
+  calibrationPrompt?: { text: string; tools?: string[] }
   onRatingChange: (skillId: string, value: number) => void
   onSkip: () => void
   onUnskip: () => void
@@ -36,7 +36,14 @@ export default function CategoryStep({
         />
       </div>
 
-      {calibrationPrompt && <CalibrationPrompt text={calibrationPrompt} />}
+      {calibrationPrompt && (
+        <CalibrationPrompt
+          text={calibrationPrompt.text}
+          categoryEmoji={category.emoji}
+          categoryLabel={category.label}
+          tools={calibrationPrompt.tools}
+        />
+      )}
 
       {isSkipped ? (
         <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">

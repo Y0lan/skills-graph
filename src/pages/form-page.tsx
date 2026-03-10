@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { useRatings } from '@/hooks/use-ratings'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
+import type { WizardNavigation } from '@/components/form/skill-form-wizard'
 import AppHeader from '@/components/app-header'
 import ResetConfirmDialog from '@/components/reset-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { CheckCircle2, LayoutDashboard, RotateCcw } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, LayoutDashboard, RotateCcw, Send } from 'lucide-react'
 
 export default function FormPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -18,6 +19,11 @@ export default function FormPage() {
   const [resetKey, setResetKey] = useState(0)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
+
+  const handleNavigationChange = useCallback((nav: WizardNavigation) => {
+    setWizardNav(nav)
+  }, [])
 
   useEffect(() => {
     if (slug && member) {
@@ -30,12 +36,12 @@ export default function FormPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Card className="max-w-md">
           <CardContent className="p-8 text-center">
-            <h1 className="text-2xl font-bold">Member not found</h1>
+            <h1 className="text-2xl font-bold">Membre introuvable</h1>
             <p className="mt-2 text-muted-foreground">
-              The link you followed does not match any team member.
+              Le lien suivi ne correspond à aucun membre de l'équipe.
             </p>
             <a href="/dashboard" className="mt-4 inline-block text-primary underline">
-              Go to Dashboard
+              Aller au tableau de bord
             </a>
           </CardContent>
         </Card>
@@ -46,7 +52,7 @@ export default function FormPage() {
   if (loading && !ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading your ratings...</p>
+        <p className="text-muted-foreground">Chargement de vos évaluations...</p>
       </div>
     )
   }
@@ -56,7 +62,7 @@ export default function FormPage() {
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Card className="max-w-md">
           <CardContent className="p-8 text-center">
-            <h1 className="text-xl font-bold text-destructive">Error</h1>
+            <h1 className="text-xl font-bold text-destructive">Erreur</h1>
             <p className="mt-2 text-muted-foreground">{error}</p>
           </CardContent>
         </Card>
@@ -70,23 +76,23 @@ export default function FormPage() {
         <Card className="max-w-md">
           <CardContent className="flex flex-col items-center gap-4 p-8">
             <CheckCircle2 className="h-12 w-12 text-green-500" />
-            <h1 className="text-2xl font-bold">Ratings submitted!</h1>
+            <h1 className="text-2xl font-bold">Évaluation soumise !</h1>
             <p className="text-center text-muted-foreground">
-              Thank you, {member.name}. Your skill self-assessment has been saved.
-              You can revisit this link anytime to update your ratings.
+              Merci, {member.name}. Votre auto-évaluation a été enregistrée.
+              Vous pouvez revenir à tout moment pour modifier vos notes.
             </p>
             <div className="flex gap-3">
               <a
                 href={`/dashboard/${slug}`}
                 className="text-sm text-primary underline"
               >
-                View your dashboard
+                Voir mon tableau de bord
               </a>
               <button
                 onClick={() => setSubmitted(false)}
                 className="text-sm text-muted-foreground underline"
               >
-                Edit ratings
+                Modifier mes notes
               </button>
             </div>
           </CardContent>
@@ -119,7 +125,7 @@ export default function FormPage() {
               className="gap-1.5"
             >
               <RotateCcw className="h-4 w-4" />
-              Réinitialiser
+              <span className="hidden sm:inline">Réinitialiser</span>
             </Button>
             <Button
               variant="outline"
@@ -128,10 +134,59 @@ export default function FormPage() {
               render={<Link to={`/dashboard/${slug}`} />}
             >
               <LayoutDashboard className="h-4 w-4" />
-              Dashboard
+              <span className="hidden sm:inline">Tableau de bord</span>
             </Button>
           </>
         }
+        headerNav={wizardNav && (
+          <div className="flex items-center gap-2">
+            {wizardNav.editingFromReview ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={wizardNav.onBackToReview}
+                className="gap-1.5"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Récapitulatif
+              </Button>
+            ) : (
+              <>
+                {!wizardNav.isFirstStep && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={wizardNav.onPrev}
+                    className="gap-1.5"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Retour</span>
+                  </Button>
+                )}
+                {wizardNav.isReview ? (
+                  <Button
+                    size="sm"
+                    onClick={wizardNav.onSubmit}
+                    disabled={wizardNav.submitting}
+                    className="gap-1.5"
+                  >
+                    <Send className="h-4 w-4" />
+                    {wizardNav.submitting ? 'Envoi...' : 'Soumettre'}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={wizardNav.onNext}
+                    className="gap-1.5"
+                  >
+                    Suivant
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        )}
       />
       <ResetConfirmDialog
         open={resetDialogOpen}
@@ -147,7 +202,7 @@ export default function FormPage() {
           </p>
           {data?.submittedAt && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Last submitted: {new Date(data.submittedAt).toLocaleString()}
+              Dernière soumission : {new Date(data.submittedAt).toLocaleString('fr-FR')}
             </p>
           )}
         </div>
@@ -165,6 +220,7 @@ export default function FormPage() {
             const result = await submitRatings(slug!, payload)
             if (result) setSubmitted(true)
           }}
+          onNavigationChange={handleNavigationChange}
         />
       </div>
     </div>

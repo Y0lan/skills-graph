@@ -137,7 +137,7 @@ export default function DashboardPage() {
                 <TabsTrigger value="profil">Mon profil</TabsTrigger>
               )}
               <TabsTrigger value="equipe">Équipe</TabsTrigger>
-              <TabsTrigger value="expert">Expert Finder</TabsTrigger>
+              <TabsTrigger value="expert">Trouver un expert</TabsTrigger>
             </TabsList>
 
             {/* T015: Personal Overview tab */}

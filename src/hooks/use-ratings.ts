@@ -28,13 +28,13 @@ export function useRatings(): UseRatingsReturn {
     try {
       const res = await fetch(`/api/ratings/${slug}`)
       if (!res.ok) {
-        throw new Error(res.status === 404 ? 'Member not found' : 'Failed to fetch ratings')
+        throw new Error(res.status === 404 ? 'Membre introuvable' : 'Impossible de charger les évaluations')
       }
       const json = await res.json()
       setData(json)
       return json
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
       setError(msg)
       return null
     } finally {
@@ -62,14 +62,14 @@ export function useRatings(): UseRatingsReturn {
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}))
           throw new Error(
-            (errBody as Record<string, string>).error ?? 'Failed to submit ratings',
+            (errBody as Record<string, string>).error ?? 'Impossible de soumettre les évaluations',
           )
         }
         const json = await res.json()
         setData(json)
         return json
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error'
+        const msg = err instanceof Error ? err.message : 'Erreur inconnue'
         setError(msg)
         return null
       } finally {
@@ -85,12 +85,12 @@ export function useRatings(): UseRatingsReturn {
     try {
       const res = await fetch(`/api/ratings/${slug}`, { method: 'DELETE' })
       if (!res.ok) {
-        throw new Error('Failed to reset ratings')
+        throw new Error('Impossible de réinitialiser les évaluations')
       }
       setData(null)
       return true
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
       setError(msg)
       return false
     } finally {
@@ -119,12 +119,12 @@ export function useAllRatings(): UseAllRatingsReturn {
     setError(null)
     try {
       const res = await fetch('/api/ratings')
-      if (!res.ok) throw new Error('Failed to fetch ratings')
+      if (!res.ok) throw new Error('Impossible de charger les évaluations')
       const json = await res.json()
       setData(json)
       return json
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
       setError(msg)
       return null
     } finally {
