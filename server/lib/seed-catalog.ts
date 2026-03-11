@@ -95,12 +95,7 @@ export function seedCatalog(db: Database.Database): void {
     // Categories, skills, descriptors
     for (let catIdx = 0; catIdx < catalog.categories.length; catIdx++) {
       const cat = catalog.categories[catIdx]
-      // Extract emoji from label (first character(s) before space)
-      const emojiMatch = cat.label.match(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)/u)
-      const emoji = emojiMatch?.[0] ?? ''
-      const cleanLabel = cat.label.replace(/^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)\s*/u, '')
-
-      insertCategory.run(cat.id, cleanLabel, emoji, catIdx)
+      insertCategory.run(cat.id, cat.label, '', catIdx)
 
       // Calibration prompt
       const promptText = calibrationPrompts[cat.id]

@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { Check, SkipForward } from 'lucide-react'
+import { Check, Lock, SkipForward } from 'lucide-react'
 
 export interface StepInfo {
   label: string
@@ -13,12 +13,14 @@ interface ProgressBarProps {
   currentStep: number
   steps: StepInfo[]
   onStepClick: (step: number) => void
+  lockedFromStep?: number
 }
 
 export default function ProgressBar({
   currentStep,
   steps,
   onStepClick,
+  lockedFromStep,
 }: ProgressBarProps) {
   const completedSteps = steps.filter(
     (s) => s.isSkipped || s.ratedCount === s.totalCount,
@@ -47,6 +49,7 @@ export default function ProgressBar({
         {steps.map((stepInfo, i) => {
           const isActive = i === currentStep
           const isSkipped = stepInfo.isSkipped
+          const isLocked = lockedFromStep !== undefined && i >= lockedFromStep && !isActive
           const isComplete =
             !isSkipped && stepInfo.ratedCount === stepInfo.totalCount
           // Show short label: first word only (or full if short)
@@ -56,22 +59,29 @@ export default function ProgressBar({
             <button
               key={i}
               type="button"
-              onClick={() => onStepClick(i)}
-              title={stepInfo.label}
+              onClick={() => !isLocked && onStepClick(i)}
+              title={isLocked ? `${stepInfo.label} (verrouillé)` : stepInfo.label}
               className={cn(
-                'flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer',
+                'flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-medium transition-all',
+                isLocked
+                  ? 'opacity-40 cursor-not-allowed'
+                  : 'cursor-pointer',
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30'
                   : isSkipped
                     ? 'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-400'
                     : isComplete
                       ? 'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400'
-                      : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                      : isLocked
+                        ? 'bg-muted text-muted-foreground'
+                        : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
               <span className="max-w-[5rem] truncate">{shortLabel}</span>
-              {stepInfo.isSkipped ? (
+              {isLocked ? (
+                <Lock className="h-3 w-3 shrink-0 opacity-60" />
+              ) : stepInfo.isSkipped ? (
                 <SkipForward className="h-3 w-3 shrink-0 opacity-60" />
               ) : isComplete ? (
                 <Check className="h-3 w-3 shrink-0" />

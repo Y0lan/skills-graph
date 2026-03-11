@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Table,
   TableBody,
@@ -20,14 +20,19 @@ interface SkillsGapTableProps {
 }
 
 interface GapRow {
-  memberName: string
-  memberSlug: string
-  role: string
   categoryId: string
   categoryLabel: string
   gap: number
   avgRank: number
   targetRank: number
+}
+
+interface MemberGroup {
+  memberName: string
+  memberSlug: string
+  role: string
+  worstGap: number
+  gaps: GapRow[]
 }
 
 function severityBadge(gap: number) {
@@ -52,7 +57,6 @@ function severityBadge(gap: number) {
   )
 }
 
-/** Inline visual bar showing gap severity proportional to 0–5 scale */
 function gapBar(gap: number) {
   const pct = Math.min((gap / 5) * 100, 100)
 
@@ -79,46 +83,76 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
   const { categories: skillCategories } = useCatalog()
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
 
-  // Build flat gap rows from member topGaps
-  const gaps: GapRow[] = []
-  for (const member of members) {
-    if (!member.submittedAt) continue
-    for (const g of member.topGaps) {
-      const catInfo = categories.find((c) => c.categoryId === g.categoryId)
-      const catMeta = skillCategories.find((c) => c.id === g.categoryId)
-      if (g.gap <= 0) continue
-      gaps.push({
+  // Build grouped gaps per member, sorted by worst gap first
+  const memberGroups = useMemo(() => {
+    const groups: MemberGroup[] = []
+
+    for (const member of members) {
+      if (!member.submittedAt) continue
+      const memberGaps: GapRow[] = []
+      for (const g of member.topGaps) {
+        if (g.gap <= 0) continue
+        const catInfo = categories.find((c) => c.categoryId === g.categoryId)
+        const catMeta = skillCategories.find((c) => c.id === g.categoryId)
+        const row: GapRow = {
+          categoryId: g.categoryId,
+          categoryLabel: catInfo?.categoryLabel ?? catMeta?.label ?? g.categoryId,
+          gap: g.gap,
+          avgRank: member.categoryAverages[g.categoryId] ?? 0,
+          targetRank: (member.categoryAverages[g.categoryId] ?? 0) + g.gap,
+        }
+        memberGaps.push(row)
+      }
+      if (memberGaps.length === 0) continue
+      // Sort gaps within member by gap desc
+      memberGaps.sort((a, b) => b.gap - a.gap)
+      groups.push({
         memberName: member.name,
         memberSlug: member.slug,
         role: member.role,
-        categoryId: g.categoryId,
-        categoryLabel: catInfo?.categoryLabel ?? catMeta?.label ?? g.categoryId,
-        gap: g.gap,
-        avgRank: member.categoryAverages[g.categoryId] ?? 0,
-        targetRank: (member.categoryAverages[g.categoryId] ?? 0) + g.gap,
+        worstGap: memberGaps[0].gap,
+        gaps: memberGaps,
       })
     }
-  }
 
-  // Sort by gap descending
-  gaps.sort((a, b) => b.gap - a.gap)
+    // Sort members by worst gap desc
+    groups.sort((a, b) => b.worstGap - a.worstGap)
+    return groups
+  }, [members, categories, skillCategories])
 
-  const filtered = categoryFilter
-    ? gaps.filter((g) => g.categoryId === categoryFilter)
-    : gaps
+  // Apply category filter
+  const filtered = useMemo(() => {
+    if (!categoryFilter) return memberGroups
+    return memberGroups
+      .map((g) => ({
+        ...g,
+        gaps: g.gaps.filter((r) => r.categoryId === categoryFilter),
+      }))
+      .filter((g) => g.gaps.length > 0)
+  }, [memberGroups, categoryFilter])
 
-  // T038: Export gaps as CSV
+  // All unique category IDs for filter dropdown
+  const uniqueCategories = useMemo(() => {
+    const ids = new Set<string>()
+    for (const g of memberGroups) {
+      for (const r of g.gaps) ids.add(r.categoryId)
+    }
+    return [...ids]
+  }, [memberGroups])
+
+  // CSV export
   const handleExport = () => {
     const header = 'Membre,Rôle,Catégorie,Score,Cible,Écart\n'
     const rows = filtered
-      .map(
-        (g) =>
-          `"${g.memberName}","${g.role}","${g.categoryLabel}",${g.avgRank.toFixed(1)},${g.targetRank.toFixed(1)},${g.gap.toFixed(1)}`,
+      .flatMap((g) =>
+        g.gaps.map(
+          (r) =>
+            `"${g.memberName}","${g.role}","${r.categoryLabel}",${r.avgRank.toFixed(1)},${r.targetRank.toFixed(1)},${r.gap.toFixed(1)}`,
+        ),
       )
       .join('\n')
     const csv = header + rows
     navigator.clipboard.writeText(csv).catch(() => {
-      // Fallback: download
       const blob = new Blob([csv], { type: 'text/csv' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -129,14 +163,11 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
     })
   }
 
-  const uniqueCategories = [...new Set(gaps.map((g) => g.categoryId))]
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Analyse des lacunes</CardTitle>
         <div className="flex items-center gap-2">
-          {/* T037: Category filter */}
           <select
             className="rounded-md border bg-background px-2 py-1 text-sm"
             value={categoryFilter ?? ''}
@@ -147,7 +178,7 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
               const catMeta = skillCategories.find((c) => c.id === catId)
               return (
                 <option key={catId} value={catId}>
-                  {catMeta?.emoji} {catMeta?.label ?? catId}
+                  {catMeta?.label ?? catId}
                 </option>
               )
             })}
@@ -168,7 +199,6 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
             <TableHeader>
               <TableRow>
                 <TableHead>Membre</TableHead>
-                <TableHead>Rôle</TableHead>
                 <TableHead>Catégorie</TableHead>
                 <TableHead className="text-right">Score</TableHead>
                 <TableHead className="text-right">Cible</TableHead>
@@ -177,34 +207,43 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((row, i) => (
-                <TableRow key={`${row.memberSlug}-${row.categoryId}-${i}`}>
-                  <TableCell className="font-medium">
-                    <a
-                      href={`/dashboard/${row.memberSlug}`}
-                      className="hover:text-primary hover:underline"
+              {filtered.map((group) => (
+                group.gaps.map((row, i) => (
+                  <TableRow key={`${group.memberSlug}-${row.categoryId}`}>
+                    {/* Member name only on first row, rowspan-style via conditional render */}
+                    <TableCell
+                      className={`font-medium align-top ${i > 0 ? 'border-t-0 pt-0' : ''}`}
                     >
-                      {row.memberName}
-                    </a>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{row.role}</TableCell>
-                  <TableCell>{row.categoryLabel}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.avgRank.toFixed(1)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {row.targetRank.toFixed(1)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums font-semibold">
-                    {row.gap.toFixed(1)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {severityBadge(row.gap)}
-                      {gapBar(row.gap)}
-                    </div>
-                  </TableCell>
-                </TableRow>
+                      {i === 0 ? (
+                        <div>
+                          <a
+                            href={`/dashboard/${group.memberSlug}`}
+                            className="hover:text-primary hover:underline"
+                          >
+                            {group.memberName}
+                          </a>
+                          <p className="text-xs text-muted-foreground font-normal">{group.role}</p>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{row.categoryLabel.replace(/\s*\(.*\)$/, '')}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.avgRank.toFixed(1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.targetRank.toFixed(1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold">
+                      {row.gap.toFixed(1)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {severityBadge(row.gap)}
+                        {gapBar(row.gap)}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
               ))}
             </TableBody>
           </Table>

@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import RadarChart from '@/components/radar-chart'
+import VisxRadarChart from '@/components/visx-radar-chart'
+import BarComparisonChart from '@/components/bar-comparison-chart'
+import ChartViewToggle from '@/components/chart-view-toggle'
+import { useChartView } from '@/hooks/use-chart-view'
 import type { MemberAggregateResponse } from '@/lib/types'
 
 interface PersonalOverviewProps {
@@ -11,6 +14,7 @@ interface PersonalOverviewProps {
 export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
+  const [view, setView] = useChartView()
 
   // Empty state: no ratings at all
   if (!hasRatings) {
@@ -40,13 +44,13 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
   const isDraft = !submittedAt
 
   const data = categories.map((cat) => ({
-    label: cat.categoryLabel,
+    label: cat.categoryLabel.replace(/\s*\(.*\)$/, ''),
     value: cat.avgRank,
     fullMark: 5,
   }))
 
   const overlayData = categories.map((cat) => ({
-    label: cat.categoryLabel,
+    label: cat.categoryLabel.replace(/\s*\(.*\)$/, ''),
     value: cat.teamAvgRank,
     fullMark: 5,
   }))
@@ -54,25 +58,37 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <CardTitle>Votre profil — {memberName}</CardTitle>
-          {isDraft && (
-            <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-              Brouillon
-            </Badge>
-          )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CardTitle>Votre profil — {memberName}</CardTitle>
+            {isDraft && (
+              <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                Brouillon
+              </Badge>
+            )}
+          </div>
+          <ChartViewToggle view={view} onChange={setView} />
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <RadarChart
-          data={data}
-          overlay={overlayData}
-          height={400}
-          primaryLabel="Vous"
-          overlayLabel="Moyenne équipe"
-          showOverlayToggle
-          showExport
-        />
+        {view === 'radar' ? (
+          <VisxRadarChart
+            data={data}
+            overlay={overlayData}
+            height={400}
+            primaryLabel="Vous"
+            overlayLabel="Moyenne équipe"
+            showOverlayToggle
+            showExport
+          />
+        ) : (
+          <BarComparisonChart
+            data={data}
+            overlay={overlayData}
+            primaryLabel="Vous"
+            overlayLabel="Moyenne équipe"
+          />
+        )}
 
         {topGaps.length > 0 && (
           <div>

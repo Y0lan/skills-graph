@@ -37,7 +37,6 @@ export default function CategorySummaryCards({
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {categories.map((cat) => {
         const catInfo = skillCategories.find((c) => c.id === cat.categoryId)
-        const emoji = catInfo?.emoji ?? ''
         const skills = catInfo?.skills ?? []
         const target = categoryTargets[cat.categoryId] ?? 3
         const avgPct = Math.min((cat.teamAvgRank / 5) * 100, 100)
@@ -48,7 +47,7 @@ export default function CategorySummaryCards({
             <CardHeader className="border-b border-border/50 bg-accent/30 pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">
-                  {emoji} {cat.categoryLabel}
+                  {cat.categoryLabel}
                 </CardTitle>
                 <Tooltip>
                   <TooltipTrigger className="rounded-full p-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground">

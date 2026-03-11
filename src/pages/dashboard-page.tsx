@@ -14,6 +14,7 @@ const CategoryDeepDive = lazy(() => import('@/components/dashboard/category-deep
 const SkillsGapTable = lazy(() => import('@/components/dashboard/skills-gap-table'))
 const TeamMembersGrid = lazy(() => import('@/components/dashboard/team-members-grid'))
 const ExpertFinder = lazy(() => import('@/components/dashboard/expert-finder'))
+const SkillHeatmap = lazy(() => import('@/components/skill-heatmap'))
 
 function useMemberAggregate(slug: string | undefined) {
   const [data, setData] = useState<(MemberAggregateResponse & { hasRatings?: boolean }) | null>(null)
@@ -135,6 +136,7 @@ export default function DashboardPage() {
                 <TabsTrigger value="profil">Mon profil</TabsTrigger>
               )}
               <TabsTrigger value="equipe">Équipe</TabsTrigger>
+              <TabsTrigger value="cartographie">Cartographie</TabsTrigger>
               <TabsTrigger value="expert">Trouver un expert</TabsTrigger>
             </TabsList>
 
@@ -174,6 +176,15 @@ export default function DashboardPage() {
                     />
                     <TeamMembersGrid members={teamAggregate.members} />
                   </>
+                )}
+              </Suspense>
+            </TabsContent>
+
+            {/* Cartographie (heatmap) tab */}
+            <TabsContent value="cartographie" className="space-y-8 pt-6">
+              <Suspense fallback={tabFallback}>
+                {teamAggregate && hasTeamData && (
+                  <SkillHeatmap members={teamAggregate.members} />
                 )}
               </Suspense>
             </TabsContent>

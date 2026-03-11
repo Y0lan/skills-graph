@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { teamOrder } from '@/data/team-roster'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
-import RadarChart from '@/components/radar-chart'
+import VisxRadarChart from '@/components/visx-radar-chart'
 import { useCatalog } from '@/hooks/use-catalog'
 
 interface TeamMembersGridProps {
@@ -28,7 +28,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
             const hasSubmitted = member.submittedAt !== null
             const radarData = hasSubmitted
               ? skillCategories.map((cat) => ({
-                  label: cat.emoji,
+                  label: cat.label.split(/[&(]/)[0].trim(),
                   value: member.categoryAverages[cat.id] ?? 0,
                   fullMark: 5,
                 }))
@@ -40,7 +40,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                   const catMeta = skillCategories.find((c) => c.id === s.categoryId)
                   return {
                     categoryId: s.categoryId,
-                    emoji: catMeta?.emoji ?? '',
+                    shortLabel: catMeta?.label.split(/[&(]/)[0].trim() ?? '',
                     avg: s.avg,
                   }
                 })
@@ -53,7 +53,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
               >
                 <CardContent className="flex flex-col items-center gap-2 pt-4">
                   {hasSubmitted && radarData.length > 0 && (
-                    <RadarChart data={radarData} height={180} compact />
+                    <VisxRadarChart data={radarData} height={180} compact />
                   )}
                   <div className="text-center">
                     <a
@@ -76,8 +76,9 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                           <Badge
                             key={`str-${s.categoryId}`}
                             className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs"
+                            title={s.shortLabel}
                           >
-                            {s.emoji} {s.avg.toFixed(1)}
+                            {s.shortLabel} {s.avg.toFixed(1)}
                           </Badge>
                         ))}
                         {/* Gap badges */}
@@ -88,7 +89,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                               key={`gap-${g.categoryId}`}
                               className="bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 text-xs"
                             >
-                              {gapMeta?.emoji ?? g.categoryId} -{g.gap.toFixed(1)}
+                              {gapMeta?.label.split(/[&(]/)[0].trim() ?? g.categoryId} -{g.gap.toFixed(1)}
                             </Badge>
                           )
                         })}

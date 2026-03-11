@@ -28,7 +28,7 @@
   "categories": [
     {
       "id": "core-engineering",
-      "label": "🔥 Socle Technique",
+      "label": "Socle Technique",
       "skills": [
         {
           "id": "java",
@@ -118,7 +118,7 @@
     },
     {
       "id": "backend-integration",
-      "label": "⚙️ Backend & Services d’Intégration",
+      "label": "Backend & Services d’Intégration",
       "skills": [
         {
           "id": "spring-boot",
@@ -220,7 +220,7 @@
     },
     {
       "id": "frontend-ui",
-      "label": "🎨 Frontend & Ingénierie UI",
+      "label": "Frontend & Ingénierie UI",
       "skills": [
         {
           "id": "angular",
@@ -298,7 +298,7 @@
     },
     {
       "id": "platform-engineering",
-      "label": "☁️ Ingénierie Plateforme",
+      "label": "Ingénierie Plateforme",
       "skills": [
         {
           "id": "gitlab-ci",
@@ -388,7 +388,7 @@
     },
     {
       "id": "observability-reliability",
-      "label": "🔭 Observabilité & Fiabilité",
+      "label": "Observabilité & Fiabilité",
       "skills": [
         {
           "id": "prometheus",
@@ -478,7 +478,7 @@
     },
     {
       "id": "security-compliance",
-      "label": "🔒 Sécurité & Conformité",
+      "label": "Sécurité & Conformité",
       "skills": [
         {
           "id": "iam-keycloak",
@@ -568,7 +568,7 @@
     },
     {
       "id": "architecture-governance",
-      "label": "🏛️ Architecture, Gouvernance & Delivery",
+      "label": "Architecture, Gouvernance & Delivery",
       "skills": [
         {
           "id": "c4-structurizr",
@@ -682,7 +682,7 @@
     },
     {
       "id": "soft-skills",
-      "label": "🤝 Soft Skills & Collaboration",
+      "label": "Soft Skills & Collaboration",
       "skills": [
         {
           "id": "technical-writing",
@@ -760,7 +760,7 @@
     },
     {
       "id": "domain-knowledge",
-      "label": "📋 Connaissances Métier (CAFAT / SINAPSE)",
+      "label": "Connaissances Métier (CAFAT / SINAPSE)",
       "skills": [
         {
           "id": "reglementation-sociale",

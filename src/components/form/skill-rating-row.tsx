@@ -4,9 +4,10 @@ import { Check } from 'lucide-react'
 
 interface SkillRatingRowProps {
   skill: Skill
-  value: number
+  value: number | undefined
   onChange: (value: number) => void
   disabled?: boolean
+  showError?: boolean
 }
 
 /**
@@ -65,11 +66,17 @@ const levels = [
   },
 ]
 
-export default function SkillRatingRow({ skill, value, onChange, disabled }: SkillRatingRowProps) {
-  const hasSelection = value >= 0
+export default function SkillRatingRow({ skill, value, onChange, disabled, showError }: SkillRatingRowProps) {
+  const hasError = showError && value === undefined
 
   return (
-    <div className="space-y-1.5">
+    <div
+      data-skill={skill.id}
+      className={cn(
+        'space-y-1.5 rounded-lg p-3 -mx-3 transition-all duration-200',
+        hasError && 'bg-red-500/[0.06] border border-red-400/40 dark:bg-red-500/[0.08] dark:border-red-500/30',
+      )}
+    >
       <h3 className="text-sm font-semibold tracking-tight">{skill.label}</h3>
       <div className="grid gap-1.5">
         {skill.descriptors.map((desc) => {

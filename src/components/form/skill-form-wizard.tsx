@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillForm } from '@/hooks/use-skill-form'
 import { useAutosave } from '@/hooks/use-autosave'
@@ -47,6 +47,8 @@ export default function SkillFormWizard({
   useAutosave({ control: form.control, slug })
 
   const [editingFromReview, setEditingFromReview] = useState(false)
+  const [unratedSkillIds, setUnratedSkillIds] = useState<string[]>([])
+  const [validationMessage, setValidationMessage] = useState<string>()
 
   const [step, setStep] = useState(() => {
     // Resume at first incomplete step
@@ -63,6 +65,28 @@ export default function SkillFormWizard({
 
   const isReviewStep = step === REVIEW_STEP
   const category = !isReviewStep ? skillCategories[step] : null
+
+  // Clear validation errors when ratings change or step changes
+  useEffect(() => {
+    setUnratedSkillIds([])
+    setValidationMessage(undefined)
+  }, [ratings, step])
+
+  // Scroll to top on step change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [step])
+
+  // Compute highest reachable step for locking
+  const highestReachableStep = useMemo(() => {
+    for (let i = 0; i < TOTAL_CATEGORY_STEPS; i++) {
+      const cat = skillCategories[i]
+      if (isSkipped(cat.id)) continue
+      const allRated = cat.skills.every((s) => ratings[s.id] !== undefined)
+      if (!allRated) return i
+    }
+    return REVIEW_STEP
+  }, [ratings, skillCategories, isSkipped, TOTAL_CATEGORY_STEPS, REVIEW_STEP])
 
   // Build step info for progress bar
   const progressSteps: StepInfo[] = [
@@ -87,25 +111,27 @@ export default function SkillFormWizard({
     },
   ]
 
-  // Validate current step before advancing (T017)
+  // Validate current step before advancing
   const validateCurrentStep = useCallback((): boolean => {
     if (isReviewStep) return true
     const cat = skillCategories[step]
     if (!cat || isSkipped(cat.id)) return true
 
-    const unratedSkills = cat.skills.filter(
-      (s) => ratings[s.id] === undefined || ratings[s.id] < 0,
-    )
+    const unrated = cat.skills.filter((s) => ratings[s.id] === undefined)
 
-    if (unratedSkills.length > 0) {
-      // Scroll to first unrated skill (T018)
-      const firstUnrated = unratedSkills[0]
-      const el = document.querySelector(`[data-skill="${firstUnrated.id}"]`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
+    if (unrated.length > 0) {
+      const ids = unrated.map((s) => s.id)
+      setUnratedSkillIds(ids)
+      setValidationMessage(
+        `Vous avez oublié de répondre à ${unrated.length} question${unrated.length > 1 ? 's' : ''}`,
+      )
+      // Scroll to first unrated skill
+      const el = document.querySelector(`[data-skill="${ids[0]}"]`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return false
     }
+    setUnratedSkillIds([])
+    setValidationMessage(undefined)
     return true
   }, [step, ratings, isSkipped, isReviewStep, skillCategories])
 
@@ -119,12 +145,14 @@ export default function SkillFormWizard({
   }
 
   const handleGoToStep = (targetStep: number) => {
-    if (targetStep >= 0 && targetStep <= REVIEW_STEP) {
-      if (step === REVIEW_STEP && targetStep !== REVIEW_STEP) {
-        setEditingFromReview(true)
-      }
-      setStep(targetStep)
+    if (targetStep < 0 || targetStep > REVIEW_STEP) return
+    // Allow backward navigation always
+    // Allow forward navigation only up to highestReachableStep (unless editing from review)
+    if (targetStep > step && !editingFromReview && targetStep > highestReachableStep) return
+    if (step === REVIEW_STEP && targetStep !== REVIEW_STEP) {
+      setEditingFromReview(true)
     }
+    setStep(targetStep)
   }
 
   const handleBackToReview = () => {
@@ -151,7 +179,7 @@ export default function SkillFormWizard({
       onSubmit: handleSubmit,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, isReviewStep, editingFromReview, submitting])
+  }, [step, isReviewStep, editingFromReview, submitting, ratings, skippedCategories])
 
   return (
     <div className="space-y-6">
@@ -159,6 +187,7 @@ export default function SkillFormWizard({
         currentStep={step}
         steps={progressSteps}
         onStepClick={handleGoToStep}
+        lockedFromStep={editingFromReview ? undefined : highestReachableStep + 1}
       />
 
       <RatingLegend ratingScale={ratingScale} />
@@ -181,6 +210,8 @@ export default function SkillFormWizard({
             ratings={ratings}
             isSkipped={isSkipped(category.id)}
             calibrationPrompt={calibrationPrompts[category.id]}
+            validationMessage={validationMessage}
+            unratedSkillIds={unratedSkillIds}
             onRatingChange={setRating}
             onSkip={() => toggleSkipCategory(category.id)}
             onUnskip={() => toggleSkipCategory(category.id)}

@@ -35,6 +35,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -52,7 +53,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
           label: skill.label,
           categoryId: cat.id,
           categoryLabel: cat.label,
-          categoryEmoji: cat.emoji,
+          categoryEmoji: '',
         })),
       )
       .sort((a, b) => a.label.localeCompare(b.label, 'fr'))
@@ -66,6 +67,13 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
       (s) => s.label.toLowerCase().includes(q) || s.categoryLabel.toLowerCase().includes(q),
     )
   }, [allSkills, searchQuery])
+
+  // Skills for the active category in the browse navigation
+  const activeCategorySkills = useMemo(() => {
+    if (!activeCategoryId) return []
+    const cat = skillCategories.find((c) => c.id === activeCategoryId)
+    return cat?.skills ?? []
+  }, [activeCategoryId, skillCategories])
 
   // Ranking results
   const results: ExpertResult[] = useMemo(
@@ -91,7 +99,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
   const hasResults = results.some((r) => r.matchCount > 0)
 
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Search className="h-5 w-5" />
@@ -127,7 +135,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
           {isSearchFocused && (
             <div
               ref={dropdownRef}
-              className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover shadow-md"
+              className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border bg-popover shadow-lg"
             >
               {filteredSkills.length === 0 ? (
                 <div className="px-3 py-6 text-center text-sm text-muted-foreground">
@@ -159,7 +167,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
                           />
                           <span className="flex-1">{skill.label}</span>
                           <span className="text-xs text-muted-foreground">
-                            {skill.categoryEmoji} {skill.categoryLabel}
+                            {skill.categoryLabel}
                           </span>
                         </button>
                       </li>
@@ -167,6 +175,67 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
                   })}
                 </ul>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Category > Skill browse navigation */}
+        <div className="space-y-2">
+          {/* Category pills */}
+          <div className="flex flex-wrap gap-1.5">
+            {skillCategories.map((cat) => {
+              const isActive = activeCategoryId === cat.id
+              const selectedInCat = cat.skills.filter((s) => selectedSkillIds.includes(s.id)).length
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveCategoryId(isActive ? null : cat.id)}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all',
+                    isActive
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                  )}
+                >
+                  <span>{cat.label}</span>
+                  {selectedInCat > 0 && (
+                    <span className={cn(
+                      'flex h-4 min-w-4 items-center justify-center rounded-full text-[10px] font-bold',
+                      isActive
+                        ? 'bg-primary-foreground/20 text-primary-foreground'
+                        : 'bg-primary/15 text-primary',
+                    )}>
+                      {selectedInCat}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Skill chips for the active category */}
+          {activeCategoryId && activeCategorySkills.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/50 bg-muted/30 p-2.5">
+              {activeCategorySkills.map((skill) => {
+                const isSelected = selectedSkillIds.includes(skill.id)
+                return (
+                  <button
+                    key={skill.id}
+                    type="button"
+                    onClick={() => toggleSkill(skill.id)}
+                    className={cn(
+                      'flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-all',
+                      isSelected
+                        ? 'border-primary/40 bg-primary/10 text-primary dark:border-primary/30'
+                        : 'border-border/60 bg-background text-foreground/70 hover:border-border hover:bg-accent',
+                    )}
+                  >
+                    {isSelected && <Check className="h-3 w-3" />}
+                    {skill.label}
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
@@ -194,7 +263,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
         )}
 
         {/* Empty state: no skills selected */}
-        {selectedSkillIds.length === 0 && (
+        {selectedSkillIds.length === 0 && !activeCategoryId && (
           <div className="rounded-lg border border-dashed p-8 text-center">
             <p className="text-muted-foreground">
               Sélectionnez des compétences pour trouver les experts de l'équipe
@@ -213,7 +282,7 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
 
         {/* Results table */}
         {selectedSkillIds.length > 0 && hasResults && (
-          <div className="rounded-md border">
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
