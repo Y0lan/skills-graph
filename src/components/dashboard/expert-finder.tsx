@@ -282,19 +282,14 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
 
         {/* Results table */}
         {selectedSkillIds.length > 0 && hasResults && (
-          <div className="overflow-x-auto rounded-md border">
+          <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10 text-center">#</TableHead>
                   <TableHead>Membre</TableHead>
-                  <TableHead>Rôle</TableHead>
-                  {selectedSkillIds.map((skillId) => (
-                    <TableHead key={skillId} className="text-center">
-                      {skillLabel(skillId)}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-center">Moyenne</TableHead>
+                  <TableHead>Compétences</TableHead>
+                  <TableHead className="text-center">Moy.</TableHead>
                   <TableHead className="text-center">Couverture</TableHead>
                 </TableRow>
               </TableHeader>
@@ -304,29 +299,36 @@ export default function ExpertFinder({ members }: ExpertFinderProps) {
                     <TableCell className="text-center font-medium text-muted-foreground">
                       {index + 1}
                     </TableCell>
-                    <TableCell className="font-medium">{result.name}</TableCell>
-                    <TableCell className="text-muted-foreground">{result.role}</TableCell>
-                    {selectedSkillIds.map((skillId) => {
-                      const score = result.skillScores[skillId]
-                      return (
-                        <TableCell key={skillId} className="text-center">
-                          <span
-                            className={cn(
-                              'inline-flex h-6 min-w-8 items-center justify-center rounded-md px-1.5 text-xs font-medium',
-                              scoreColorClass(score),
-                            )}
-                          >
-                            {score !== null ? score.toFixed(1) : '—'}
-                          </span>
-                        </TableCell>
-                      )
-                    })}
+                    <TableCell>
+                      <div className="font-medium">{result.name}</div>
+                      {result.role && (
+                        <div className="text-xs text-muted-foreground">{result.role}</div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedSkillIds.map((skillId) => {
+                          const score = result.skillScores[skillId]
+                          return (
+                            <span
+                              key={skillId}
+                              className={cn(
+                                'inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium',
+                                scoreColorClass(score),
+                              )}
+                            >
+                              {skillLabel(skillId)}: {score !== null ? score.toFixed(1) : '—'}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-center tabular-nums font-semibold">
                       {result.matchCount > 0 ? result.averageScore.toFixed(1) : '—'}
                     </TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline" className="text-xs">
-                        {result.matchCount}/{result.totalSelected} compétences évaluées
+                        {result.matchCount}/{result.totalSelected}
                       </Badge>
                     </TableCell>
                   </TableRow>
