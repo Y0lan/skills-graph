@@ -3,6 +3,7 @@ export interface TeamMember {
   name: string
   role: string
   team: string
+  email: string
 }
 
 export const teamMembers: TeamMember[] = [
@@ -12,30 +13,35 @@ export const teamMembers: TeamMember[] = [
     name: 'Yolan MALDONADO',
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
+    email: 'yolan.maldonado@sinapse.nc',
   },
   {
     slug: 'alexandre-thomas',
     name: 'Alexandre THOMAS',
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
+    email: 'alexandre.thomas@sinapse.nc',
   },
   {
     slug: 'alan-huitel',
     name: 'Alan HUITEL',
     role: 'Ingénieur DevOps',
     team: 'Ingénierie Technique',
+    email: 'alan.huitel@sinapse.nc',
   },
   {
     slug: 'pierre-mathieu-barras',
     name: 'Pierre-Mathieu BARRAS',
     role: 'Ingénieur DevOps / Développeur',
     team: 'Ingénierie Technique',
+    email: 'pierre-mathieu.barras@sinapse.nc',
   },
   {
     slug: 'andy-malo',
     name: 'Andy MALO',
     role: 'Ingénieur Data',
     team: 'Ingénierie Technique',
+    email: 'andy.malo@sinapse.nc',
   },
 
   // Développement
@@ -44,24 +50,28 @@ export const teamMembers: TeamMember[] = [
     name: 'Steven NGUYEN',
     role: 'Développeur Full Stack',
     team: 'Développement',
+    email: 'steven.nguyen@sinapse.nc',
   },
   {
     slug: 'matthieu-alcime',
     name: 'Matthieu ALCIME',
     role: 'Développeur Full Stack',
     team: 'Développement',
+    email: 'matthieu.alcime@sinapse.nc',
   },
   {
     slug: 'martin-vallet',
     name: 'Martin VALLET',
     role: 'Développeur Full Stack',
     team: 'Développement',
+    email: 'martin.vallet@sinapse.nc',
   },
   {
     slug: 'nicole-nguon',
     name: 'Nicole NGUON',
     role: 'Développeuse Full Stack',
     team: 'Développement',
+    email: 'nicole.nguon@sinapse.nc',
   },
 
   // QA & Automatisation
@@ -70,6 +80,7 @@ export const teamMembers: TeamMember[] = [
     name: 'Bethlehem MENGISTU',
     role: 'Ingénieure QA',
     team: 'QA & Automatisation',
+    email: 'bethlehem.mengistu@sinapse.nc',
   },
 
   // Management
@@ -78,6 +89,7 @@ export const teamMembers: TeamMember[] = [
     name: 'Pierre ROSSATO',
     role: 'Lead Développeur (Manager MOE)',
     team: 'Management',
+    email: 'pierre.rossato@sinapse.nc',
   },
 ]
 

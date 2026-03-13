@@ -2,9 +2,11 @@ import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ClipboardEdit } from 'lucide-react'
+import { ClipboardEdit, ArrowRight } from 'lucide-react'
 import AppHeader from '@/components/app-header'
+import { authClient } from '@/lib/auth-client'
 import type { MemberAggregateResponse, TeamAggregateResponse } from '@/lib/types'
 
 const PersonalOverview = lazy(() => import('@/components/dashboard/personal-overview'))
@@ -83,6 +85,7 @@ export default function DashboardPage() {
   const member = slug ? findMember(slug) : undefined
   const { data: memberAggregate, loading: memberLoading } = useMemberAggregate(slug)
   const { data: teamAggregate, loading: teamLoading } = useTeamAggregate()
+  const { data: session } = authClient.useSession()
 
   const loading = memberLoading || teamLoading
 
@@ -97,25 +100,65 @@ export default function DashboardPage() {
   const hasTeamData = teamAggregate && teamAggregate.submittedCount > 0
   const defaultTab = slug ? 'profil' : 'equipe'
 
-  return (
-    <div className="min-h-screen bg-background">
-      <AppHeader
-        headerActions={
-          member ? (
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/form/${member.slug}`} />}>
+  const isOwnProfile = session && member && session.user.slug === member.slug
+  const isLoggedInButOtherProfile = session && member && session.user.slug !== member.slug
+
+  let headerActions: React.ReactNode = undefined
+  if (member) {
+    if (isOwnProfile) {
+      headerActions = (
+        <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/form/${member.slug}`} />}>
+          <ClipboardEdit className="h-4 w-4" />
+          Modifier
+        </Button>
+      )
+    } else if (isLoggedInButOtherProfile) {
+      headerActions = (
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              <Button variant="outline" size="sm" className="shrink-0 gap-1.5 opacity-50 pointer-events-none" disabled tabIndex={-1}>
+                <ClipboardEdit className="h-4 w-4" />
+                Modifier
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Impossible de modifier un profil autre que le sien
+            </TooltipContent>
+          </Tooltip>
+          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/dashboard/${session.user.slug}`} />}>
+            <ArrowRight className="h-4 w-4" />
+            Mon profil
+          </Button>
+        </div>
+      )
+    } else {
+      headerActions = (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5 opacity-50 pointer-events-none" disabled tabIndex={-1}>
               <ClipboardEdit className="h-4 w-4" />
               Modifier
             </Button>
-          ) : undefined
-        }
-      />
+          </TooltipTrigger>
+          <TooltipContent>
+            Connectez-vous pour modifier votre evaluation
+          </TooltipContent>
+        </Tooltip>
+      )
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <AppHeader headerActions={headerActions} />
       <div className="mx-auto max-w-7xl space-y-8 p-4 pt-14 sm:p-8 sm:pt-14">
         {/* Header — always visible, outside tabs */}
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Radar des Compétences</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Radar des Competences</h1>
           {member && (
             <p className="mt-1 text-base text-muted-foreground">
-              Connecté en tant que : <span className="font-medium text-foreground">{member.name}</span> — {member.role}
+              <span className="font-medium text-foreground">{member.name}</span> — {member.role}
             </p>
           )}
         </div>
@@ -133,7 +176,7 @@ export default function DashboardPage() {
           <Tabs defaultValue={defaultTab}>
             <TabsList variant="line" className="w-full sm:w-auto">
               {slug && (
-                <TabsTrigger value="profil">Mon profil</TabsTrigger>
+                <TabsTrigger value="profil">{isOwnProfile ? 'Mon profil' : 'Profil'}</TabsTrigger>
               )}
               <TabsTrigger value="equipe">Équipe</TabsTrigger>
               <TabsTrigger value="cartographie">Cartographie</TabsTrigger>

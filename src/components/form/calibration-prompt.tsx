@@ -10,8 +10,8 @@ interface CalibrationPromptProps {
 
 export default function CalibrationPrompt({
   text,
-  categoryEmoji,
-  categoryLabel,
+  categoryEmoji: _categoryEmoji,
+  categoryLabel: _categoryLabel,
   tools,
 }: CalibrationPromptProps) {
   return (

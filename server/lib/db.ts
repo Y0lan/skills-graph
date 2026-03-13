@@ -5,8 +5,8 @@ import { fileURLToPath } from 'url'
 import { seedCatalog } from './seed-catalog.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, '..', 'data')
-const DB_PATH = path.join(DATA_DIR, 'ratings.db')
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
+export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
 const JSON_PATH = path.join(DATA_DIR, 'ratings.json')
 
 export interface MemberEvaluation {
@@ -29,6 +29,7 @@ export function initDatabase(): void {
 
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS evaluations (
@@ -77,6 +78,8 @@ export function initDatabase(): void {
       description TEXT NOT NULL
     );
   `)
+
+  // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty
   const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt

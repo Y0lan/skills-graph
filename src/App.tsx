@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { CatalogProvider } from '@/providers/catalog-provider'
+import { ProtectedRoute } from '@/components/auth/protected-route'
 
 const FormPage = lazy(() => import('@/pages/form-page'))
 const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
@@ -21,7 +22,7 @@ function App() {
             }
           >
             <Routes>
-              <Route path="/form/:slug" element={<FormPage />} />
+              <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
               <Route path="/dashboard/:slug?" element={<DashboardPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

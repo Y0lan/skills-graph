@@ -1,19 +1,20 @@
 import { Router } from 'express'
 import { teamMembers } from '../../src/data/team-roster.js'
 import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation } from '../lib/db.js'
+import { requireAuth, requireOwnership } from '../middleware/require-auth.js'
 
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug))
 
 export const ratingsRouter = Router()
 
-// GET / — all ratings
+// GET / — all ratings (public)
 ratingsRouter.get('/', (_req, res) => {
   res.json(getAllEvaluations())
 })
 
-// GET /:slug — single member
+// GET /:slug — single member (public)
 ratingsRouter.get('/:slug', (req, res) => {
-  const { slug } = req.params
+  const slug = req.params.slug as string
 
   if (!VALID_SLUGS.has(slug)) {
     res.status(404).json({ error: 'Membre introuvable' })
@@ -35,9 +36,9 @@ ratingsRouter.get('/:slug', (req, res) => {
   res.json(memberData)
 })
 
-// PUT /:slug — upsert ratings
-ratingsRouter.put('/:slug', (req, res) => {
-  const { slug } = req.params
+// PUT /:slug — upsert ratings (auth + ownership required)
+ratingsRouter.put('/:slug', requireAuth, requireOwnership, (req, res) => {
+  const slug = req.params.slug as string
 
   if (!VALID_SLUGS.has(slug)) {
     res.status(404).json({ error: 'Membre introuvable' })
@@ -85,9 +86,9 @@ ratingsRouter.put('/:slug', (req, res) => {
   res.json(memberData)
 })
 
-// DELETE /:slug — reset evaluation (start from scratch)
-ratingsRouter.delete('/:slug', (req, res) => {
-  const { slug } = req.params
+// DELETE /:slug — reset evaluation (auth + ownership required)
+ratingsRouter.delete('/:slug', requireAuth, requireOwnership, (req, res) => {
+  const slug = req.params.slug as string
 
   if (!VALID_SLUGS.has(slug)) {
     res.status(404).json({ error: 'Membre introuvable' })
@@ -98,9 +99,9 @@ ratingsRouter.delete('/:slug', (req, res) => {
   res.json({ ok: true })
 })
 
-// POST /:slug/submit — finalize evaluation
-ratingsRouter.post('/:slug/submit', (req, res) => {
-  const { slug } = req.params
+// POST /:slug/submit — finalize evaluation (auth + ownership required)
+ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, (req, res) => {
+  const slug = req.params.slug as string
 
   if (!VALID_SLUGS.has(slug)) {
     res.status(404).json({ error: 'Membre introuvable' })

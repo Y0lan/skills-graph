@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-09
 - SQLite (better-sqlite3) — existing `evaluations` table, existing `DELETE /api/ratings/:slug` endpoint (006-minimal-header)
 - TypeScript 5.x + React 19, shadcn/ui (Radix UI AlertDialog), Tailwind CSS, Lucide icons, react-router-dom (006-minimal-header)
 - N/A (uses existing `DELETE /api/ratings/:slug` endpoint) (006-minimal-header)
+- TypeScript 5.9 (frontend + backend) + @azure/msal-browser ^5.4.0, @azure/msal-react ^5.0.6 (frontend); jose ^6.2.1 (backend) (008-microsoft-auth)
+- SQLite (better-sqlite3) — new `users` table, existing `evaluations` table unchanged (008-microsoft-auth)
 
 - TypeScript 5.x (frontend + backend) + React 19, shadcn/ui (Radix UI), (001-team-skill-radar)
 
@@ -32,9 +34,9 @@ npm test && npm run lint
 TypeScript 5.x (frontend + backend): Follow standard conventions
 
 ## Recent Changes
+- 008-microsoft-auth: Added TypeScript 5.9 (frontend + backend) + @azure/msal-browser ^5.4.0, @azure/msal-react ^5.0.6 (frontend); jose ^6.2.1 (backend)
 - 006-minimal-header: Added TypeScript 5.x + React 19, shadcn/ui (Radix UI AlertDialog), Tailwind CSS, Lucide icons, react-router-dom
 - 006-minimal-header: Added TypeScript 5.x (frontend + backend) + React 19, Vite 7, shadcn/ui (Radix UI), Tailwind CSS, Lucide icons, next-themes, React Router DOM, React Hook Form
-- 005-fix-form-layout: Added TypeScript 5.x + React 19 + shadcn/ui (Radix UI), Tailwind CSS, Lucide icons
 
 
 <!-- MANUAL ADDITIONS START -->

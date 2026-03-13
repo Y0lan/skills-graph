@@ -1,0 +1,36 @@
+import type { Request, Response, NextFunction } from 'express'
+import { fromNodeHeaders } from 'better-auth/node'
+import { getAuth } from '../lib/auth.js'
+
+interface AuthUser {
+  id: string
+  email: string
+  name: string
+  slug: string | null
+  [key: string]: unknown
+}
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const session = await getAuth().api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    })
+    if (!session) {
+      res.status(401).json({ error: 'Non authentifie' })
+      return
+    }
+    ;(req as Request & { user: AuthUser }).user = session.user as unknown as AuthUser
+    next()
+  } catch {
+    res.status(401).json({ error: 'Non authentifie' })
+  }
+}
+
+export async function requireOwnership(req: Request, res: Response, next: NextFunction) {
+  const user = (req as Request & { user: AuthUser }).user
+  if (!user?.slug || user.slug !== req.params.slug) {
+    res.status(403).json({ error: 'Acces refuse' })
+    return
+  }
+  next()
+}

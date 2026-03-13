@@ -25,3 +25,12 @@ dist-ssr
 
 # Server data
 server/data/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# AI tool artifacts
+.agents/
+.claude/
