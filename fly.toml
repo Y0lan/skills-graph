@@ -1,5 +1,5 @@
 app = "radar-competences"
-primary_region = "cdg"
+primary_region = "syd"
 
 [build]
 
