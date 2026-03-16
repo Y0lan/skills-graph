@@ -8,6 +8,7 @@
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "start": "node --env-file-if-exists=.env dist-server/server/index.js",
     "seed": "tsx scripts/seed-catalog.ts",
+    "seed:users": "node --env-file-if-exists=.env dist-server/scripts/seed-users.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -36,7 +37,6 @@
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.71.2",
     "react-router-dom": "^7.6.2",
-    "resend": "^6.9.3",
     "shadcn": "^4.0.2",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1",
