@@ -4,9 +4,10 @@ COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
-RUN useradd -r -u 999 -s /bin/false appuser && chown -R appuser:appuser /app
-USER appuser
+RUN useradd -r -u 999 -s /bin/sh appuser && chown -R appuser:appuser /app
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
-CMD ["node", "--env-file-if-exists=.env", "dist-server/server/index.js"]
+ENTRYPOINT ["/entrypoint.sh"]
