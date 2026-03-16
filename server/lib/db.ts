@@ -79,10 +79,14 @@ export function initDatabase(): void {
 
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
-  // Auto-seed if categories table is empty
+  // Auto-seed if categories table is empty or catalog version changed
+  db.exec('CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT)')
+  const CATALOG_VERSION = '2.1.0'
+  const currentVersion = (db.prepare("SELECT value FROM catalog_meta WHERE key = 'version'").get() as { value: string } | undefined)?.value
   const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
-  if (count === 0) {
+  if (count === 0 || currentVersion !== CATALOG_VERSION) {
     seedCatalog(db)
+    db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', ?)").run(CATALOG_VERSION)
   }
 
   // One-time migration from ratings.json

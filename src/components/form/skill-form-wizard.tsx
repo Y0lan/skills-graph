@@ -6,6 +6,7 @@ import type { SkillFormValues } from '@/lib/schemas'
 import RatingLegend from './rating-legend'
 import ProgressBar from './progress-bar'
 import type { StepInfo } from './progress-bar'
+import CategoryBar from './category-bar'
 import CategoryStep from './category-step'
 import ReviewStep from './review-step'
 
@@ -203,20 +204,38 @@ export default function SkillFormWizard({
         />
       ) : (
         category && (
-          <CategoryStep
-            key={category.id}
-            category={category}
-            stepNumber={step + 1}
-            ratings={ratings}
-            isSkipped={isSkipped(category.id)}
-            calibrationPrompt={calibrationPrompts[category.id]}
-            validationMessage={validationMessage}
-            unratedSkillIds={unratedSkillIds}
-            onRatingChange={setRating}
-            onSkip={() => toggleSkipCategory(category.id)}
-            onUnskip={() => toggleSkipCategory(category.id)}
-            onNext={() => setStep((s) => Math.min(s + 1, REVIEW_STEP))}
-          />
+          <>
+            <CategoryBar
+              stepNumber={step + 1}
+              categoryLabel={category.label}
+              ratedCount={progressSteps[step].ratedCount}
+              totalCount={category.skills.length}
+              isSkipped={isSkipped(category.id)}
+              allRated={category.skills.every((s) => ratings[s.id] !== undefined)}
+              isFirstStep={step === 0}
+              editingFromReview={editingFromReview}
+              onPrev={handlePrev}
+              onNext={handleNext}
+              onBackToReview={handleBackToReview}
+              skipButtonProps={{
+                categoryLabel: category.label,
+                isSkipped: isSkipped(category.id),
+                onSkip: () => toggleSkipCategory(category.id),
+                onUnskip: () => toggleSkipCategory(category.id),
+                onNext: () => setStep((s) => Math.min(s + 1, REVIEW_STEP)),
+              }}
+            />
+            <CategoryStep
+              key={category.id}
+              category={category}
+              ratings={ratings}
+              isSkipped={isSkipped(category.id)}
+              calibrationPrompt={calibrationPrompts[category.id]}
+              validationMessage={validationMessage}
+              unratedSkillIds={unratedSkillIds}
+              onRatingChange={setRating}
+            />
+          </>
         )
       )}
 

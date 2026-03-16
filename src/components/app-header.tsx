@@ -60,7 +60,7 @@ export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) 
               </Button>
             </>
           )}
-          {!session && <LoginDialog />}
+          <LoginDialog />
 
           <ThemeToggle />
         </div>

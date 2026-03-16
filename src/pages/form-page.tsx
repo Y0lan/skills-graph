@@ -8,7 +8,7 @@ import AppHeader from '@/components/app-header'
 import ResetConfirmDialog from '@/components/reset-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, LayoutDashboard, RotateCcw, Send } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, LayoutDashboard, RotateCcw, Send } from 'lucide-react'
 
 export default function FormPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -138,53 +138,28 @@ export default function FormPage() {
             </Button>
           </>
         }
-        headerNav={wizardNav && (
+        headerNav={wizardNav?.isReview && (
           <div className="flex items-center gap-2">
-            {wizardNav.editingFromReview ? (
+            {!wizardNav.isFirstStep && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={wizardNav.onBackToReview}
+                onClick={wizardNav.onPrev}
                 className="gap-1.5"
               >
-                <ArrowLeft className="h-4 w-4" />
-                Récapitulatif
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Retour</span>
               </Button>
-            ) : (
-              <>
-                {!wizardNav.isFirstStep && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={wizardNav.onPrev}
-                    className="gap-1.5"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    <span className="hidden sm:inline">Retour</span>
-                  </Button>
-                )}
-                {wizardNav.isReview ? (
-                  <Button
-                    size="sm"
-                    onClick={wizardNav.onSubmit}
-                    disabled={wizardNav.submitting}
-                    className="gap-1.5"
-                  >
-                    <Send className="h-4 w-4" />
-                    {wizardNav.submitting ? 'Envoi...' : 'Soumettre'}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    onClick={wizardNav.onNext}
-                    className="gap-1.5"
-                  >
-                    Suivant
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                )}
-              </>
             )}
+            <Button
+              size="sm"
+              onClick={wizardNav.onSubmit}
+              disabled={wizardNav.submitting}
+              className="gap-1.5"
+            >
+              <Send className="h-4 w-4" />
+              {wizardNav.submitting ? 'Envoi...' : 'Soumettre'}
+            </Button>
           </div>
         )}
       />

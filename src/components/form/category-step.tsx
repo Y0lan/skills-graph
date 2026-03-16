@@ -1,52 +1,45 @@
+import { useCallback } from 'react'
 import type { SkillCategory } from '@/data/skill-catalog'
 import { AlertTriangle } from 'lucide-react'
 import CalibrationPrompt from './calibration-prompt'
 import SkillRatingRow from './skill-rating-row'
-import SkipCategoryButton from './skip-category-button'
 
 interface CategoryStepProps {
   category: SkillCategory
-  stepNumber: number
   ratings: Record<string, number>
   isSkipped: boolean
   calibrationPrompt?: { text: string; tools?: string[] }
   validationMessage?: string
   unratedSkillIds?: string[]
   onRatingChange: (skillId: string, value: number) => void
-  onSkip: () => void
-  onUnskip: () => void
-  onNext?: () => void
 }
 
 export default function CategoryStep({
   category,
-  stepNumber,
   ratings,
   isSkipped,
   calibrationPrompt,
   validationMessage,
   unratedSkillIds,
   onRatingChange,
-  onSkip,
-  onUnskip,
-  onNext,
 }: CategoryStepProps) {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2.5 text-xl font-bold">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{stepNumber}</span>
-          {category.label}
-        </h2>
-        <SkipCategoryButton
-          categoryLabel={category.label}
-          isSkipped={isSkipped}
-          onSkip={onSkip}
-          onUnskip={onUnskip}
-          onNext={onNext}
-        />
-      </div>
+  const handleRatingChange = useCallback((skillId: string, value: number) => {
+    onRatingChange(skillId, value)
 
+    // Auto-scroll to next unrated skill after a short delay
+    setTimeout(() => {
+      const currentIdx = category.skills.findIndex((s) => s.id === skillId)
+      const nextUnrated = category.skills.find(
+        (s, i) => i > currentIdx && ratings[s.id] === undefined && s.id !== skillId,
+      )
+      if (nextUnrated) {
+        const el = document.querySelector(`[data-skill="${nextUnrated.id}"]`)
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 300)
+  }, [onRatingChange, category.skills, ratings])
+  return (
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
       {calibrationPrompt && (
         <CalibrationPrompt
           text={calibrationPrompt.text}
@@ -74,7 +67,7 @@ export default function CategoryStep({
               key={skill.id}
               skill={skill}
               value={ratings[skill.id]}
-              onChange={(value) => onRatingChange(skill.id, value)}
+              onChange={(value) => handleRatingChange(skill.id, value)}
               showError={unratedSkillIds?.includes(skill.id)}
             />
           ))}

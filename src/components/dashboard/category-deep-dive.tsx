@@ -4,6 +4,7 @@ import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { useCatalog } from '@/hooks/use-catalog'
+import { shortLabel } from '@/lib/utils'
 import type { TeamCategoryAggregateResponse, TeamMemberAggregateResponse } from '@/lib/types'
 
 interface CategoryDeepDiveProps {
@@ -38,7 +39,6 @@ export default function CategoryDeepDive({
           const submittedMembers = members.filter((m) => m.submittedAt !== null)
 
           // Strip parenthetical details from skill labels for readability
-          const shortLabel = (s: string) => s.replace(/\s*\(.*\)$/, '').trim()
 
           // Per-skill team averages from the API
           const teamData = cat.skills.map((skill) => ({

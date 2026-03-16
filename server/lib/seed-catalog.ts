@@ -11,34 +11,13 @@ interface CatalogJson {
   categories: {
     id: string
     label: string
+    scenario?: string
     skills: {
       id: string
       label: string
       descriptors: Record<string, string>
     }[]
   }[]
-}
-
-// Calibration prompts — one per category (inline from deleted calibration-prompts.ts)
-const calibrationPrompts: Record<string, string> = {
-  'core-engineering':
-    'Vous recevez une merge request de 800 lignes de Java et TypeScript. Le code utilise des generics avancés, des opérateurs RxJS personnalisés et du SQL complexe avec des CTEs. Vous devez la relire pour vérifier la correction, la performance et la maintenabilité, puis fournir un retour actionnable en une demi-journée. À quel point êtes-vous confiant pour détecter les problèmes subtils dans toutes ces technologies ?',
-  'backend-integration':
-    'Vous devez concevoir un nouveau microservice qui consomme des événements Kafka du pipeline DSE, applique les règles de calcul des cotisations CAFAT et persiste les résultats dans PostgreSQL via JPA. Vous devez gérer les erreurs, l\'idempotence, les stratégies de dead-letter et l\'évolution des schémas. À quel point êtes-vous confiant pour livrer cela de manière autonome ?',
-  'frontend-ui':
-    'Un nouvel écran SINAPSE nécessite un tableau AG Grid complexe avec filtrage côté serveur, des renderers de cellules personnalisés, une validation de formulaire réactive avec RxJS et une accessibilité WCAG 2.1 AA complète. Vous devez l\'intégrer dans le module Angular existant avec la gestion d\'état NgRx. À quel point êtes-vous confiant pour livrer cela sans accompagnement senior ?',
-  'platform-engineering':
-    'L\'équipe a besoin d\'un nouveau pipeline GitLab CI qui construit une image Docker multi-stage, déploie sur RKE2 via Helm, provisionne une base CloudNativePG avec Terraform et configure les secrets depuis Vault. Vous êtes responsable de toute la chaîne, du commit à la production. À quel point êtes-vous confiant pour mettre cela en place de bout en bout ?',
-  'observability-reliability':
-    'Un service SINAPSE critique gérant les déclarations employeurs subit des erreurs 5xx intermittentes sous charge. Vous devez corréler les métriques Prometheus, les logs Loki et les traces Tempo pour identifier la cause racine, puis définir un SLO avec des alertes de burn-rate pour prévenir les récidives. À quel point êtes-vous confiant pour mener cette investigation seul ?',
-  'security-compliance':
-    'Vous devez sécuriser une nouvelle API SINAPSE : configurer Keycloak OIDC avec contrôle d\'accès par rôles, mettre en place Vault pour la rotation des identifiants de base de données, ajouter le scan Trivy au CI et réaliser une modélisation de menaces STRIDE avant la revue d\'architecture. À quel point êtes-vous confiant pour gérer tous ces aspects sécurité sans escalade ?',
-  'architecture-governance':
-    'On vous demande de rédiger un ADR pour décomposer un module legacy CAFAT en trois bounded contexts, modéliser l\'état cible dans Structurizr (C4) et ArchiMate, mettre à jour le catalogue de gouvernance API et présenter les compromis au comité d\'architecture. À quel point êtes-vous confiant pour piloter cela de bout en bout ?',
-  'soft-skills':
-    'Un incident de production survient lors d\'un déploiement affectant les déclarations employeurs. Vous devez diriger l\'appel d\'incident, coordonner avec les équipes infrastructure et métier, communiquer l\'état aux parties prenantes CAFAT en termes non techniques et rédiger un postmortem blameless avec des actions de suivi concrètes. À quel point êtes-vous confiant pour prendre en charge ce processus ?',
-  'domain-knowledge':
-    'Une nouvelle réglementation modifie les plafonds de cotisation des travailleurs indépendants et impacte les règles d\'éligibilité RUAMM. Vous devez évaluer l\'impact dans les domaines recouvrement, TI et santé, mettre à jour les règles métier dans SINAPSE, vous assurer que les déclarations du Portail Pro reflètent les changements et valider par rapport au système legacy pendant la période de transition. À quel point êtes-vous confiant pour analyser cet impact transversal de manière autonome ?',
 }
 
 // Short labels for rating scale (not in JSON)
@@ -86,6 +65,61 @@ export function seedCatalog(db: Database.Database): void {
   )
 
   const seed = db.transaction(() => {
+    // Clear old catalog data (preserves evaluations)
+    db.exec('DELETE FROM skill_descriptors')
+    db.exec('DELETE FROM skills')
+    db.exec('DELETE FROM calibration_prompts')
+    db.exec('DELETE FROM categories')
+    db.exec('DELETE FROM rating_scale')
+
+    // Migrate renamed skill IDs in existing evaluations
+    const SKILL_RENAMES: Record<string, string> = {
+      'sentry': 'error-tracking',
+      'redis-dragonfly': 'redis',
+      'iam-keycloak': 'iam-authn',
+      'technical-writing': 'vulgarisation-pedagogie',
+    }
+    const CATEGORY_RENAMES: Record<string, string> = {
+      'soft-skills': 'soft-skills-delivery',
+    }
+    const REMOVED_SKILLS = ['mfa-yubikey']
+
+    const evalRows = db.prepare('SELECT slug, ratings, skipped_categories FROM evaluations').all() as {
+      slug: string; ratings: string; skipped_categories: string
+    }[]
+
+    for (const row of evalRows) {
+      const ratings: Record<string, number> = JSON.parse(row.ratings)
+      let changed = false
+
+      // Rename skill IDs
+      for (const [oldId, newId] of Object.entries(SKILL_RENAMES)) {
+        if (oldId in ratings) {
+          ratings[newId] = ratings[oldId]
+          delete ratings[oldId]
+          changed = true
+        }
+      }
+
+      // Remove deleted skills
+      for (const id of REMOVED_SKILLS) {
+        if (id in ratings) {
+          delete ratings[id]
+          changed = true
+        }
+      }
+
+      // Rename category IDs in skipped_categories
+      let skipped: string[] = JSON.parse(row.skipped_categories)
+      const newSkipped = skipped.map((id) => CATEGORY_RENAMES[id] ?? id)
+      const skippedChanged = JSON.stringify(skipped) !== JSON.stringify(newSkipped)
+
+      if (changed || skippedChanged) {
+        db.prepare('UPDATE evaluations SET ratings = ?, skipped_categories = ? WHERE slug = ?')
+          .run(JSON.stringify(ratings), JSON.stringify(newSkipped), row.slug)
+      }
+    }
+
     // Rating scale
     for (const [valueStr, entry] of Object.entries(catalog.ratingScale)) {
       const value = parseInt(valueStr, 10)
@@ -97,10 +131,9 @@ export function seedCatalog(db: Database.Database): void {
       const cat = catalog.categories[catIdx]
       insertCategory.run(cat.id, cat.label, '', catIdx)
 
-      // Calibration prompt
-      const promptText = calibrationPrompts[cat.id]
-      if (promptText) {
-        insertCalibration.run(cat.id, promptText, '[]')
+      // Calibration prompt (scenario from JSON)
+      if (cat.scenario) {
+        insertCalibration.run(cat.id, cat.scenario, '[]')
       }
 
       // Skills

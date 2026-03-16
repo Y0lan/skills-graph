@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import type { Skill } from '@/data/skill-catalog'
 import { Check } from 'lucide-react'
@@ -69,11 +70,22 @@ const levels = [
 export default function SkillRatingRow({ skill, value, onChange, disabled, showError }: SkillRatingRowProps) {
   const hasError = showError && value === undefined
 
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (disabled) return
+    const num = parseInt(e.key, 10)
+    if (num >= 0 && num <= 5) {
+      e.preventDefault()
+      onChange(num)
+    }
+  }, [disabled, onChange])
+
   return (
     <div
       data-skill={skill.id}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
       className={cn(
-        'space-y-1.5 rounded-lg p-3 -mx-3 transition-all duration-200',
+        'space-y-1.5 rounded-lg p-3 -mx-3 transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1',
         hasError && 'bg-red-500/[0.06] border border-red-400/40 dark:bg-red-500/[0.08] dark:border-red-500/30',
       )}
     >

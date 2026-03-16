@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { LogIn, CheckCircle, Circle, PenLine, Loader2, KeyRound } from 'lucide-react'
@@ -13,6 +12,7 @@ type EvalStatus = 'none' | 'draft' | 'submitted'
 type View = 'select' | 'customize'
 
 export function LoginDialog() {
+  const { data: session } = authClient.useSession()
   const [selected, setSelected] = useState<TeamMember | null>(null)
   const [pin, setPin] = useState('')
   const [newPin, setNewPin] = useState('')
@@ -24,7 +24,6 @@ export function LoginDialog() {
   const [statusMap, setStatusMap] = useState<Map<string, EvalStatus>>(new Map())
   const pinRef = useRef<HTMLInputElement>(null)
   const newPinRef = useRef<HTMLInputElement>(null)
-  const navigate = useNavigate()
 
   useEffect(() => {
     if (!open) return
@@ -77,8 +76,7 @@ export function LoginDialog() {
       } else if (data && !data.user.pinCustomized) {
         setView('customize')
       } else {
-        setOpen(false)
-        navigate(`/form/${selected.slug}`)
+        window.location.href = `/form/${selected.slug}`
       }
     } catch {
       setError('Erreur de connexion')
@@ -108,8 +106,7 @@ export function LoginDialog() {
         setError(body.message || 'Erreur — veuillez vous reconnecter')
         return
       }
-      setOpen(false)
-      navigate(`/form/${selected!.slug}`)
+      window.location.href = `/form/${selected!.slug}`
     } catch {
       setError('Erreur de connexion')
     } finally {
@@ -130,12 +127,17 @@ export function LoginDialog() {
     }
   }
 
+  // Hide trigger when logged in (but keep dialog mounted for customize flow)
+  if (session && !open) return null
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <LogIn className="mr-2 h-4 w-4" />
-        Se connecter
-      </DialogTrigger>
+      {!session && (
+        <DialogTrigger render={<Button variant="outline" size="sm" />}>
+          <LogIn className="mr-2 h-4 w-4" />
+          Se connecter
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-md">
         {view === 'select' ? (
           <>

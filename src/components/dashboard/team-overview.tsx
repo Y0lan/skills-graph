@@ -4,6 +4,7 @@ import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { useCatalog } from '@/hooks/use-catalog'
+import { shortLabel } from '@/lib/utils'
 import type { TeamCategoryAggregateResponse } from '@/lib/types'
 
 interface TeamOverviewProps {
@@ -23,7 +24,7 @@ export default function TeamOverview({
   const data = skillCategories.map((cat) => {
     const agg = categories.find((c) => c.categoryId === cat.id)
     return {
-      label: cat.label.replace(/\s*\(.*\)$/, ''),
+      label: shortLabel(cat.label),
       value: agg?.teamAvgRank ?? 0,
       fullMark: 5,
     }

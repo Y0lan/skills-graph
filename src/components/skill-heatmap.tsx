@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useTooltip, TooltipWithBounds } from '@visx/tooltip'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useCatalog } from '@/hooks/use-catalog'
+import { shortLabel } from '@/lib/utils'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
 
 interface SkillHeatmapProps {
@@ -191,7 +192,7 @@ export default function SkillHeatmap({ members }: SkillHeatmapProps) {
                             title={skill.label}
                           >
                             <span className="block leading-tight">
-                              {skill.label.replace(/\s*\(.*\)$/, '')}
+                              {shortLabel(skill.label)}
                             </span>
                             {isActive && (
                               <span className="text-[10px]">{sortDir === 'desc' ? ' ↓' : ' ↑'}</span>
