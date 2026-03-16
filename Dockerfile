@@ -4,8 +4,8 @@ COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
-RUN chown -R node:node /app
-USER node
+RUN useradd -r -u 999 -s /bin/false appuser && chown -R appuser:appuser /app
+USER appuser
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
