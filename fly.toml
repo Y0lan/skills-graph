@@ -17,6 +17,7 @@ primary_region = "syd"
   destination = "/data"
 
 [[checks]]
+  name = "health"
   port = 8080
   type = "http"
   interval = "30s"
