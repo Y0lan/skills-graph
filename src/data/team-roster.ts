@@ -91,6 +91,15 @@ export const teamMembers: TeamMember[] = [
     team: 'Management',
     email: 'pierre.rossato@sinapse.nc',
   },
+
+  // Direction
+  {
+    slug: 'olivier-faivre',
+    name: 'Olivier FAIVRE',
+    role: 'Directeur des Programmes',
+    team: 'Direction',
+    email: 'olivier.faivre@sinapse.nc',
+  },
 ]
 
 export const teamMembersBySlug = new Map(teamMembers.map((m) => [m.slug, m]))
@@ -104,4 +113,5 @@ export const teamOrder = [
   'Développement',
   'QA & Automatisation',
   'Management',
+  'Direction',
 ]

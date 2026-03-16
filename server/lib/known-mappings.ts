@@ -15,4 +15,5 @@ export const KNOWN_MAPPINGS: Record<string, string> = {
   'nicole.nguon@sinapse.nc': 'nicole-nguon',
   'bethlehem.mengistu@sinapse.nc': 'bethlehem-mengistu',
   'pierre.rossato@sinapse.nc': 'pierre-rossato',
+  'olivier.faivre@sinapse.nc': 'olivier-faivre',
 }
