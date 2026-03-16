@@ -15,3 +15,12 @@ primary_region = "syd"
 [mounts]
   source = "sqlite_data"
   destination = "/data"
+
+[[checks]]
+  port = 8080
+  type = "http"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"

@@ -15,6 +15,9 @@ export const COOLDOWN_MS = 5 * 60_000
 export function createAuth() {
   const resendApiKey = process.env.RESEND_API_KEY
   const resend = resendApiKey ? new Resend(resendApiKey) : null
+  if (!resend) {
+    console.warn('[AUTH] RESEND_API_KEY not set — magic links will only be logged, not emailed')
+  }
 
   authInstance = betterAuth({
     database: new Database(DB_PATH),

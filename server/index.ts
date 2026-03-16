@@ -1,7 +1,6 @@
 import express from 'express'
 import cors from 'cors'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import fs from 'fs'
 import { fromNodeHeaders, toNodeHandler } from 'better-auth/node'
 import { ratingsRouter } from './routes/ratings.js'
@@ -9,10 +8,9 @@ import { categoriesRouter } from './routes/categories.js'
 import { membersRouter } from './routes/members.js'
 import { aggregatesRouter } from './routes/aggregates.js'
 import { catalogRouter } from './routes/catalog.js'
-import { initDatabase } from './lib/db.js'
+import { initDatabase, getDb } from './lib/db.js'
 import { createAuth, lastSentAt, COOLDOWN_MS } from './lib/auth.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = parseInt(process.env.PORT || '3001', 10)
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 
@@ -83,6 +81,11 @@ app.all('/api/auth/{*splat}', async (req, res, _next) => {
 
 app.use(express.json())
 
+// Health check
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' })
+})
+
 // API routes
 app.use('/api/ratings', ratingsRouter)
 app.use('/api/categories', categoriesRouter)
@@ -91,7 +94,7 @@ app.use('/api/aggregates', aggregatesRouter)
 app.use('/api/catalog', catalogRouter)
 
 // Serve static files in production
-const distPath = path.join(__dirname, '..', 'dist')
+const distPath = path.join(process.cwd(), 'dist')
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath))
   app.get('{*path}', (_req, res) => {
@@ -99,6 +102,19 @@ if (fs.existsSync(distPath)) {
   })
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`)
 })
+
+function shutdown() {
+  console.log('[SERVER] Shutting down gracefully...')
+  server.close(() => {
+    getDb().close()
+    console.log('[SERVER] Closed.')
+    process.exit(0)
+  })
+  setTimeout(() => process.exit(1), 10_000)
+}
+
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)

@@ -21,7 +21,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     ;(req as Request & { user: AuthUser }).user = session.user as unknown as AuthUser
     next()
-  } catch {
+  } catch (err) {
+    console.error('[AUTH] Session check failed:', err)
     res.status(401).json({ error: 'Non authentifie' })
   }
 }

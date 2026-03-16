@@ -21,7 +21,11 @@ export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) 
     : null
 
   async function handleSignOut() {
-    await authClient.signOut()
+    try {
+      await authClient.signOut()
+    } catch {
+      // signOut failed — navigate anyway to reset UI state
+    }
     navigate('/dashboard')
   }
 

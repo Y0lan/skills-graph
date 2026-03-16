@@ -1,11 +1,9 @@
 import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { seedCatalog } from './seed-catalog.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
 const JSON_PATH = path.join(DATA_DIR, 'ratings.json')
 

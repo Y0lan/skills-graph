@@ -46,7 +46,8 @@ export function LoginDialog() {
 
   useEffect(() => {
     if (!open) return
-    fetch('/api/ratings')
+    const controller = new AbortController()
+    fetch('/api/ratings', { signal: controller.signal })
       .then((r) => r.json())
       .then((data: Record<string, { ratings: Record<string, number>; submittedAt: string | null }>) => {
         const map = new Map<string, EvalStatus>()
@@ -60,6 +61,7 @@ export function LoginDialog() {
         setStatusMap(map)
       })
       .catch(() => {})
+    return () => controller.abort()
   }, [open])
 
   async function handleSend() {

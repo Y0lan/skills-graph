@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite\" \"tsx watch --env-file-if-exists=.env server/index.ts\"",
-    "build": "tsc -b && vite build",
-    "start": "node --env-file-if-exists=.env --import tsx server/index.ts",
+    "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
+    "start": "node --env-file-if-exists=.env dist-server/server/index.js",
     "seed": "tsx scripts/seed-catalog.ts",
     "lint": "eslint .",
     "preview": "vite preview"
