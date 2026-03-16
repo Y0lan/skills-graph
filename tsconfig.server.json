@@ -12,5 +12,5 @@
     "declaration": false,
     "verbatimModuleSyntax": false
   },
-  "include": ["server/**/*.ts", "src/data/team-roster.ts"]
+  "include": ["server/**/*.ts", "scripts/**/*.ts", "src/data/team-roster.ts"]
 }
