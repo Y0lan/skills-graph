@@ -1,10 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import type Database from 'better-sqlite3'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const CATALOG_PATH = path.join(__dirname, '..', '..', 'skill-catalog-full.json')
+const CATALOG_PATH = path.join(process.cwd(), 'skill-catalog-full.json')
 
 interface CatalogJson {
   ratingScale: Record<string, { label: string; description: string }>
