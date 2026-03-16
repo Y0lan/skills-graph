@@ -107,7 +107,7 @@ export default function DashboardPage() {
   if (member) {
     if (isOwnProfile) {
       headerActions = (
-        <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/form/${member.slug}`} />}>
+        <Button variant="outline" size="sm" className="shrink-0 gap-1.5" nativeButton={false} render={<Link to={`/form/${member.slug}`} />}>
           <ClipboardEdit className="h-4 w-4" />
           Modifier
         </Button>
@@ -126,7 +126,7 @@ export default function DashboardPage() {
               Impossible de modifier un profil autre que le sien
             </TooltipContent>
           </Tooltip>
-          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" render={<Link to={`/dashboard/${session.user.slug}`} />}>
+          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" nativeButton={false} render={<Link to={`/dashboard/${session.user.slug}`} />}>
             <ArrowRight className="h-4 w-4" />
             Mon profil
           </Button>

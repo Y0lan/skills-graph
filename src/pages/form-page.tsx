@@ -131,6 +131,7 @@ export default function FormPage() {
               variant="outline"
               size="sm"
               className="shrink-0 gap-1.5"
+              nativeButton={false}
               render={<Link to={`/dashboard/${slug}`} />}
             >
               <LayoutDashboard className="h-4 w-4" />
