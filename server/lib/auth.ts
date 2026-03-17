@@ -57,7 +57,7 @@ export function createAuth() {
     trustedOrigins: [process.env.CORS_ORIGIN || 'http://localhost:5173'],
     rateLimit: {
       window: 60,
-      max: 5,
+      max: 100,
     },
   })
 
