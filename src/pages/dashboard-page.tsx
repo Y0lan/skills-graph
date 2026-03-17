@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, ArrowLeft } from 'lucide-react'
 import AppHeader from '@/components/app-header'
 import { TeamPopover } from '@/components/team-popover'
 import { authClient } from '@/lib/auth-client'
@@ -157,9 +157,10 @@ export default function DashboardPage() {
                   {!isOwnProfile && session?.user?.slug && (
                     <Link
                       to={`/dashboard/${session.user.slug}`}
-                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
                     >
-                      ← Mon profil
+                      <ArrowLeft className="h-3 w-3" />
+                      Mon profil
                     </Link>
                   )}
                   <p className="text-base text-muted-foreground">
