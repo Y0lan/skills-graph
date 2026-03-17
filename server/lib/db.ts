@@ -83,6 +83,26 @@ export function initDatabase(): void {
     );
   `)
 
+  // Comparison summaries cache
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS comparison_summaries (
+      slug_a TEXT NOT NULL,
+      slug_b TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (slug_a, slug_b)
+    )
+  `)
+
+  // Chat rate limiting
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_usage (
+      user_id TEXT NOT NULL,
+      used_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_usage_user ON chat_usage(user_id, used_at)')
+
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty or catalog version changed

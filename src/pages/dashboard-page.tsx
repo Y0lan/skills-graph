@@ -15,6 +15,7 @@ const SkillsGapTable = lazy(() => import('@/components/dashboard/skills-gap-tabl
 const TeamMembersGrid = lazy(() => import('@/components/dashboard/team-members-grid'))
 const ExpertFinder = lazy(() => import('@/components/dashboard/expert-finder'))
 const SkillHeatmap = lazy(() => import('@/components/skill-heatmap'))
+const ChatPanel = lazy(() => import('@/components/dashboard/chat-panel'))
 
 function useMemberAggregate(slug: string | undefined) {
   const [data, setData] = useState<(MemberAggregateResponse & { hasRatings?: boolean }) | null>(null)
@@ -112,7 +113,7 @@ export default function DashboardPage() {
 
   const isOwnProfile = session && member && session.user.slug === member.slug
 
-  const headerActions = slug ? <TeamPopover currentSlug={slug} /> : undefined
+  const headerActions = <TeamPopover currentSlug={slug} />
 
   return (
     <div className="min-h-screen bg-background">
@@ -159,12 +160,14 @@ export default function DashboardPage() {
                     <PersonalOverview
                       aggregate={memberAggregate}
                       teamMembers={teamAggregate?.members}
+                      isOwnProfile={!!isOwnProfile}
                       onFindExpert={(categoryId) => {
                         setExpertCategoryHint(categoryId)
                         setActiveTab('expert')
                       }}
                     />
                   )}
+                  {session && <ChatPanel slug={slug} />}
                 </Suspense>
               </TabsContent>
             )}

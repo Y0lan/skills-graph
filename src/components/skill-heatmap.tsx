@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useTooltip, TooltipWithBounds } from '@visx/tooltip'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useCatalog } from '@/hooks/use-catalog'
@@ -212,7 +213,9 @@ export default function SkillHeatmap({ members }: SkillHeatmapProps) {
                           {rowIdx + 1}
                         </td>
                         <td className="sticky left-[32px] z-10 bg-background px-3 py-1.5 font-medium whitespace-nowrap border-r">
-                          {member.name}
+                          <Link to={`/dashboard/${member.slug}`} className="hover:underline text-primary">
+                            {member.name}
+                          </Link>
                         </td>
                         <td className="px-2 py-1.5 text-center font-semibold tabular-nums text-xs border-r">
                           {(member.categoryAverages?.[cat.id] ?? 0).toFixed(1)}

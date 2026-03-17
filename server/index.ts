@@ -8,6 +8,7 @@ import { categoriesRouter } from './routes/categories.js'
 import { membersRouter } from './routes/members.js'
 import { aggregatesRouter } from './routes/aggregates.js'
 import { catalogRouter } from './routes/catalog.js'
+import { chatRouter } from './routes/chat.js'
 import { initDatabase, getDb } from './lib/db.js'
 import { createAuth } from './lib/auth.js'
 
@@ -89,6 +90,7 @@ app.use('/api/categories', categoriesRouter)
 app.use('/api/members', membersRouter)
 app.use('/api/aggregates', aggregatesRouter)
 app.use('/api/catalog', catalogRouter)
+app.use('/api/chat', chatRouter)
 
 // Serve static files in production
 const distPath = path.join(process.cwd(), 'dist')

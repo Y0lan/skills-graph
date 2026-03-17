@@ -74,6 +74,7 @@ export default function VisxRadarChart({
 }: RadarChartProps) {
   const [overlayVisible, setOverlayVisible] = useState(true)
   const chartContainerRef = useRef<HTMLDivElement>(null)
+  const chartSvgRef = useRef<HTMLDivElement>(null)
   const {
     tooltipData,
     tooltipLeft,
@@ -86,7 +87,7 @@ export default function VisxRadarChart({
   const hasOverlay = overlay && overlay.length > 0
 
   const handlePngExport = useCallback(() => {
-    const container = chartContainerRef.current
+    const container = chartSvgRef.current
     if (!container) return
     const svg = container.querySelector('svg')
     if (!svg) return
@@ -114,7 +115,7 @@ export default function VisxRadarChart({
   }, [])
 
   const handleSvgExport = useCallback(() => {
-    const container = chartContainerRef.current
+    const container = chartSvgRef.current
     if (!container) return
     const svg = container.querySelector('svg')
     if (!svg) return
@@ -162,7 +163,7 @@ export default function VisxRadarChart({
           </div>
         )}
       </div>
-      <div className="w-full" style={{ height }}>
+      <div ref={chartSvgRef} className="w-full" style={{ height }}>
         <ParentSize>
           {({ width: parentWidth }) => (
             <RadarSvg

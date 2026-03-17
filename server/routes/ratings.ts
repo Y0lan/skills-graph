@@ -1,8 +1,7 @@
 import { Router } from 'express'
 import { teamMembers } from '../../src/data/team-roster.js'
 import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation, getDb } from '../lib/db.js'
-import { computeMemberAggregate } from '../lib/aggregates.js'
-import { generateProfileSummary } from '../lib/summary.js'
+import { generateAndSaveSummary } from '../lib/summary.js'
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js'
 
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug))
@@ -121,26 +120,46 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, r
 
   // Generate LLM summary (≤10s, returns null on failure)
   try {
-    const aggregate = computeMemberAggregate(slug)
-    if (aggregate) {
-      const summary = await generateProfileSummary(
-        aggregate.memberName,
-        aggregate.role,
-        aggregate.categories.map(c => ({
-          label: c.categoryLabel,
-          avgRank: c.avgRank,
-          targetRank: c.targetRank,
-          gap: c.gap,
-        })),
-      )
-      if (summary) {
-        getDb().prepare('UPDATE evaluations SET profile_summary = ? WHERE slug = ?').run(summary, slug)
-      }
-    }
+    await generateAndSaveSummary(slug)
   } catch (err) {
     console.error('[SUMMARY] Generation failed during submit:', err)
   }
 
+  // Invalidate cached comparisons involving this slug
+  try {
+    getDb().prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(slug, slug)
+  } catch { /* Table may not exist yet */ }
+
   // Re-read after potential summary write so response includes profileSummary
+  res.json(getEvaluation(slug))
+})
+
+// POST /:slug/generate-summary — generate summary on demand (auth + ownership)
+ratingsRouter.post('/:slug/generate-summary', requireAuth, requireOwnership, async (req, res) => {
+  const slug = req.params.slug as string
+
+  if (!VALID_SLUGS.has(slug)) {
+    res.status(404).json({ error: 'Membre introuvable' })
+    return
+  }
+
+  const memberData = getEvaluation(slug)
+  if (!memberData || !memberData.submittedAt) {
+    res.status(400).json({ error: 'Évaluation non soumise' })
+    return
+  }
+
+  // Idempotent: return existing summary if already generated
+  if (memberData.profileSummary) {
+    res.json(memberData)
+    return
+  }
+
+  try {
+    await generateAndSaveSummary(slug)
+  } catch (err) {
+    console.error('[SUMMARY] Generation failed on demand:', err)
+  }
+
   res.json(getEvaluation(slug))
 })
