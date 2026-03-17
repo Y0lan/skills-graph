@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/require-auth.js'
-import { computeMemberAggregate } from '../lib/aggregates.js'
+import { computeMemberAggregate, computeTeamAggregate } from '../lib/aggregates.js'
 import { getDb } from '../lib/db.js'
 
 interface AuthUser {
@@ -72,25 +72,44 @@ chatRouter.post('/', requireAuth, async (req, res) => {
     return
   }
 
-  // Build context from aggregate data (validate slug types)
+  // Build context from aggregate data
+  // Support both new slugs[] format and legacy slug/compareSlug format
+  let contextSlugs: string[] = []
+  if (Array.isArray(context?.slugs)) {
+    contextSlugs = context.slugs.filter((s: unknown) => typeof s === 'string')
+  } else {
+    // Legacy format fallback
+    if (context?.slug && typeof context.slug === 'string') contextSlugs.push(context.slug)
+    if (context?.compareSlug && typeof context.compareSlug === 'string') contextSlugs.push(context.compareSlug)
+  }
+
+  if (contextSlugs.length > 15) {
+    res.status(400).json({ error: 'Trop de profils en contexte (max 15)' })
+    return
+  }
+
   let contextBlock = ''
-  if (context?.slug && typeof context.slug === 'string') {
-    const agg = computeMemberAggregate(context.slug)
-    if (agg) {
-      contextBlock += `\n\nProfil consulté : ${agg.memberName} (${agg.role})\nCatégories :\n${agg.categories.map(c =>
+  if (contextSlugs.length === 0) {
+    // Global context — use team aggregate
+    const team = computeTeamAggregate()
+    if (team && team.submittedCount > 0) {
+      contextBlock = `\n\nContexte global de l'équipe (${team.submittedCount}/${team.teamSize} évaluations) :\n`
+      contextBlock += team.categories.map(c =>
+        `- ${c.categoryLabel} : moyenne ${c.teamAvgRank.toFixed(1)}/5`
+      ).join('\n')
+    }
+  } else {
+    for (const s of contextSlugs) {
+      const agg = computeMemberAggregate(s)
+      if (!agg) continue
+      contextBlock += `\n\nProfil : ${agg.memberName} (${agg.role})\nCatégories :\n${agg.categories.map(c =>
         `- ${c.categoryLabel} : ${c.avgRank.toFixed(1)}/5 (cible: ${c.targetRank}, écart: ${c.gap > 0 ? `-${c.gap.toFixed(1)}` : 'OK'})`
       ).join('\n')}`
-      if (agg.profileSummary) contextBlock += `\n\nSynthèse IA : ${agg.profileSummary}`
+      if (agg.profileSummary) contextBlock += `\nSynthèse IA : ${agg.profileSummary}`
     }
   }
-  if (context?.compareSlug && typeof context.compareSlug === 'string') {
-    const agg2 = computeMemberAggregate(context.compareSlug)
-    if (agg2) {
-      contextBlock += `\n\nProfil comparé : ${agg2.memberName} (${agg2.role})\nCatégories :\n${agg2.categories.map(c =>
-        `- ${c.categoryLabel} : ${c.avgRank.toFixed(1)}/5 (cible: ${c.targetRank}, écart: ${c.gap > 0 ? `-${c.gap.toFixed(1)}` : 'OK'})`
-      ).join('\n')}`
-    }
-  }
+
+  console.log('[CHAT] Context: %d profiles, prompt ~%d chars', contextSlugs.length, SYSTEM_BASE.length + contextBlock.length)
 
   const systemPrompt = SYSTEM_BASE + contextBlock
 

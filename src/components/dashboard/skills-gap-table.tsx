@@ -12,7 +12,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Download } from 'lucide-react'
+import { Download, Info } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import type { TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
 import { useCatalog } from '@/hooks/use-catalog'
 
@@ -168,7 +169,21 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Analyse des lacunes</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          Analyse des lacunes
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger className="rounded-full p-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground">
+                <Info className="h-3.5 w-3.5" />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                Les lacunes sont calculées comme l'écart entre le score moyen
+                du membre et l'objectif défini pour chaque catégorie de compétences.
+                Sévérité : Critique (écart ≥ 2), À améliorer (≥ 1), OK ({'<'} 1).
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </CardTitle>
         <div className="flex items-center gap-2">
           <select
             className="rounded-md border bg-background px-2 py-1 text-sm"

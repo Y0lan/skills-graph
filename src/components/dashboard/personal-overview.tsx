@@ -17,9 +17,10 @@ interface PersonalOverviewProps {
   teamMembers?: TeamMemberAggregateResponse[]
   isOwnProfile?: boolean
   onFindExpert?: (categoryId: string) => void
+  onCompareChange?: (slug: string | null) => void
 }
 
-export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile = true, onFindExpert }: PersonalOverviewProps) {
+export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile = true, onFindExpert, onCompareChange }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
@@ -38,6 +39,7 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
   if (memberId !== prevMemberId) {
     setPrevMemberId(memberId)
     setCompareSlug(null)
+    onCompareChange?.(null)
     setComparisonSummary(null)
     setCompareAggregate(null)
     setProfileSummary(aggregate.profileSummary)
@@ -174,7 +176,9 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
               <>
                 <Select value={compareSlug ?? ''} onValueChange={(v) => {
                   const newSlug = v || null
+                  if (newSlug === compareSlug) return // Same selection — skip reset
                   setCompareSlug(newSlug)
+                  onCompareChange?.(newSlug)
                   setCompareAggregate(null)
                   // Restore from cache if available
                   if (newSlug) {

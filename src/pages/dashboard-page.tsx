@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { MessageSquare } from 'lucide-react'
 import AppHeader from '@/components/app-header'
 import { TeamPopover } from '@/components/team-popover'
 import { authClient } from '@/lib/auth-client'
@@ -92,12 +93,35 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState(slug ? 'profil' : 'equipe')
   const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
   const [prevSlug, setPrevSlug] = useState(slug)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [contextSlugs, setContextSlugs] = useState<string[]>([])
+  const [prevContextKey, setPrevContextKey] = useState(`${activeTab}:${slug ?? ''}`)
 
   // When slug resolves (e.g. session loaded), switch to profil tab
   if (slug && slug !== prevSlug) {
     setPrevSlug(slug)
     if (!prevSlug) setActiveTab('profil')
   }
+
+  // Auto-context: synchronously derive from active tab + slug changes
+  const contextKey = `${activeTab}:${slug ?? ''}`
+  if (contextKey !== prevContextKey) {
+    setPrevContextKey(contextKey)
+    if (activeTab === 'profil' && slug) {
+      setContextSlugs([slug])
+    } else {
+      setContextSlugs([])
+    }
+  }
+
+  const handleCompareChange = useCallback((compareSlug: string | null) => {
+    setContextSlugs(prev => {
+      if (!slug) return prev
+      const base = [slug]
+      if (compareSlug) base.push(compareSlug)
+      return [...new Set(base)]
+    })
+  }, [slug])
 
   const loading = memberLoading || teamLoading
 
@@ -118,107 +142,153 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader headerActions={headerActions} />
-      <div className="mx-auto max-w-7xl space-y-8 p-4 pt-14 sm:p-8 sm:pt-14">
-        {/* Header — always visible, outside tabs */}
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Radar des Competences</h1>
-          {member && (
-            <p className="mt-1 text-base text-muted-foreground">
-              <span className="font-medium text-foreground">{member.name}</span> — {member.role}
-            </p>
-          )}
+      <div className="flex min-h-[calc(100vh-3.5rem)]">
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-7xl space-y-8 p-4 pt-14 sm:p-8 sm:pt-14">
+            {/* Header — always visible, outside tabs */}
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+                <img src="/radar.png" alt="" className="h-8 w-8" />
+                Radar des Compétences
+              </h1>
+              {member && (
+                <div className="mt-1 flex items-center gap-3">
+                  {!isOwnProfile && session?.user?.slug && (
+                    <Link
+                      to={`/dashboard/${session.user.slug}`}
+                      className="text-sm text-primary hover:underline flex items-center gap-1"
+                    >
+                      ← Mon profil
+                    </Link>
+                  )}
+                  <p className="text-base text-muted-foreground">
+                    <span className="font-medium text-foreground">{member.name}</span> — {member.role}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Empty state — outside tabs */}
+            {!hasTeamData && !memberAggregate ? (
+              <div className="rounded-lg border border-dashed p-12 text-center">
+                <h2 className="text-xl font-semibold">Aucune donnée</h2>
+                <p className="mt-2 text-muted-foreground">
+                  Les membres de l'équipe n'ont pas encore soumis leurs évaluations.
+                  Partagez leurs liens personnels pour commencer !
+                </p>
+              </div>
+            ) : (
+              <Tabs value={activeTab} onValueChange={(tab) => {
+                setActiveTab(tab)
+                if (tab !== 'expert') setExpertCategoryHint(null)
+              }}>
+                <TabsList variant="line" className="w-full sm:w-auto">
+                  {slug && (
+                    <TabsTrigger value="profil">{isOwnProfile ? 'Mon profil' : 'Profil'}</TabsTrigger>
+                  )}
+                  <TabsTrigger value="equipe">Équipe</TabsTrigger>
+                  <TabsTrigger value="cartographie">Cartographie</TabsTrigger>
+                  <TabsTrigger value="expert">Trouver un expert</TabsTrigger>
+                </TabsList>
+
+                {/* Personal Overview tab */}
+                {slug && (
+                  <TabsContent value="profil" className="space-y-8 pt-6">
+                    <Suspense fallback={tabFallback}>
+                      {member && memberAggregate && (
+                        <PersonalOverview
+                          aggregate={memberAggregate}
+                          teamMembers={teamAggregate?.members}
+                          isOwnProfile={!!isOwnProfile}
+                          onFindExpert={(categoryId) => {
+                            setExpertCategoryHint(categoryId)
+                            setActiveTab('expert')
+                          }}
+                          onCompareChange={handleCompareChange}
+                        />
+                      )}
+                    </Suspense>
+                  </TabsContent>
+                )}
+
+                {/* Team tab — all team sections */}
+                <TabsContent value="equipe" className="space-y-8 pt-6">
+                  <Suspense fallback={tabFallback}>
+                    {teamAggregate && hasTeamData && (
+                      <>
+                        <TeamOverview
+                          categories={teamAggregate.categories}
+                          teamSize={teamAggregate.teamSize}
+                          submittedCount={teamAggregate.submittedCount}
+                        />
+                        <TeamMembersGrid members={teamAggregate.members} />
+                        <CategorySummaryCards
+                          categories={teamAggregate.categories}
+                          categoryTargets={teamAggregate.categoryTargets}
+                          onFindExpert={(categoryId) => {
+                            setExpertCategoryHint(categoryId)
+                            setActiveTab('expert')
+                          }}
+                        />
+                        <CategoryDeepDive
+                          categories={teamAggregate.categories}
+                          members={teamAggregate.members}
+                          viewerSlug={member?.slug}
+                        />
+                        <SkillsGapTable
+                          members={teamAggregate.members}
+                          categories={teamAggregate.categories}
+                        />
+                      </>
+                    )}
+                  </Suspense>
+                </TabsContent>
+
+                {/* Cartographie (heatmap) tab */}
+                <TabsContent value="cartographie" className="space-y-8 pt-6">
+                  <Suspense fallback={tabFallback}>
+                    {teamAggregate && hasTeamData && (
+                      <SkillHeatmap members={teamAggregate.members} />
+                    )}
+                  </Suspense>
+                </TabsContent>
+
+                {/* Expert Finder tab */}
+                <TabsContent value="expert" className="space-y-8 pt-6">
+                  <Suspense fallback={tabFallback}>
+                    {teamAggregate && hasTeamData && (
+                      <ExpertFinder members={teamAggregate.members} initialCategoryId={expertCategoryHint} />
+                    )}
+                  </Suspense>
+                </TabsContent>
+              </Tabs>
+            )}
+          </div>
         </div>
 
-        {/* Empty state — outside tabs */}
-        {!hasTeamData && !memberAggregate ? (
-          <div className="rounded-lg border border-dashed p-12 text-center">
-            <h2 className="text-xl font-semibold">Aucune donnée</h2>
-            <p className="mt-2 text-muted-foreground">
-              Les membres de l'équipe n'ont pas encore soumis leurs évaluations.
-              Partagez leurs liens personnels pour commencer !
-            </p>
-          </div>
-        ) : (
-          <Tabs value={activeTab} onValueChange={(tab) => {
-            setActiveTab(tab)
-            if (tab !== 'expert') setExpertCategoryHint(null)
-          }}>
-            <TabsList variant="line" className="w-full sm:w-auto">
-              {slug && (
-                <TabsTrigger value="profil">{isOwnProfile ? 'Mon profil' : 'Profil'}</TabsTrigger>
-              )}
-              <TabsTrigger value="equipe">Équipe</TabsTrigger>
-              <TabsTrigger value="cartographie">Cartographie</TabsTrigger>
-              <TabsTrigger value="expert">Trouver un expert</TabsTrigger>
-            </TabsList>
-
-            {/* T015: Personal Overview tab */}
-            {slug && (
-              <TabsContent value="profil" className="space-y-8 pt-6">
-                <Suspense fallback={tabFallback}>
-                  {member && memberAggregate && (
-                    <PersonalOverview
-                      aggregate={memberAggregate}
-                      teamMembers={teamAggregate?.members}
-                      isOwnProfile={!!isOwnProfile}
-                      onFindExpert={(categoryId) => {
-                        setExpertCategoryHint(categoryId)
-                        setActiveTab('expert')
-                      }}
-                    />
-                  )}
-                  {session && <ChatPanel slug={slug} />}
-                </Suspense>
-              </TabsContent>
+        {/* Chat side panel — desktop only, authenticated only */}
+        {session && (
+          <Suspense fallback={null}>
+            {chatOpen ? (
+              <div className="hidden md:flex w-[380px] min-w-[280px] max-w-[500px] border-l flex-col bg-background">
+                <ChatPanel
+                  contextSlugs={contextSlugs}
+                  onContextChange={setContextSlugs}
+                  teamMembers={teamAggregate?.members ?? []}
+                  onClose={() => setChatOpen(false)}
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() => setChatOpen(true)}
+                className="hidden md:flex fixed bottom-6 right-6 h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors z-50"
+                title="Assistant IA"
+              >
+                <MessageSquare className="h-5 w-5" />
+              </button>
             )}
-
-            {/* T016: Team tab — all team sections */}
-            <TabsContent value="equipe" className="space-y-8 pt-6">
-              <Suspense fallback={tabFallback}>
-                {teamAggregate && hasTeamData && (
-                  <>
-                    <TeamOverview
-                      categories={teamAggregate.categories}
-                      teamSize={teamAggregate.teamSize}
-                      submittedCount={teamAggregate.submittedCount}
-                    />
-                    <CategorySummaryCards
-                      categories={teamAggregate.categories}
-                      categoryTargets={teamAggregate.categoryTargets}
-                    />
-                    <CategoryDeepDive
-                      categories={teamAggregate.categories}
-                      members={teamAggregate.members}
-                      viewerSlug={member?.slug}
-                    />
-                    <SkillsGapTable
-                      members={teamAggregate.members}
-                      categories={teamAggregate.categories}
-                    />
-                    <TeamMembersGrid members={teamAggregate.members} />
-                  </>
-                )}
-              </Suspense>
-            </TabsContent>
-
-            {/* Cartographie (heatmap) tab */}
-            <TabsContent value="cartographie" className="space-y-8 pt-6">
-              <Suspense fallback={tabFallback}>
-                {teamAggregate && hasTeamData && (
-                  <SkillHeatmap members={teamAggregate.members} />
-                )}
-              </Suspense>
-            </TabsContent>
-
-            {/* T017: Expert Finder tab */}
-            <TabsContent value="expert" className="space-y-8 pt-6">
-              <Suspense fallback={tabFallback}>
-                {teamAggregate && hasTeamData && (
-                  <ExpertFinder members={teamAggregate.members} initialCategoryId={expertCategoryHint} />
-                )}
-              </Suspense>
-            </TabsContent>
-          </Tabs>
+          </Suspense>
         )}
       </div>
     </div>

@@ -1,5 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Info } from 'lucide-react'
 import type { TeamCategoryAggregateResponse } from '@/lib/types'
 import { useCatalog } from '@/hooks/use-catalog'
@@ -7,6 +15,7 @@ import { useCatalog } from '@/hooks/use-catalog'
 interface CategorySummaryCardsProps {
   categories: TeamCategoryAggregateResponse[]
   categoryTargets: Record<string, number>
+  onFindExpert?: (categoryId: string) => void
 }
 
 /**
@@ -30,85 +39,94 @@ const strengthColor = (avg: number): string => {
 export default function CategorySummaryCards({
   categories,
   categoryTargets,
+  onFindExpert,
 }: CategorySummaryCardsProps) {
   const { categories: skillCategories } = useCatalog()
   return (
-    <TooltipProvider>
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {categories.map((cat) => {
-        const catInfo = skillCategories.find((c) => c.id === cat.categoryId)
-        const skills = catInfo?.skills ?? []
-        const target = categoryTargets[cat.categoryId] ?? 3
-        const avgPct = Math.min((cat.teamAvgRank / 5) * 100, 100)
-        const targetPct = Math.min((target / 5) * 100, 100)
+    <Card>
+      <CardHeader>
+        <CardTitle>Synthèse par catégorie</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <TooltipProvider>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Catégorie</TableHead>
+                <TableHead className="text-right">Moy.</TableHead>
+                <TableHead className="text-right">Objectif</TableHead>
+                <TableHead className="text-right">Min / Max</TableHead>
+                <TableHead className="w-32">Distribution</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {categories.map((cat) => {
+                const catInfo = skillCategories.find((c) => c.id === cat.categoryId)
+                const skills = catInfo?.skills ?? []
+                const target = categoryTargets[cat.categoryId] ?? 3
+                const avgPct = Math.min((cat.teamAvgRank / 5) * 100, 100)
+                const targetPct = Math.min((target / 5) * 100, 100)
 
-        return (
-          <Card key={cat.categoryId} className="overflow-hidden">
-            <CardHeader className="border-b border-border/50 bg-accent/30 pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  {cat.categoryLabel}
-                </CardTitle>
-                <Tooltip>
-                  <TooltipTrigger className="rounded-full p-1 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground">
-                    <Info className="h-3.5 w-3.5" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" align="end" className="max-w-xs">
-                    <ul className="space-y-0.5">
-                      {skills.map((s) => (
-                        <li key={s.id}>{s.label}</li>
-                      ))}
-                    </ul>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Moyenne équipe</span>
-                <span
-                  className={`text-lg font-bold tabular-nums ${strengthColor(cat.teamAvgRank)}`}
-                >
-                  {cat.teamAvgRank.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Objectif</span>
-                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                  {target.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Min / Max</span>
-                <span className="font-medium tabular-nums">
-                  {cat.minRank.toFixed(1)} — {cat.maxRank.toFixed(1)}
-                </span>
-              </div>
-              {/* Distribution bar with target marker */}
-              <div className="space-y-1">
-                <div className="relative h-2 w-full overflow-visible rounded-full bg-secondary">
-                  <div
-                    className={`h-full rounded-full transition-all ${barColorClass(cat.teamAvgRank, target)}`}
-                    style={{ width: `${avgPct}%` }}
-                  />
-                  {/* Target marker — thin vertical line */}
-                  <div
-                    className="absolute top-1/2 -translate-y-1/2"
-                    style={{ left: `${targetPct}%` }}
-                  >
-                    <div className="relative -ml-px h-4 w-0.5 rounded-full bg-foreground/70" />
-                  </div>
-                </div>
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>0</span>
-                  <span>5</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )
-      })}
-    </div>
-    </TooltipProvider>
+                return (
+                  <TableRow key={cat.categoryId}>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {onFindExpert ? (
+                          <button
+                            onClick={() => onFindExpert(cat.categoryId)}
+                            className="font-medium text-left hover:text-primary hover:underline"
+                          >
+                            {cat.categoryLabel}
+                          </button>
+                        ) : (
+                          <span className="font-medium">{cat.categoryLabel}</span>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger className="rounded-full p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground">
+                            <Info className="h-3 w-3" />
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" align="start" className="max-w-xs">
+                            <ul className="space-y-0.5">
+                              {skills.map((s) => (
+                                <li key={s.id}>{s.label}</li>
+                              ))}
+                            </ul>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className={`font-bold tabular-nums ${strengthColor(cat.teamAvgRank)}`}>
+                        {cat.teamAvgRank.toFixed(1)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {target.toFixed(1)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {cat.minRank.toFixed(1)} — {cat.maxRank.toFixed(1)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="relative h-1.5 w-full overflow-visible rounded-full bg-secondary">
+                        <div
+                          className={`h-full rounded-full transition-all ${barColorClass(cat.teamAvgRank, target)}`}
+                          style={{ width: `${avgPct}%` }}
+                        />
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2"
+                          style={{ left: `${targetPct}%` }}
+                        >
+                          <div className="relative -ml-px h-3 w-0.5 rounded-full bg-foreground/70" />
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TooltipProvider>
+      </CardContent>
+    </Card>
   )
 }
