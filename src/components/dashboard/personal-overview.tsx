@@ -28,7 +28,7 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [comparisonSummary, setComparisonSummary] = useState<string | null>(null)
   const [comparisonLoading, setComparisonLoading] = useState(false)
-  const [compareProfileSummary, setCompareProfileSummary] = useState<string | null>(null)
+  const [compareAggregate, setCompareAggregate] = useState<MemberAggregateResponse | null>(null)
 
   // Client-side cache for comparison summaries (survives re-renders, cleared on profile change)
   const comparisonCache = useRef<Map<string, string>>(new Map())
@@ -39,7 +39,7 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
     setPrevMemberId(memberId)
     setCompareSlug(null)
     setComparisonSummary(null)
-    setCompareProfileSummary(null)
+    setCompareAggregate(null)
     setProfileSummary(aggregate.profileSummary)
     comparisonCache.current.clear()
   }
@@ -85,16 +85,16 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
     setComparisonLoading(false)
   }, [memberId, compareSlug])
 
-  // Fetch compared member's profile summary when compareSlug changes
+  // Fetch compared member's full aggregate when compareSlug changes
   useEffect(() => {
     if (!compareSlug) {
-      setCompareProfileSummary(null)
+      setCompareAggregate(null)
       return
     }
     let cancelled = false
     fetch(`/api/aggregates/${compareSlug}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d) setCompareProfileSummary(d.profileSummary ?? null) })
+      .then(d => { if (!cancelled && d) setCompareAggregate(d) })
       .catch(() => {})
     return () => { cancelled = true }
   }, [compareSlug])
@@ -175,7 +175,7 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
                 <Select value={compareSlug ?? ''} onValueChange={(v) => {
                   const newSlug = v || null
                   setCompareSlug(newSlug)
-                  setCompareProfileSummary(null)
+                  setCompareAggregate(null)
                   // Restore from cache if available
                   if (newSlug) {
                     const key = [memberId, newSlug].sort().join(':')
@@ -213,8 +213,8 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Summary block: pill badges + AI narrative */}
-        {((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
+        {/* Summary block: pill badges + AI narrative — hidden when side-by-side is active */}
+        {!compareSlug && ((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {topStrengths.map(s => (
@@ -250,30 +250,57 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
           </div>
         )}
 
-        {/* Side-by-side summaries + AI comparison — shown when comparing */}
-        {compareSlug && compareTarget && (profileSummary || compareProfileSummary || comparisonSummary) && (
+        {/* Side-by-side summaries + AI comparison — replaces main summary when comparing */}
+        {compareSlug && compareTarget && (
           <div className="space-y-3">
-            {/* Side-by-side profile summaries */}
-            {(profileSummary || compareProfileSummary) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">{isOwnProfile ? 'Mon profil' : memberName}</p>
-                  {profileSummary ? (
-                    <p className="text-muted-foreground italic">{profileSummary}</p>
-                  ) : (
-                    <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
-                  )}
-                </div>
-                <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
-                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">{compareTarget.name}</p>
-                  {compareProfileSummary ? (
-                    <p className="text-muted-foreground italic">{compareProfileSummary}</p>
-                  ) : (
-                    <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
-                  )}
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Current profile */}
+              <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">{isOwnProfile ? 'Mon profil' : memberName}</p>
+                {((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
+                  <div className="flex flex-wrap gap-1">
+                    {topStrengths.map(s => (
+                      <Badge key={s.categoryId} className="bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 text-[10px] px-1.5 h-4">
+                        {shortLabel(s.categoryLabel)}
+                      </Badge>
+                    ))}
+                    {topGaps.map(g => (
+                      <Badge key={g.categoryId} className="bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 text-[10px] px-1.5 h-4">
+                        {shortLabel(g.categoryLabel)}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {profileSummary ? (
+                  <p className="text-muted-foreground italic text-xs">{profileSummary}</p>
+                ) : (
+                  <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
+                )}
               </div>
-            )}
+              {/* Compared profile */}
+              <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground">{compareTarget.name}</p>
+                {compareAggregate && ((compareAggregate.topStrengths?.length > 0) || (compareAggregate.topGaps?.length > 0)) && (
+                  <div className="flex flex-wrap gap-1">
+                    {compareAggregate.topStrengths.map(s => (
+                      <Badge key={s.categoryId} className="bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 text-[10px] px-1.5 h-4">
+                        {shortLabel(s.categoryLabel)}
+                      </Badge>
+                    ))}
+                    {compareAggregate.topGaps.map(g => (
+                      <Badge key={g.categoryId} className="bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 text-[10px] px-1.5 h-4">
+                        {shortLabel(g.categoryLabel)}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {compareAggregate?.profileSummary ? (
+                  <p className="text-muted-foreground italic text-xs">{compareAggregate.profileSummary}</p>
+                ) : (
+                  <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
+                )}
+              </div>
+            </div>
             {/* AI comparison narrative */}
             {comparisonSummary && (
               <div className="rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
