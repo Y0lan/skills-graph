@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Table,
   TableBody,
@@ -216,12 +217,12 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
                     >
                       {i === 0 ? (
                         <div>
-                          <a
-                            href={`/dashboard/${group.memberSlug}`}
+                          <Link
+                            to={`/dashboard/${group.memberSlug}`}
                             className="hover:text-primary hover:underline"
                           >
                             {group.memberName}
-                          </a>
+                          </Link>
                           <p className="text-xs text-muted-foreground font-normal">{group.role}</p>
                         </div>
                       ) : null}

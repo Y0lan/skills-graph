@@ -40,9 +40,9 @@ export default function FormPage() {
             <p className="mt-2 text-muted-foreground">
               Le lien suivi ne correspond à aucun membre de l'équipe.
             </p>
-            <a href="/dashboard" className="mt-4 inline-block text-primary underline">
+            <Link to="/dashboard" className="mt-4 inline-block text-primary underline">
               Aller au tableau de bord
-            </a>
+            </Link>
           </CardContent>
         </Card>
       </div>

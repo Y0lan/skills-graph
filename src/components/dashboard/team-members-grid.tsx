@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { teamOrder } from '@/data/team-roster'
@@ -56,12 +57,12 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                     <VisxRadarChart data={radarData} height={180} compact />
                   )}
                   <div className="text-center">
-                    <a
-                      href={`/dashboard/${member.slug}`}
+                    <Link
+                      to={`/dashboard/${member.slug}`}
                       className="font-semibold hover:text-primary hover:underline"
                     >
                       {member.name}
-                    </a>
+                    </Link>
                     <p className="text-xs text-muted-foreground">{member.role}</p>
                     <p className="mt-0.5 text-xs font-medium text-primary/70">{member.team}</p>
                     {!hasSubmitted && (
