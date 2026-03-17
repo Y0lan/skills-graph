@@ -190,7 +190,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
         <div className="flex items-center gap-1">
           <button
             onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
             title="Fermer"
           >
             <X className="h-4 w-4" />

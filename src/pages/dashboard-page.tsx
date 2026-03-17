@@ -283,10 +283,10 @@ export default function DashboardPage() {
             ) : (
               <button
                 onClick={() => setChatOpen(true)}
-                className="hidden md:flex fixed bottom-6 right-6 h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors z-50"
-                title="Assistant IA"
+                className="hidden md:flex fixed bottom-6 right-6 items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors z-50"
               >
-                <MessageSquare className="h-5 w-5" />
+                <MessageSquare className="h-4 w-4" />
+                Assistant IA
               </button>
             )}
           </Suspense>

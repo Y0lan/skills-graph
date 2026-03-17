@@ -2,6 +2,8 @@ import { Router } from 'express'
 import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/require-auth.js'
 import { computeMemberAggregate, computeTeamAggregate } from '../lib/aggregates.js'
+import { getSkillCategories } from '../lib/catalog.js'
+import { getAllEvaluations } from '../lib/db.js'
 import { getDb } from '../lib/db.js'
 
 interface AuthUser {
@@ -20,6 +22,25 @@ Règles :
 - Ne cite pas de scores bruts sauf si on te le demande explicitement
 - Propose des pistes concrètes (formation, mentorat, mise en situation)
 - Ton professionnel et bienveillant`
+
+/** Build skill-level detail block for a member's ratings */
+function buildSkillDetail(ratings: Record<string, number>): string {
+  const cats = getSkillCategories()
+  const lines: string[] = []
+  for (const cat of cats) {
+    const skills = cat.skills
+      .map(s => {
+        const val = ratings[s.id]
+        return val !== undefined && val > 0 ? `  · ${s.label} : ${val}/5` : null
+      })
+      .filter(Boolean)
+    if (skills.length > 0) {
+      lines.push(`${cat.label} :`)
+      lines.push(...(skills as string[]))
+    }
+  }
+  return lines.join('\n')
+}
 
 export const chatRouter = Router()
 
@@ -88,15 +109,26 @@ chatRouter.post('/', requireAuth, async (req, res) => {
     return
   }
 
+  const allRatings = getAllEvaluations()
+
   let contextBlock = ''
   if (contextSlugs.length === 0) {
-    // Global context — use team aggregate
+    // Global context — team aggregate + every member's skill-level data
     const team = computeTeamAggregate()
     if (team && team.submittedCount > 0) {
       contextBlock = `\n\nContexte global de l'équipe (${team.submittedCount}/${team.teamSize} évaluations) :\n`
       contextBlock += team.categories.map(c =>
         `- ${c.categoryLabel} : moyenne ${c.teamAvgRank.toFixed(1)}/5`
       ).join('\n')
+
+      // Add every submitted member's skill-level detail
+      for (const m of team.members) {
+        if (!m.submittedAt) continue
+        const memberRatings = allRatings[m.slug]?.ratings
+        if (!memberRatings) continue
+        contextBlock += `\n\n── ${m.name} (${m.role}) ──\n`
+        contextBlock += buildSkillDetail(memberRatings)
+      }
     }
   } else {
     for (const s of contextSlugs) {
@@ -105,6 +137,13 @@ chatRouter.post('/', requireAuth, async (req, res) => {
       contextBlock += `\n\nProfil : ${agg.memberName} (${agg.role})\nCatégories :\n${agg.categories.map(c =>
         `- ${c.categoryLabel} : ${c.avgRank.toFixed(1)}/5 (cible: ${c.targetRank}, écart: ${c.gap > 0 ? `-${c.gap.toFixed(1)}` : 'OK'})`
       ).join('\n')}`
+
+      // Skill-level detail
+      const memberRatings = allRatings[s]?.ratings
+      if (memberRatings) {
+        contextBlock += `\nDétail des compétences :\n${buildSkillDetail(memberRatings)}`
+      }
+
       if (agg.profileSummary) contextBlock += `\nSynthèse IA : ${agg.profileSummary}`
     }
   }
