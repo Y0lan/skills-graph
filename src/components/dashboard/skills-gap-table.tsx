@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { shortLabel } from '@/lib/utils'
 import {
   Table,
   TableBody,
@@ -227,7 +228,7 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
                         </div>
                       ) : null}
                     </TableCell>
-                    <TableCell>{row.categoryLabel.replace(/\s*\(.*\)$/, '')}</TableCell>
+                    <TableCell>{shortLabel(row.categoryLabel)}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.avgRank.toFixed(1)}
                     </TableCell>

@@ -12,6 +12,7 @@ export interface MemberEvaluation {
   experience: Record<string, number>
   skippedCategories: string[]
   submittedAt: string | null
+  profileSummary: string | null
 }
 
 let db: Database.Database
@@ -38,6 +39,11 @@ export function initDatabase(): void {
       submitted_at TEXT
     )
   `)
+
+  // Add profile_summary column (idempotent migration)
+  try {
+    db.exec('ALTER TABLE evaluations ADD COLUMN profile_summary TEXT')
+  } catch { /* Column already exists */ }
 
   // Catalog tables
   db.exec(`
@@ -130,6 +136,7 @@ export function getAllEvaluations(): Record<string, MemberEvaluation> {
     experience: string
     skipped_categories: string
     submitted_at: string | null
+    profile_summary: string | null
   }[]
 
   const result: Record<string, MemberEvaluation> = {}
@@ -139,6 +146,7 @@ export function getAllEvaluations(): Record<string, MemberEvaluation> {
       experience: JSON.parse(row.experience),
       skippedCategories: JSON.parse(row.skipped_categories),
       submittedAt: row.submitted_at,
+      profileSummary: row.profile_summary ?? null,
     }
   }
   return result
@@ -151,6 +159,7 @@ export function getEvaluation(slug: string): MemberEvaluation | null {
     experience: string
     skipped_categories: string
     submitted_at: string | null
+    profile_summary: string | null
   } | undefined
 
   if (!row) return null
@@ -160,6 +169,7 @@ export function getEvaluation(slug: string): MemberEvaluation | null {
     experience: JSON.parse(row.experience),
     skippedCategories: JSON.parse(row.skipped_categories),
     submittedAt: row.submitted_at,
+    profileSummary: row.profile_summary ?? null,
   }
 }
 

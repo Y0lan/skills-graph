@@ -1,11 +1,9 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { ClipboardEdit, ArrowRight } from 'lucide-react'
 import AppHeader from '@/components/app-header'
+import { TeamPopover } from '@/components/team-popover'
 import { authClient } from '@/lib/auth-client'
 import type { MemberAggregateResponse, TeamAggregateResponse } from '@/lib/types'
 
@@ -87,6 +85,10 @@ export default function DashboardPage() {
   const { data: teamAggregate, loading: teamLoading } = useTeamAggregate()
   const { data: session } = authClient.useSession()
 
+  const defaultTab = slug ? 'profil' : 'equipe'
+  const [activeTab, setActiveTab] = useState(defaultTab)
+  const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
+
   const loading = memberLoading || teamLoading
 
   if (loading && !teamAggregate) {
@@ -98,56 +100,10 @@ export default function DashboardPage() {
   }
 
   const hasTeamData = teamAggregate && teamAggregate.submittedCount > 0
-  const defaultTab = slug ? 'profil' : 'equipe'
 
   const isOwnProfile = session && member && session.user.slug === member.slug
-  const isLoggedInButOtherProfile = session && member && session.user.slug !== member.slug
 
-  let headerActions: React.ReactNode = undefined
-  if (member) {
-    if (isOwnProfile) {
-      headerActions = (
-        <Button variant="outline" size="sm" className="shrink-0 gap-1.5" nativeButton={false} render={<Link to={`/form/${member.slug}`} />}>
-          <ClipboardEdit className="h-4 w-4" />
-          Modifier
-        </Button>
-      )
-    } else if (isLoggedInButOtherProfile) {
-      headerActions = (
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<span className="inline-flex" />}>
-              <Button variant="outline" size="sm" className="shrink-0 gap-1.5 opacity-50 pointer-events-none" disabled tabIndex={-1}>
-                <ClipboardEdit className="h-4 w-4" />
-                Modifier
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              Impossible de modifier un profil autre que le sien
-            </TooltipContent>
-          </Tooltip>
-          <Button variant="outline" size="sm" className="shrink-0 gap-1.5" nativeButton={false} render={<Link to={`/dashboard/${session.user.slug}`} />}>
-            <ArrowRight className="h-4 w-4" />
-            Mon profil
-          </Button>
-        </div>
-      )
-    } else {
-      headerActions = (
-        <Tooltip>
-          <TooltipTrigger render={<span className="inline-flex" />}>
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5 opacity-50 pointer-events-none" disabled tabIndex={-1}>
-              <ClipboardEdit className="h-4 w-4" />
-              Modifier
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            Connectez-vous pour modifier votre evaluation
-          </TooltipContent>
-        </Tooltip>
-      )
-    }
-  }
+  const headerActions = slug ? <TeamPopover currentSlug={slug} /> : undefined
 
   return (
     <div className="min-h-screen bg-background">
@@ -173,7 +129,10 @@ export default function DashboardPage() {
             </p>
           </div>
         ) : (
-          <Tabs defaultValue={defaultTab}>
+          <Tabs value={activeTab} onValueChange={(tab) => {
+            setActiveTab(tab)
+            if (tab !== 'expert') setExpertCategoryHint(null)
+          }}>
             <TabsList variant="line" className="w-full sm:w-auto">
               {slug && (
                 <TabsTrigger value="profil">{isOwnProfile ? 'Mon profil' : 'Profil'}</TabsTrigger>
@@ -188,7 +147,14 @@ export default function DashboardPage() {
               <TabsContent value="profil" className="space-y-8 pt-6">
                 <Suspense fallback={tabFallback}>
                   {member && memberAggregate && (
-                    <PersonalOverview aggregate={memberAggregate} />
+                    <PersonalOverview
+                      aggregate={memberAggregate}
+                      teamMembers={teamAggregate?.members}
+                      onFindExpert={(categoryId) => {
+                        setExpertCategoryHint(categoryId)
+                        setActiveTab('expert')
+                      }}
+                    />
                   )}
                 </Suspense>
               </TabsContent>
@@ -236,7 +202,7 @@ export default function DashboardPage() {
             <TabsContent value="expert" className="space-y-8 pt-6">
               <Suspense fallback={tabFallback}>
                 {teamAggregate && hasTeamData && (
-                  <ExpertFinder members={teamAggregate.members} />
+                  <ExpertFinder members={teamAggregate.members} initialCategoryId={expertCategoryHint} />
                 )}
               </Suspense>
             </TabsContent>

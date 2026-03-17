@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { useRatings } from '@/hooks/use-ratings'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
@@ -8,13 +8,14 @@ import AppHeader from '@/components/app-header'
 import ResetConfirmDialog from '@/components/reset-confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { CheckCircle2, ChevronLeft, LayoutDashboard, RotateCcw, Send } from 'lucide-react'
+import { ChevronLeft, LayoutDashboard, Loader2, RotateCcw, Send } from 'lucide-react'
 
 export default function FormPage() {
   const { slug } = useParams<{ slug: string }>()
   const member = slug ? findMember(slug) : undefined
+  const navigate = useNavigate()
   const { data, loading, error, fetchRatings, submitRatings, resetRatings } = useRatings()
-  const [submitted, setSubmitted] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   const [ready, setReady] = useState(false)
   const [resetKey, setResetKey] = useState(0)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
@@ -70,31 +71,16 @@ export default function FormPage() {
     )
   }
 
-  if (submitted) {
+  if (analyzing) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Card className="max-w-md">
           <CardContent className="flex flex-col items-center gap-4 p-8">
-            <CheckCircle2 className="h-12 w-12 text-green-500" />
-            <h1 className="text-2xl font-bold">Évaluation soumise !</h1>
+            <Loader2 className="h-12 w-12 text-primary animate-spin" />
+            <h1 className="text-2xl font-bold">Analyse des réponses en cours...</h1>
             <p className="text-center text-muted-foreground">
-              Merci, {member.name}. Votre auto-évaluation a été enregistrée.
-              Vous pouvez revenir à tout moment pour modifier vos notes.
+              Merci, {member.name}. Votre profil est en cours de génération.
             </p>
-            <div className="flex gap-3">
-              <Link
-                to={`/dashboard/${slug}`}
-                className="text-sm text-primary underline"
-              >
-                Voir mon tableau de bord
-              </Link>
-              <button
-                onClick={() => setSubmitted(false)}
-                className="text-sm text-muted-foreground underline"
-              >
-                Modifier mes notes
-              </button>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -107,7 +93,6 @@ export default function FormPage() {
     setResetting(false)
     if (ok) {
       setResetDialogOpen(false)
-      setSubmitted(false)
       setResetKey((k) => k + 1)
     }
   }
@@ -193,8 +178,10 @@ export default function FormPage() {
           }}
           submitting={loading}
           onSubmit={async (payload) => {
+            setAnalyzing(true)
             const result = await submitRatings(slug!, payload)
-            if (result) setSubmitted(true)
+            if (result) navigate(`/dashboard/${slug}`)
+            else setAnalyzing(false)
           }}
           onNavigationChange={handleNavigationChange}
         />

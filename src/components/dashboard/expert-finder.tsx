@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 
 interface ExpertFinderProps {
   members: TeamMemberAggregateResponse[]
+  initialCategoryId?: string | null
 }
 
 /** Return a Tailwind class for a skill score badge. */
@@ -30,14 +31,23 @@ function scoreColorClass(score: number | null): string {
   return 'bg-muted text-muted-foreground'
 }
 
-export default function ExpertFinder({ members }: ExpertFinderProps) {
+export default function ExpertFinder({ members, initialCategoryId }: ExpertFinderProps) {
   const { categories: skillCategories, skillById } = useCatalog()
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchFocused, setIsSearchFocused] = useState(false)
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(
+    initialCategoryId ?? null
+  )
   const searchRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const [prevHint, setPrevHint] = useState(initialCategoryId)
+
+  // Sync activeCategoryId when initialCategoryId changes (from gap deep-link)
+  if (initialCategoryId && initialCategoryId !== prevHint) {
+    setPrevHint(initialCategoryId)
+    setActiveCategoryId(initialCategoryId)
+  }
 
   /** Resolve a skill id to its label from the catalog. */
   const skillLabel = (skillId: string): string => {

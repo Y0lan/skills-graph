@@ -64,6 +64,8 @@ interface MemberAggregateResponse {
   hasRatings: boolean
   categories: CategoryAggregateResponse[]
   topGaps: GapResponse[]
+  topStrengths: { categoryId: string; categoryLabel: string; avgRank: number }[]
+  profileSummary: string | null
 }
 
 interface TeamCategoryAggregateResponse {
@@ -156,6 +158,13 @@ export function computeMemberAggregate(slug: string): MemberAggregateResponse | 
       targetRank: c.targetRank,
     }))
 
+  // Top 3 strengths sorted descending (highest avg first)
+  const topStrengths = [...categories]
+    .filter((c) => c.avgRank > 0)
+    .sort((a, b) => b.avgRank - a.avgRank)
+    .slice(0, 3)
+    .map((c) => ({ categoryId: c.categoryId, categoryLabel: c.categoryLabel, avgRank: c.avgRank }))
+
   return {
     memberId: member.slug,
     memberName: member.name,
@@ -164,6 +173,8 @@ export function computeMemberAggregate(slug: string): MemberAggregateResponse | 
     hasRatings,
     categories,
     topGaps,
+    topStrengths,
+    profileSummary: memberData?.profileSummary ?? null,
   }
 }
 

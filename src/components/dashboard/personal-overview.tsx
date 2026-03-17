@@ -1,20 +1,26 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
-import type { MemberAggregateResponse } from '@/lib/types'
+import { shortLabel } from '@/lib/utils'
+import type { MemberAggregateResponse, TeamMemberAggregateResponse } from '@/lib/types'
 
 interface PersonalOverviewProps {
   aggregate: MemberAggregateResponse & { hasRatings?: boolean }
+  teamMembers?: TeamMemberAggregateResponse[]
+  onFindExpert?: (categoryId: string) => void
 }
 
-export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
-  const { memberId, memberName, submittedAt, categories, topGaps } = aggregate
+export default function PersonalOverview({ aggregate, teamMembers, onFindExpert }: PersonalOverviewProps) {
+  const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
+  const [compareSlug, setCompareSlug] = useState<string | null>(null)
 
   // Empty state: no ratings at all
   if (!hasRatings) {
@@ -44,16 +50,24 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
   const isDraft = !submittedAt
 
   const data = categories.map((cat) => ({
-    label: cat.categoryLabel.replace(/\s*\(.*\)$/, ''),
+    label: shortLabel(cat.categoryLabel),
     value: cat.avgRank,
     fullMark: 5,
   }))
 
+  const compareTarget = compareSlug
+    ? teamMembers?.find(m => m.slug === compareSlug)
+    : null
+
   const overlayData = categories.map((cat) => ({
-    label: cat.categoryLabel.replace(/\s*\(.*\)$/, ''),
-    value: cat.teamAvgRank,
+    label: shortLabel(cat.categoryLabel),
+    value: compareTarget
+      ? (compareTarget.categoryAverages[cat.categoryId] ?? 0)
+      : cat.teamAvgRank,
     fullMark: 5,
   }))
+
+  const overlayLabel = compareTarget ? compareTarget.name : 'Moyenne équipe'
 
   return (
     <Card>
@@ -67,17 +81,51 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
               </Badge>
             )}
           </div>
-          <ChartViewToggle view={view} onChange={setView} />
+          <div className="flex items-center gap-2">
+            {teamMembers && teamMembers.length > 0 && (
+              <Select value={compareSlug ?? ''} onValueChange={(v) => setCompareSlug(v || null)}>
+                <SelectTrigger size="sm">
+                  <SelectValue placeholder="Comparer avec : Moyenne équipe" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Moyenne équipe</SelectItem>
+                  {teamMembers.filter(m => m.slug !== memberId && m.submittedAt).map(m => (
+                    <SelectItem key={m.slug} value={m.slug}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <ChartViewToggle view={view} onChange={setView} />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Deterministic + LLM summary block */}
+        {topStrengths && topStrengths.length > 0 && (
+          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-1">
+            {aggregate.profileSummary && (
+              <p className="text-muted-foreground italic">{aggregate.profileSummary}</p>
+            )}
+            <p>
+              <span className="font-semibold text-green-600 dark:text-green-400">Points forts</span>
+              {' : '}{topStrengths.map(s => shortLabel(s.categoryLabel)).join(', ')}.
+            </p>
+            {topGaps.length > 0 && (
+              <p>
+                <span className="font-semibold text-red-500 dark:text-red-400">Axes d'amélioration</span>
+                {' : '}{topGaps.map(g => shortLabel(g.categoryLabel)).join(', ')}.
+              </p>
+            )}
+          </div>
+        )}
+
         {view === 'radar' ? (
           <VisxRadarChart
             data={data}
             overlay={overlayData}
             height={400}
             primaryLabel="Vous"
-            overlayLabel="Moyenne équipe"
+            overlayLabel={overlayLabel}
             showOverlayToggle
             showExport
           />
@@ -86,7 +134,7 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
             data={data}
             overlay={overlayData}
             primaryLabel="Vous"
-            overlayLabel="Moyenne équipe"
+            overlayLabel={overlayLabel}
           />
         )}
 
@@ -112,6 +160,14 @@ export default function PersonalOverview({ aggregate }: PersonalOverviewProps) {
                     <span className="font-semibold tabular-nums text-red-500">
                       -{gap.gap.toFixed(1)}
                     </span>
+                    {onFindExpert && (
+                      <button
+                        onClick={() => onFindExpert(gap.categoryId)}
+                        className="text-xs text-primary hover:underline whitespace-nowrap"
+                      >
+                        Trouver un expert →
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

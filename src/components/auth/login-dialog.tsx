@@ -5,10 +5,11 @@ import { LogIn, CheckCircle, Circle, PenLine, Loader2, KeyRound } from 'lucide-r
 import { authClient } from '@/lib/auth-client'
 import { teamMembers } from '@/data/team-roster'
 import type { TeamMember } from '@/data/team-roster'
+import { StatusIcon } from '@/components/status-icon'
+import { useTeamStatus } from '@/hooks/use-team-status'
 
 const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name))
 
-type EvalStatus = 'none' | 'draft' | 'submitted'
 type View = 'select' | 'customize'
 
 export function LoginDialog() {
@@ -21,29 +22,9 @@ export function LoginDialog() {
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>('select')
-  const [statusMap, setStatusMap] = useState<Map<string, EvalStatus>>(new Map())
+  const { statusMap } = useTeamStatus(open)
   const pinRef = useRef<HTMLInputElement>(null)
   const newPinRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const controller = new AbortController()
-    fetch('/api/ratings', { signal: controller.signal })
-      .then((r) => r.json())
-      .then((data: Record<string, { ratings: Record<string, number>; submittedAt: string | null }>) => {
-        const map = new Map<string, EvalStatus>()
-        for (const [slug, eval_] of Object.entries(data)) {
-          if (eval_.submittedAt) {
-            map.set(slug, 'submitted')
-          } else if (Object.keys(eval_.ratings).length > 0) {
-            map.set(slug, 'draft')
-          }
-        }
-        setStatusMap(map)
-      })
-      .catch(() => {})
-    return () => controller.abort()
-  }, [open])
 
   useEffect(() => {
     if (selected && pinRef.current) {
@@ -299,13 +280,3 @@ export function LoginDialog() {
   )
 }
 
-function StatusIcon({ status }: { status: EvalStatus }) {
-  switch (status) {
-    case 'submitted':
-      return <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
-    case 'draft':
-      return <PenLine className="h-4 w-4 shrink-0 text-amber-500" />
-    default:
-      return <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-  }
-}

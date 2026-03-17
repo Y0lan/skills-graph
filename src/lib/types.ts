@@ -42,6 +42,8 @@ export interface MemberAggregateResponse {
   submittedAt: string | null
   categories: CategoryAggregateResponse[]
   topGaps: GapResponse[]
+  topStrengths: { categoryId: string; categoryLabel: string; avgRank: number }[]
+  profileSummary: string | null
 }
 
 export interface CategoryAggregateResponse {

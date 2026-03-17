@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import { teamMembers } from '../../src/data/team-roster.js'
-import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation } from '../lib/db.js'
+import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation, getDb } from '../lib/db.js'
+import { computeMemberAggregate } from '../lib/aggregates.js'
+import { generateProfileSummary } from '../lib/summary.js'
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js'
 
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug))
@@ -100,7 +102,7 @@ ratingsRouter.delete('/:slug', requireAuth, requireOwnership, (req, res) => {
 })
 
 // POST /:slug/submit — finalize evaluation (auth + ownership required)
-ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, (req, res) => {
+ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, res) => {
   const slug = req.params.slug as string
 
   if (!VALID_SLUGS.has(slug)) {
@@ -115,6 +117,30 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, (req, res) =>
     return
   }
 
-  const updated = submitEvaluation(slug)
-  res.json(updated)
+  submitEvaluation(slug)
+
+  // Generate LLM summary (≤10s, returns null on failure)
+  try {
+    const aggregate = computeMemberAggregate(slug)
+    if (aggregate) {
+      const summary = await generateProfileSummary(
+        aggregate.memberName,
+        aggregate.role,
+        aggregate.categories.map(c => ({
+          label: c.categoryLabel,
+          avgRank: c.avgRank,
+          targetRank: c.targetRank,
+          gap: c.gap,
+        })),
+      )
+      if (summary) {
+        getDb().prepare('UPDATE evaluations SET profile_summary = ? WHERE slug = ?').run(summary, slug)
+      }
+    }
+  } catch (err) {
+    console.error('[SUMMARY] Generation failed during submit:', err)
+  }
+
+  // Re-read after potential summary write so response includes profileSummary
+  res.json(getEvaluation(slug))
 })
