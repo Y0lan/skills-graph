@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Sparkles, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,6 +28,10 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [comparisonSummary, setComparisonSummary] = useState<string | null>(null)
   const [comparisonLoading, setComparisonLoading] = useState(false)
+  const [compareProfileSummary, setCompareProfileSummary] = useState<string | null>(null)
+
+  // Client-side cache for comparison summaries (survives re-renders, cleared on profile change)
+  const comparisonCache = useRef<Map<string, string>>(new Map())
 
   // Reset state when profile changes
   const [prevMemberId, setPrevMemberId] = useState(memberId)
@@ -35,7 +39,9 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
     setPrevMemberId(memberId)
     setCompareSlug(null)
     setComparisonSummary(null)
+    setCompareProfileSummary(null)
     setProfileSummary(aggregate.profileSummary)
+    comparisonCache.current.clear()
   }
 
   const handleGenerateSummary = useCallback(async () => {
@@ -52,6 +58,15 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
 
   const handleCompare = useCallback(async () => {
     if (!compareSlug) return
+
+    // Check client cache first
+    const cacheKey = [memberId, compareSlug].sort().join(':')
+    const cached = comparisonCache.current.get(cacheKey)
+    if (cached) {
+      setComparisonSummary(cached)
+      return
+    }
+
     setComparisonLoading(true)
     try {
       const res = await fetch('/api/aggregates/compare', {
@@ -62,11 +77,27 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
       })
       if (res.ok) {
         const data = await res.json()
-        setComparisonSummary(data.summary ?? null)
+        const summary = data.summary ?? null
+        setComparisonSummary(summary)
+        if (summary) comparisonCache.current.set(cacheKey, summary)
       }
     } catch { /* silent */ }
     setComparisonLoading(false)
   }, [memberId, compareSlug])
+
+  // Fetch compared member's profile summary when compareSlug changes
+  useEffect(() => {
+    if (!compareSlug) {
+      setCompareProfileSummary(null)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/aggregates/${compareSlug}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setCompareProfileSummary(d.profileSummary ?? null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [compareSlug])
 
   // Empty state: no ratings at all
   if (!hasRatings) {
@@ -141,7 +172,18 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
           <div className="flex items-center gap-2">
             {teamMembers && teamMembers.length > 0 && (
               <>
-                <Select value={compareSlug ?? ''} onValueChange={(v) => { setCompareSlug(v || null); setComparisonSummary(null) }}>
+                <Select value={compareSlug ?? ''} onValueChange={(v) => {
+                  const newSlug = v || null
+                  setCompareSlug(newSlug)
+                  setCompareProfileSummary(null)
+                  // Restore from cache if available
+                  if (newSlug) {
+                    const key = [memberId, newSlug].sort().join(':')
+                    setComparisonSummary(comparisonCache.current.get(key) ?? null)
+                  } else {
+                    setComparisonSummary(null)
+                  }
+                }}>
                   <SelectTrigger size="sm">
                     <SelectValue placeholder="Comparer avec : Moyenne équipe" />
                   </SelectTrigger>
@@ -208,6 +250,43 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
           </div>
         )}
 
+        {/* Side-by-side summaries + AI comparison — shown when comparing */}
+        {compareSlug && compareTarget && (profileSummary || compareProfileSummary || comparisonSummary) && (
+          <div className="space-y-3">
+            {/* Side-by-side profile summaries */}
+            {(profileSummary || compareProfileSummary) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">{isOwnProfile ? 'Mon profil' : memberName}</p>
+                  {profileSummary ? (
+                    <p className="text-muted-foreground italic">{profileSummary}</p>
+                  ) : (
+                    <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
+                  )}
+                </div>
+                <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
+                  <p className="text-xs font-semibold text-muted-foreground mb-1.5">{compareTarget.name}</p>
+                  {compareProfileSummary ? (
+                    <p className="text-muted-foreground italic">{compareProfileSummary}</p>
+                  ) : (
+                    <p className="text-muted-foreground/50 text-xs">Pas de synthèse disponible</p>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* AI comparison narrative */}
+            {comparisonSummary && (
+              <div className="rounded-md border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+                <p className="text-xs font-semibold text-primary mb-1.5 flex items-center gap-1.5">
+                  <MessageSquare className="h-3 w-3" />
+                  Analyse comparative IA
+                </p>
+                <p className="text-muted-foreground italic">{comparisonSummary}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {view === 'radar' ? (
           <VisxRadarChart
             data={data}
@@ -225,12 +304,6 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
             primaryLabel={isOwnProfile ? 'Moi' : memberName}
             overlayLabel={overlayLabel}
           />
-        )}
-
-        {comparisonSummary && (
-          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm">
-            <p className="text-muted-foreground italic">{comparisonSummary}</p>
-          </div>
         )}
 
         {topGaps.length > 0 && (
