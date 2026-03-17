@@ -79,15 +79,24 @@ const tabFallback = (
 )
 
 export default function DashboardPage() {
-  const { slug } = useParams<{ slug: string }>()
+  const { slug: urlSlug } = useParams<{ slug: string }>()
+  const { data: session } = authClient.useSession()
+
+  // Auto-resolve to logged-in user's slug when visiting /dashboard/ without a slug
+  const slug = urlSlug || (session?.user?.slug as string | undefined) || undefined
   const member = slug ? findMember(slug) : undefined
   const { data: memberAggregate, loading: memberLoading } = useMemberAggregate(slug)
   const { data: teamAggregate, loading: teamLoading } = useTeamAggregate()
-  const { data: session } = authClient.useSession()
 
-  const defaultTab = slug ? 'profil' : 'equipe'
-  const [activeTab, setActiveTab] = useState(defaultTab)
+  const [activeTab, setActiveTab] = useState(slug ? 'profil' : 'equipe')
   const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
+  const [prevSlug, setPrevSlug] = useState(slug)
+
+  // When slug resolves (e.g. session loaded), switch to profil tab
+  if (slug && slug !== prevSlug) {
+    setPrevSlug(slug)
+    if (!prevSlug) setActiveTab('profil')
+  }
 
   const loading = memberLoading || teamLoading
 
