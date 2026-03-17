@@ -142,10 +142,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader headerActions={headerActions} />
-      <div className="flex min-h-[calc(100vh-3.5rem)]">
-        {/* Main content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl space-y-8 p-4 pt-14 sm:p-8 sm:pt-14">
+      <div className="mx-auto max-w-7xl space-y-8 p-4 pt-14 sm:p-8 sm:pt-14">
             {/* Header — always visible, outside tabs */}
             <div>
               <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
@@ -265,33 +262,31 @@ export default function DashboardPage() {
                 </TabsContent>
               </Tabs>
             )}
-          </div>
-        </div>
-
-        {/* Chat side panel — desktop only, authenticated only */}
-        {session && (
-          <Suspense fallback={null}>
-            {chatOpen ? (
-              <div className="hidden md:flex w-[380px] min-w-[280px] max-w-[500px] border-l flex-col bg-background">
-                <ChatPanel
-                  contextSlugs={contextSlugs}
-                  onContextChange={setContextSlugs}
-                  teamMembers={teamAggregate?.members ?? []}
-                  onClose={() => setChatOpen(false)}
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => setChatOpen(true)}
-                className="hidden md:flex fixed bottom-6 right-6 items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors z-50"
-              >
-                <MessageSquare className="h-4 w-4" />
-                Assistant IA
-              </button>
-            )}
-          </Suspense>
-        )}
       </div>
+
+      {/* Floating chat window — authenticated only */}
+      {session && (
+        <Suspense fallback={null}>
+          {chatOpen ? (
+            <div className="fixed bottom-6 right-6 z-50 flex h-[520px] w-[400px] flex-col rounded-xl border bg-background shadow-2xl">
+              <ChatPanel
+                contextSlugs={contextSlugs}
+                onContextChange={setContextSlugs}
+                teamMembers={teamAggregate?.members ?? []}
+                onClose={() => setChatOpen(false)}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+            >
+              <MessageSquare className="h-4 w-4" />
+              Assistant IA
+            </button>
+          )}
+        </Suspense>
+      )}
     </div>
   )
 }

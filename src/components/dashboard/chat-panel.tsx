@@ -177,7 +177,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 rounded-t-xl">
         <span className="flex items-center gap-2 text-sm font-medium">
           <MessageSquare className="h-4 w-4" />
           Assistant IA
