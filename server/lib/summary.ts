@@ -1,14 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk'
 
-const SYSTEM_PROMPT = `Tu es un coach technique bienveillant spécialisé dans le développement des compétences.
+const SYSTEM_PROMPT = `Tu es un directeur technique expérimenté qui rédige des synthèses de profil pour un outil interne de cartographie des compétences d'une équipe IT.
 
-Règles :
-- Exactement 2-3 phrases en un seul paragraphe fluide
-- Ton professionnel, bienveillant et motivant
-- Commence par les forces, puis mentionne les axes de progression
-- Ne répète pas les scores numériques — le tableau les affiche déjà
-- Pas de bullet points, pas de titres, pas d'émoji
-- Maximum 150 mots
+Contexte : chaque membre s'auto-évalue sur une échelle de 0 (Inconnu) à 5 (Expert/Référent). Les scores sont moyennés par catégorie. Un "écart" signifie que le score est inférieur à la cible fixée pour son rôle.
+
+Ta mission : rédiger un paragraphe unique (3-4 phrases) qui donne une lecture stratégique du profil — pas un résumé de chiffres, mais une interprétation utile pour un manager ou le collaborateur lui-même.
+
+Structure attendue :
+1. Commence par caractériser le profil en une phrase (spécialiste pointu ? généraliste polyvalent ? profil en transition ?)
+2. Mets en valeur les domaines de force et ce qu'ils apportent concrètement à l'équipe
+3. Identifie les axes de progression les plus stratégiques, en suggérant le type de montée en compétence (formation, mentorat, mise en situation projet…)
+4. Termine par une perspective motivante ou un conseil actionnable
+
+Règles strictes :
+- Un seul paragraphe fluide, 80-120 mots
+- Ton direct et professionnel, pas condescendant ni scolaire
+- Ne cite JAMAIS de scores numériques (pas de "3.2/5" ni "score de 4")
+- Pas de bullet points, pas de titres, pas de sous-titres, pas d'émoji
+- N'utilise pas "vous" — parle du collaborateur à la troisième personne (prénom)
 - Écris en français`
 
 export async function generateProfileSummary(
@@ -22,24 +31,25 @@ export async function generateProfileSummary(
     return null
   }
 
-  const client = new Anthropic({ apiKey, timeout: 10_000 })
+  const client = new Anthropic({ apiKey, timeout: 30_000 })
 
-  const strengths = categories.filter(c => c.avgRank > 0).sort((a, b) => b.avgRank - a.avgRank).slice(0, 3)
-  const gaps = categories.filter(c => c.gap > 0).sort((a, b) => b.gap - a.gap).slice(0, 3)
+  const sorted = [...categories].sort((a, b) => b.avgRank - a.avgRank)
+  const gaps = categories.filter(c => c.gap > 0).sort((a, b) => b.gap - a.gap)
 
-  const userPrompt = `Profil de compétences de ${memberName} (${role}) :
+  const userPrompt = `Profil : ${memberName}, ${role}
 
-Points forts (score moyen sur 5) :
-${strengths.map(s => `- ${s.label} : ${s.avgRank.toFixed(1)}/5`).join('\n')}
+Compétences par catégorie (score moyen / 5, écart = distance à la cible du rôle) :
+${sorted.map(c => `- ${c.label} : ${c.avgRank.toFixed(1)}/5${c.gap > 0 ? ` (écart : -${c.gap.toFixed(1)})` : ''}`).join('\n')}
 
-Axes d'amélioration (écart vs cible) :
-${gaps.length > 0 ? gaps.map(g => `- ${g.label} : ${g.avgRank.toFixed(1)}/5 (cible : ${g.targetRank})`).join('\n') : '- Aucun écart significatif'}`
+${gaps.length > 0 ? `Catégories sous la cible : ${gaps.map(g => g.label).join(', ')}` : 'Toutes les catégories atteignent ou dépassent la cible.'}
+
+Rédige la synthèse.`
 
   try {
     const startMs = Date.now()
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 200,
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 300,
       temperature: 0.7,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
