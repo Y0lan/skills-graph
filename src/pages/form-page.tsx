@@ -82,12 +82,12 @@ export default function FormPage() {
               Vous pouvez revenir à tout moment pour modifier vos notes.
             </p>
             <div className="flex gap-3">
-              <a
-                href={`/dashboard/${slug}`}
+              <Link
+                to={`/dashboard/${slug}`}
                 className="text-sm text-primary underline"
               >
                 Voir mon tableau de bord
-              </a>
+              </Link>
               <button
                 onClick={() => setSubmitted(false)}
                 className="text-sm text-muted-foreground underline"

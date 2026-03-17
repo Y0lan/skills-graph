@@ -11,6 +11,8 @@ primary_region = "syd"
 [http_service]
   internal_port = 8080
   force_https = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
 
 [mounts]
   source = "sqlite_data"

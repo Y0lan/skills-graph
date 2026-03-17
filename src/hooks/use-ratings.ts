@@ -54,18 +54,31 @@ export function useRatings(): UseRatingsReturn {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/ratings/${slug}`, {
+        // Step 1: Save latest ratings
+        const saveRes = await fetch(`/api/ratings/${slug}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}))
+        if (!saveRes.ok) {
+          const errBody = await saveRes.json().catch(() => ({}))
+          throw new Error(
+            (errBody as Record<string, string>).error ?? 'Impossible de sauvegarder les évaluations',
+          )
+        }
+
+        // Step 2: Finalize submission (sets submitted_at)
+        const submitRes = await fetch(`/api/ratings/${slug}/submit`, {
+          method: 'POST',
+        })
+        if (!submitRes.ok) {
+          const errBody = await submitRes.json().catch(() => ({}))
           throw new Error(
             (errBody as Record<string, string>).error ?? 'Impossible de soumettre les évaluations',
           )
         }
-        const json = await res.json()
+
+        const json = await submitRes.json()
         setData(json)
         return json
       } catch (err) {
