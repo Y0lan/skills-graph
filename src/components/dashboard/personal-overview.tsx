@@ -214,7 +214,7 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Summary block: pill badges + AI narrative */}
-        {topStrengths && topStrengths.length > 0 && (
+        {((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {topStrengths.map(s => (

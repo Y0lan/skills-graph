@@ -120,7 +120,7 @@ export default function FormPage() {
               render={<Link to={`/dashboard/${slug}`} />}
             >
               <LayoutDashboard className="h-4 w-4" />
-              <span className="hidden sm:inline">Tableau de bord</span>
+              <span className="hidden sm:inline">Mon profil</span>
             </Button>
           </>
         }
