@@ -1,6 +1,7 @@
 FROM litestream/litestream:0.3.13 AS litestream
 
 FROM node:22-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
