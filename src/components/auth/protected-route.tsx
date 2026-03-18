@@ -4,9 +4,10 @@ import { authClient } from '@/lib/auth-client'
 
 interface ProtectedRouteProps {
   children: ReactNode
+  checkOwnership?: boolean
 }
 
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, checkOwnership = true }: ProtectedRouteProps) {
   const { data: session, isPending } = authClient.useSession()
   const { slug } = useParams()
 
@@ -19,10 +20,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!session) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to="/" replace />
   }
 
-  if (slug && session.user.slug !== slug) {
+  if (checkOwnership && slug && session.user.slug !== slug) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2">
         <p className="text-lg font-semibold">Acces refuse</p>

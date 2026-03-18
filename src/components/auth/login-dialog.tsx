@@ -12,7 +12,11 @@ const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.nam
 
 type View = 'select' | 'customize'
 
-export function LoginDialog() {
+interface LoginDialogProps {
+  redirectTo?: string
+}
+
+export function LoginDialog({ redirectTo }: LoginDialogProps = {}) {
   const { data: session } = authClient.useSession()
   const [selected, setSelected] = useState<TeamMember | null>(null)
   const [pin, setPin] = useState('')
@@ -57,7 +61,7 @@ export function LoginDialog() {
       } else if (data && !data.user.pinCustomized) {
         setView('customize')
       } else {
-        window.location.href = `/form/${selected.slug}`
+        window.location.href = redirectTo ?? `/form/${selected.slug}`
       }
     } catch {
       setError('Erreur de connexion')
@@ -87,7 +91,7 @@ export function LoginDialog() {
         setError(body.message || 'Erreur — veuillez vous reconnecter')
         return
       }
-      window.location.href = `/form/${selected!.slug}`
+      window.location.href = redirectTo ?? `/form/${selected!.slug}`
     } catch {
       setError('Erreur de connexion')
     } finally {

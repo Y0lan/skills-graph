@@ -1,11 +1,12 @@
-import { lazy, Suspense, Component } from 'react'
+import { lazy, Suspense, Component, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { CatalogProvider } from '@/providers/catalog-provider'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 
+const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
 const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
 
@@ -15,6 +16,7 @@ function App() {
       <ThemeProvider>
         <CatalogProvider>
         <TooltipProvider>
+          <ScrollToTop />
           <ErrorBoundary>
             <Suspense
               fallback={
@@ -24,9 +26,10 @@ function App() {
               }
             >
               <Routes>
+                <Route path="/" element={<LandingPage />} />
                 <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
-                <Route path="/dashboard/:slug?" element={<DashboardPage />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard/:slug?" element={<ProtectedRoute checkOwnership={false}><DashboardPage /></ProtectedRoute>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
@@ -35,6 +38,14 @@ function App() {
       </ThemeProvider>
     </BrowserRouter>
   )
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [pathname])
+  return null
 }
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

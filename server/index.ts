@@ -11,6 +11,7 @@ import { catalogRouter } from './routes/catalog.js'
 import { chatRouter } from './routes/chat.js'
 import { initDatabase, getDb } from './lib/db.js'
 import { createAuth } from './lib/auth.js'
+import { requireAuth } from './middleware/require-auth.js'
 
 const PORT = parseInt(process.env.PORT || '3001', 10)
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
@@ -82,6 +83,13 @@ app.use(express.json())
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
+})
+
+// Global auth gate — protect all /api/* except auth and catalog
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/auth/')) return next()
+  if (req.path === '/catalog' || req.path === '/catalog/') return next()
+  return requireAuth(req, res, next)
 })
 
 // API routes

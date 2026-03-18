@@ -26,7 +26,7 @@ export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) 
     } catch {
       // signOut failed — navigate anyway to reset UI state
     }
-    navigate('/dashboard')
+    navigate('/')
   }
 
   return (

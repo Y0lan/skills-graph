@@ -1,0 +1,70 @@
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { authClient } from '@/lib/auth-client'
+import { LoginDialog } from '@/components/auth/login-dialog'
+import ThemeToggle from '@/components/theme-toggle'
+import { RadarBackground } from '@/components/ui/radar-background'
+
+export default function LandingPage() {
+  const { data: session, isPending } = authClient.useSession()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!isPending && session?.user) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isPending, session, navigate])
+
+  if (isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Chargement...</p>
+      </div>
+    )
+  }
+
+  if (session?.user) {
+    return null
+  }
+
+  return (
+    <div className="relative min-h-screen overflow-hidden">
+      {/* WebGL radar background */}
+      <div className="absolute inset-0">
+        <RadarBackground
+          speed={0.6}
+          scale={0.9}
+          ringCount={6}
+          spokeCount={8}
+          color="rgba(34, 197, 94, 0.35)"
+        />
+      </div>
+
+      {/* Overlay for readability */}
+      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+
+      {/* Theme toggle */}
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+
+      {/* Centered content */}
+      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center gap-6 px-4">
+        <img
+          src="/radar.png"
+          alt="Radar des Compétences"
+          className="h-20 w-20 drop-shadow-lg"
+        />
+        <div className="text-center">
+          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+            Radar des Compétences
+          </h1>
+          <p className="mt-3 text-lg text-muted-foreground">
+            Évaluez et visualisez les compétences de votre équipe
+          </p>
+        </div>
+        <LoginDialog redirectTo="/dashboard" />
+      </div>
+    </div>
+  )
+}
