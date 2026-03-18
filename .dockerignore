@@ -5,6 +5,7 @@ dist
 .git
 .gitignore
 server/data/
+!server/data/team-roster.ts
 *.md
 .vscode
 .idea
