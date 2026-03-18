@@ -5,10 +5,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button'
 import { StatusIcon } from '@/components/status-icon'
 import { useTeamStatus } from '@/hooks/use-team-status'
-import { teamMembers } from '@/data/team-roster'
+import { teamMembers, findMember } from '@/data/team-roster'
 import { cn } from '@/lib/utils'
-
-const sortedMembers = [...teamMembers].sort((a, b) => a.name.localeCompare(b.name))
 
 interface TeamPopoverProps {
   currentSlug?: string
@@ -34,7 +32,12 @@ export function TeamPopover({ currentSlug }: TeamPopoverProps) {
           </p>
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
-          {sortedMembers.map((member) => {
+          {[...teamMembers].sort((a, b) => {
+            const nameA = findMember(a.slug)?.name ?? a.name
+            const nameB = findMember(b.slug)?.name ?? b.name
+            return nameA.localeCompare(nameB)
+          }).map((member) => {
+            const resolved = findMember(member.slug) ?? member
             const status = statusMap.get(member.slug) ?? 'none'
             const isCurrent = member.slug === currentSlug
             return (
@@ -53,10 +56,10 @@ export function TeamPopover({ currentSlug }: TeamPopoverProps) {
                 <StatusIcon status={status} />
                 <div className="min-w-0 flex-1">
                   <p className={cn('truncate', isCurrent && 'font-medium')}>
-                    {member.name}
+                    {resolved.name}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
-                    {member.role}
+                    {resolved.role}
                   </p>
                 </div>
               </button>
