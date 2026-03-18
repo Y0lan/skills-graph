@@ -94,13 +94,14 @@ export default function DashboardPage() {
   const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
   const [prevSlug, setPrevSlug] = useState(slug)
   const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
   const [contextSlugs, setContextSlugs] = useState<string[]>([])
   const [prevContextKey, setPrevContextKey] = useState(`${activeTab}:${slug ?? ''}`)
 
-  // When slug resolves (e.g. session loaded), switch to profil tab
+  // When slug changes (session loaded, or navigating to another member), switch to profil tab
   if (slug && slug !== prevSlug) {
     setPrevSlug(slug)
-    if (!prevSlug) setActiveTab('profil')
+    setActiveTab('profil')
   }
 
   // Auto-context: synchronously derive from active tab + slug changes
@@ -198,6 +199,7 @@ export default function DashboardPage() {
                         <PersonalOverview
                           aggregate={memberAggregate}
                           teamMembers={teamAggregate?.members}
+                          teamCategories={teamAggregate?.categories}
                           isOwnProfile={!!isOwnProfile}
                           onFindExpert={(categoryId) => {
                             setExpertCategoryHint(categoryId)
@@ -274,6 +276,8 @@ export default function DashboardPage() {
                 onContextChange={setContextSlugs}
                 teamMembers={teamAggregate?.members ?? []}
                 onClose={() => setChatOpen(false)}
+                messages={chatMessages}
+                onMessagesChange={setChatMessages}
               />
             </div>
           ) : (

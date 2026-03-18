@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { MessageSquare, Send, Loader2, X, Plus, Check } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -15,13 +17,28 @@ interface ChatPanelProps {
   onContextChange: (slugs: string[]) => void
   teamMembers: TeamMemberAggregateResponse[]
   onClose: () => void
+  messages: ChatMessage[]
+  onMessagesChange: React.Dispatch<React.SetStateAction<ChatMessage[]>>
 }
 
-export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, onClose }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+function formatResetTime(resetsAt: string): string {
+  const reset = new Date(resetsAt)
+  const now = new Date()
+  const diffMs = reset.getTime() - now.getTime()
+  if (diffMs <= 0) return 'bientôt'
+  const totalSec = Math.ceil(diffMs / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, onClose, messages, onMessagesChange }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [remaining, setRemaining] = useState<number | null>(null)
+  const [limit, setLimit] = useState(20)
+  const [resetsAt, setResetsAt] = useState<string | null>(null)
   const [memberPickerOpen, setMemberPickerOpen] = useState(false)
   const [memberFilter, setMemberFilter] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -31,7 +48,13 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
   useEffect(() => {
     fetch('/api/chat/remaining', { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setRemaining(d.remaining) })
+      .then(d => {
+        if (d) {
+          setRemaining(d.remaining)
+          setLimit(d.limit)
+          if (d.resetsAt) setResetsAt(d.resetsAt)
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -48,7 +71,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
 
     const userMsg: ChatMessage = { role: 'user', content: text }
     const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
+    onMessagesChange(newMessages)
     setInput('')
     setStreaming(true)
 
@@ -69,13 +92,13 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
 
       if (res.status === 429) {
         setRemaining(0)
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Limite quotidienne atteinte (20 questions/jour).' }])
+        onMessagesChange([...newMessages, { role: 'assistant', content: 'Limite quotidienne atteinte.' }])
         setStreaming(false)
         return
       }
 
       if (!res.ok || !res.body) {
-        setMessages(prev => [...prev, { role: 'assistant', content: 'Erreur lors de la connexion au service.' }])
+        onMessagesChange([...newMessages, { role: 'assistant', content: 'Erreur lors de la connexion au service.' }])
         setStreaming(false)
         return
       }
@@ -86,15 +109,12 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
       let assistantText = ''
       let buffer = ''
 
-      let assistantIdx = -1
-      setMessages(prev => {
-        assistantIdx = prev.length
-        return [...prev, { role: 'assistant', content: '' }]
-      })
+      const assistantIdx = newMessages.length
+      onMessagesChange([...newMessages, { role: 'assistant', content: '' }])
 
       const updateAssistant = (text: string) => {
-        setMessages(prev => {
-          if (assistantIdx < 0 || assistantIdx >= prev.length) return prev
+        onMessagesChange(prev => {
+          if (assistantIdx >= prev.length) return prev
           const updated = [...prev]
           updated[assistantIdx] = { role: 'assistant', content: text }
           return updated
@@ -129,7 +149,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        setMessages(prev => {
+        onMessagesChange(prev => {
           const errText = 'Connexion interrompue.'
           if (prev.length > 0 && prev[prev.length - 1].role === 'assistant' && prev[prev.length - 1].content === '') {
             const updated = [...prev]
@@ -143,7 +163,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
 
     abortRef.current = null
     setStreaming(false)
-  }, [input, messages, streaming, contextSlugs])
+  }, [input, messages, streaming, contextSlugs, onMessagesChange])
 
   const removeBadge = (slug: string) => {
     onContextChange(contextSlugs.filter(s => s !== slug))
@@ -174,6 +194,15 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
     ? teamMembers.filter(m => m.name.toLowerCase().includes(memberFilter.toLowerCase()))
     : teamMembers
 
+  // Quota display
+  const quotaText = remaining !== null
+    ? remaining > 0
+      ? `${remaining} question${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''} sur ${limit} par jour`
+      : resetsAt
+        ? `Limite atteinte (reset dans ${formatResetTime(resetsAt)})`
+        : 'Limite atteinte'
+    : null
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -181,11 +210,6 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
         <span className="flex items-center gap-2 text-sm font-medium">
           <MessageSquare className="h-4 w-4" />
           Assistant IA
-          {remaining !== null && (
-            <span className="text-xs text-muted-foreground font-normal">
-              ({remaining}/20)
-            </span>
-          )}
         </span>
         <div className="flex items-center gap-1">
           <button
@@ -292,7 +316,35 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
                 : 'mr-8 rounded-lg bg-muted/50 px-3 py-2'
             }`}
           >
-            <p className="whitespace-pre-wrap">{msg.content}</p>
+            {msg.role === 'assistant' ? (
+              <div className="chat-markdown text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    // Keep headings small — render as bold paragraphs
+                    h1: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
+                    h2: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
+                    h3: ({ children }) => <p className="font-semibold mt-2 mb-1">{children}</p>,
+                    p: ({ children }) => <p className="mb-1.5">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>,
+                    li: ({ children }) => <li>{children}</li>,
+                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                    code: ({ children, className }) => {
+                      const isBlock = className?.includes('language-')
+                      return isBlock
+                        ? <code className="block bg-muted rounded px-2 py-1 text-xs my-1.5 overflow-x-auto">{children}</code>
+                        : <code className="bg-muted rounded px-1 py-0.5 text-xs">{children}</code>
+                    },
+                    pre: ({ children }) => <>{children}</>,
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap">{msg.content}</p>
+            )}
           </div>
         ))}
         {streaming && messages[messages.length - 1]?.content === '' && (
@@ -303,28 +355,37 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t px-4 py-3 shrink-0">
-        <form
-          onSubmit={(e) => { e.preventDefault(); handleSend() }}
-          className="flex gap-2"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Votre question..."
-            disabled={streaming || remaining === 0}
-            className="flex-1 rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={streaming || !input.trim() || remaining === 0}
+      {/* Quota + Input */}
+      <div className="border-t shrink-0">
+        {quotaText && (
+          <div className="px-4 pt-2 pb-0">
+            <p className={`text-[11px] ${remaining === 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {quotaText}
+            </p>
+          </div>
+        )}
+        <div className="px-4 py-2">
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSend() }}
+            className="flex gap-2"
           >
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Votre question..."
+              disabled={streaming || remaining === 0}
+              className="flex-1 rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={streaming || !input.trim() || remaining === 0}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </form>
+        </div>
       </div>
     </div>
   )

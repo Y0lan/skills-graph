@@ -21,9 +21,12 @@ Règles :
 - Sois concis et actionnable
 - Ne cite pas de scores bruts sauf si on te le demande explicitement
 - Propose des pistes concrètes (formation, mentorat, mise en situation)
-- Ton professionnel et bienveillant`
+- Ton professionnel et bienveillant
+- Utilise du markdown léger : **gras**, listes à puces, mais PAS de titres (#). Jamais de ### ou ##. Structure avec des paragraphes et du gras pour les points clés.`
 
-/** Build skill-level detail block for a member's ratings */
+/** Build skill-level detail block for a member's ratings.
+ *  Ratings are cumulative: level 3 means the person can do everything described
+ *  at levels 1, 2, and 3, but NOT what's described at levels 4 and 5. */
 function buildSkillDetail(ratings: Record<string, number>): string {
   const cats = getSkillCategories()
   const lines: string[] = []
@@ -31,7 +34,20 @@ function buildSkillDetail(ratings: Record<string, number>): string {
     const skills = cat.skills
       .map(s => {
         const val = ratings[s.id]
-        return val !== undefined && val > 0 ? `  · ${s.label} : ${val}/5` : null
+        if (val === undefined || val <= 0) return null
+        const descriptors = s.descriptors ?? []
+        const acquired = descriptors
+          .filter(d => d.level >= 1 && d.level <= val)
+          .sort((a, b) => a.level - b.level)
+          .map(d => d.description)
+        const notYet = descriptors
+          .filter(d => d.level > val && d.level <= 5)
+          .sort((a, b) => a.level - b.level)
+          .map(d => d.description)
+        let detail = `  · ${s.label} : ${val}/5`
+        if (acquired.length > 0) detail += `\n      Sait faire : ${acquired.join(' ; ')}`
+        if (notYet.length > 0) detail += `\n      Ne sait pas encore : ${notYet.join(' ; ')}`
+        return detail
       })
       .filter(Boolean)
     if (skills.length > 0) {
@@ -191,11 +207,27 @@ chatRouter.post('/', requireAuth, async (req, res) => {
   }
 })
 
-// GET /remaining — check remaining daily quota
+// GET /remaining — check remaining daily quota + next reset time
 chatRouter.get('/remaining', requireAuth, (req, res) => {
   const user = (req as typeof req & { user: AuthUser }).user
-  const count = getDb().prepare(
+  const db = getDb()
+  const count = db.prepare(
     "SELECT COUNT(*) as cnt FROM chat_usage WHERE user_id = ? AND used_at > datetime('now', '-1 day')"
   ).get(user.id) as { cnt: number }
-  res.json({ remaining: DAILY_LIMIT - count.cnt })
+
+  // Find oldest usage in the 24h window — that's when the next slot frees up
+  let resetsAt: string | null = null
+  if (count.cnt >= DAILY_LIMIT) {
+    const oldest = db.prepare(
+      "SELECT used_at FROM chat_usage WHERE user_id = ? AND used_at > datetime('now', '-1 day') ORDER BY used_at ASC LIMIT 1"
+    ).get(user.id) as { used_at: string } | undefined
+    if (oldest) {
+      // oldest.used_at is UTC, add 24h to get when it expires
+      const resetDate = new Date(oldest.used_at + 'Z')
+      resetDate.setHours(resetDate.getHours() + 24)
+      resetsAt = resetDate.toISOString()
+    }
+  }
+
+  res.json({ remaining: DAILY_LIMIT - count.cnt, limit: DAILY_LIMIT, resetsAt })
 })

@@ -100,6 +100,13 @@ export const teamMembers: TeamMember[] = [
     team: 'Direction',
     email: 'olivier.faivre@sinapse.nc',
   },
+  {
+    slug: 'guillaume-benoit',
+    name: 'Guillaume BENOIT',
+    role: 'Directeur',
+    team: 'Direction',
+    email: 'guillaume.benoit@sinapse.nc',
+  },
 ]
 
 export const teamMembersBySlug = new Map(teamMembers.map((m) => [m.slug, m]))

@@ -293,7 +293,7 @@ export function computeTeamAggregate(): TeamAggregateResponse {
         const member = teamMembers.find((m) => m.slug === slug)
         if (!member) return null
         const roleTarget = targets[member.role]
-        return roleTarget?.[cat.id] ?? null
+        return roleTarget?.[cat.id] ?? 0
       })
       .filter((v): v is number => v !== null)
 

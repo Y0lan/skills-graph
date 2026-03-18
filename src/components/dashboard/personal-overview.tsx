@@ -10,17 +10,20 @@ import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { shortLabel } from '@/lib/utils'
-import type { MemberAggregateResponse, TeamMemberAggregateResponse } from '@/lib/types'
+import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
+import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
+import MentorSuggestions from '@/components/dashboard/mentor-suggestions'
 
 interface PersonalOverviewProps {
   aggregate: MemberAggregateResponse & { hasRatings?: boolean }
   teamMembers?: TeamMemberAggregateResponse[]
+  teamCategories?: TeamCategoryAggregateResponse[]
   isOwnProfile?: boolean
   onFindExpert?: (categoryId: string) => void
   onCompareChange?: (slug: string | null) => void
 }
 
-export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile = true, onFindExpert, onCompareChange }: PersonalOverviewProps) {
+export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
@@ -372,6 +375,23 @@ export default function PersonalOverview({ aggregate, teamMembers, isOwnProfile 
               ))}
             </div>
           </div>
+        )}
+
+        {hasRatings && teamMembers && teamCategories && (
+          <SkillDetailAccordion
+            memberId={memberId}
+            categories={categories}
+            teamMembers={teamMembers}
+            teamCategories={teamCategories}
+          />
+        )}
+
+        {hasRatings && topGaps.length > 0 && teamMembers && (
+          <MentorSuggestions
+            memberId={memberId}
+            categories={categories}
+            teamMembers={teamMembers}
+          />
         )}
 
         {isDraft && (
