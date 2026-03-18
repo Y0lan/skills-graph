@@ -85,6 +85,29 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
 
+// Backup replication health check
+app.get('/health/backup', (_req, res) => {
+  try {
+    const db = getDb()
+    const row = db.prepare('SELECT COUNT(*) as c FROM evaluations').get() as { c: number }
+    const dbOk = row.c >= 0
+
+    // Litestream is configured if the R2 env vars are set
+    const litestreamConfigured = !!(process.env.LITESTREAM_R2_ENDPOINT && process.env.LITESTREAM_R2_BUCKET)
+
+    res.json({
+      status: dbOk ? 'ok' : 'error',
+      db: { accessible: dbOk, evaluations: row.c },
+      litestream: { configured: litestreamConfigured },
+    })
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      error: (err as Error).message,
+    })
+  }
+})
+
 // Global auth gate — protect all /api/* except auth and catalog
 app.use('/api', (req, res, next) => {
   if (req.path.startsWith('/auth/')) return next()

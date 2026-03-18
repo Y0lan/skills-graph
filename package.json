@@ -9,6 +9,7 @@
     "start": "node --env-file-if-exists=.env dist-server/server/index.js",
     "seed": "tsx scripts/seed-catalog.ts",
     "seed:users": "node --env-file-if-exists=.env dist-server/scripts/seed-users.js",
+    "backup": "tsx scripts/backup-db.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "preview": "vite preview"
