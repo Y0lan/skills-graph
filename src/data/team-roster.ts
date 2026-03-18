@@ -3,116 +3,113 @@ export interface TeamMember {
   name: string
   role: string
   team: string
-  email: string
 }
 
 export const teamMembers: TeamMember[] = [
   // Ingénierie Technique
   {
     slug: 'yolan-maldonado',
-    name: 'Yolan MALDONADO',
+    name: 'Yolan M.',
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
-    email: 'yolan.maldonado@sinapse.nc',
   },
   {
     slug: 'alexandre-thomas',
-    name: 'Alexandre THOMAS',
+    name: 'Alexandre T.',
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
-    email: 'alexandre.thomas@sinapse.nc',
   },
   {
     slug: 'alan-huitel',
-    name: 'Alan HUITEL',
+    name: 'Alan H.',
     role: 'Ingénieur DevOps',
     team: 'Ingénierie Technique',
-    email: 'alan.huitel@sinapse.nc',
   },
   {
     slug: 'pierre-mathieu-barras',
-    name: 'Pierre-Mathieu BARRAS',
+    name: 'Pierre-Mathieu B.',
     role: 'Ingénieur DevOps / Développeur',
     team: 'Ingénierie Technique',
-    email: 'pierre-mathieu.barras@sinapse.nc',
   },
   {
     slug: 'andy-malo',
-    name: 'Andy MALO',
+    name: 'Andy M.',
     role: 'Ingénieur Data',
     team: 'Ingénierie Technique',
-    email: 'andy.malo@sinapse.nc',
   },
 
   // Développement
   {
     slug: 'steven-nguyen',
-    name: 'Steven NGUYEN',
+    name: 'Steven N.',
     role: 'Développeur Full Stack',
     team: 'Développement',
-    email: 'steven.nguyen@sinapse.nc',
   },
   {
     slug: 'matthieu-alcime',
-    name: 'Matthieu ALCIME',
+    name: 'Matthieu A.',
     role: 'Développeur Full Stack',
     team: 'Développement',
-    email: 'matthieu.alcime@sinapse.nc',
   },
   {
     slug: 'martin-vallet',
-    name: 'Martin VALLET',
+    name: 'Martin V.',
     role: 'Développeur Full Stack',
     team: 'Développement',
-    email: 'martin.vallet@sinapse.nc',
   },
   {
     slug: 'nicole-nguon',
-    name: 'Nicole NGUON',
+    name: 'Nicole N.',
     role: 'Développeuse Full Stack',
     team: 'Développement',
-    email: 'nicole.nguon@sinapse.nc',
   },
 
   // QA & Automatisation
   {
     slug: 'bethlehem-mengistu',
-    name: 'Bethlehem MENGISTU',
+    name: 'Bethlehem M.',
     role: 'Ingénieure QA',
     team: 'QA & Automatisation',
-    email: 'bethlehem.mengistu@sinapse.nc',
   },
 
   // Management
   {
     slug: 'pierre-rossato',
-    name: 'Pierre ROSSATO',
+    name: 'Pierre R.',
     role: 'Lead Développeur (Manager MOE)',
     team: 'Management',
-    email: 'pierre.rossato@sinapse.nc',
   },
 
   // Direction
   {
     slug: 'olivier-faivre',
-    name: 'Olivier FAIVRE',
+    name: 'Olivier F.',
     role: 'Directeur des Programmes',
     team: 'Direction',
-    email: 'olivier.faivre@sinapse.nc',
   },
   {
     slug: 'guillaume-benoit',
-    name: 'Guillaume BENOIT',
+    name: 'Guillaume B.',
     role: 'Directeur',
     team: 'Direction',
-    email: 'guillaume.benoit@sinapse.nc',
   },
 ]
 
 export const teamMembersBySlug = new Map(teamMembers.map((m) => [m.slug, m]))
 
+export function slugToEmail(slug: string): string {
+  const i = slug.lastIndexOf('-')
+  return slug.slice(0, i) + '.' + slug.slice(i + 1) + '@sinapse.nc'
+}
+
+let fullRoster: Map<string, TeamMember> | null = null
+
+export function upgradeRoster(members: TeamMember[]) {
+  fullRoster = new Map(members.map(m => [m.slug, m]))
+}
+
 export function findMember(slug: string): TeamMember | undefined {
-  return teamMembersBySlug.get(slug)
+  return fullRoster?.get(slug) ?? teamMembersBySlug.get(slug)
 }
 
 export const teamOrder = [

@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from '@/components/ui/button'
 import { LogIn, CheckCircle, Circle, PenLine, Loader2, KeyRound } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
-import { teamMembers } from '@/data/team-roster'
+import { teamMembers, slugToEmail } from '@/data/team-roster'
 import type { TeamMember } from '@/data/team-roster'
 import { StatusIcon } from '@/components/status-icon'
 import { useTeamStatus } from '@/hooks/use-team-status'
@@ -49,7 +49,7 @@ export function LoginDialog({ redirectTo }: LoginDialogProps = {}) {
 
     try {
       const { data, error: authError } = await authClient.signIn.email({
-        email: selected.email,
+        email: slugToEmail(selected.slug),
         password: pin,
       })
       if (authError) {
@@ -156,7 +156,7 @@ export function LoginDialog({ redirectTo }: LoginDialogProps = {}) {
                           {member.name}
                         </p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {member.email}
+                          {member.role}
                         </p>
                       </div>
                     </button>

@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { CatalogProvider } from '@/providers/catalog-provider'
 import { ProtectedRoute } from '@/components/auth/protected-route'
+import { useFullRoster } from '@/hooks/use-full-roster'
 
 const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
@@ -17,6 +18,7 @@ function App() {
         <CatalogProvider>
         <TooltipProvider>
           <ScrollToTop />
+          <FullRosterLoader />
           <ErrorBoundary>
             <Suspense
               fallback={
@@ -39,6 +41,8 @@ function App() {
     </BrowserRouter>
   )
 }
+
+function FullRosterLoader() { useFullRoster(); return null }
 
 function ScrollToTop() {
   const { pathname } = useLocation()

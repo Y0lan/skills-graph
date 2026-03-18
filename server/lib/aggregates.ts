@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { getSkillCategories } from './catalog.js'
-import { teamMembers } from '../../src/data/team-roster.js'
+import { teamMembers } from '../data/team-roster.js'
 import { getAllEvaluations } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

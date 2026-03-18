@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { teamMembers } from '../../src/data/team-roster.js'
+import { teamMembers } from '../data/team-roster.js'
 
 export const membersRouter = Router()
 

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { teamMembers } from '../../src/data/team-roster.js'
+import { teamMembers } from '../data/team-roster.js'
 import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation, getDb } from '../lib/db.js'
 import { generateAndSaveSummary } from '../lib/summary.js'
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js'
