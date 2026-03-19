@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { ChevronRight, Sparkles, Pencil, ArrowUp, ArrowDown } from 'lucide-react'
+import { ChevronRight, Sparkles, Pencil, ArrowUp, ArrowDown, TrendingUp } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillHistory } from '@/hooks/use-skill-history'
@@ -7,7 +7,7 @@ import { shortLabel, cn, strengthColor } from '@/lib/utils'
 import type { CategoryAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import LevelUpDialog from '@/components/dashboard/level-up-dialog'
-import { SkillSparkline, SkillProgressionChart, CategorySparkline } from '@/components/dashboard/progression-chart'
+import { SkillProgressionChart, CategorySparkline } from '@/components/dashboard/progression-chart'
 
 interface ComparedMember {
   slug: string
@@ -100,8 +100,8 @@ export default function SkillDetailAccordion({
           const skills = catalogCat?.skills ?? []
           const skillIds = skills.map(s => s.id)
 
-          const ratedSkills = skills.filter(s => getRating(s.id) > 0)
-          const unratedSkills = skills.filter(s => getRating(s.id) === 0)
+          const ratedSkills = skills.filter(s => s.id in localOverrides || (memberData?.skillRatings[s.id] !== undefined))
+          const unratedSkills = skills.filter(s => !(s.id in localOverrides) && memberData?.skillRatings[s.id] === undefined)
 
           return (
             <div key={cat.categoryId} className="rounded-md border">
@@ -233,11 +233,7 @@ function SkillRow({
         rating={rating}
         teamAvg={teamAvg}
         comparedMember={comparedMember}
-        isOwnProfile={isOwnProfile}
-        memberId={memberId}
         changes={changes}
-        descriptors={descriptors}
-        onSkillUp={onSkillUp}
       />
       <SkillRowLevelBar
         rating={rating}
@@ -261,9 +257,23 @@ function SkillRow({
         isOwnProfile={isOwnProfile}
         skillId={skillId}
       />
-      {/* Action bar (own profile only) — AI buttons */}
+      {/* Action bar (own profile only) — update + AI buttons */}
       {isOwnProfile && (
         <div className="flex flex-wrap items-center gap-2 mt-2 ml-1">
+          <LevelUpDialog
+            skillId={skillId}
+            skillName={label}
+            currentLevel={rating}
+            descriptors={descriptors}
+            slug={memberId}
+            onSuccess={(oldLevel, newLevel) => onSkillUp(skillId, oldLevel, newLevel)}
+            trigger={
+              <button className="inline-flex items-center gap-1 rounded-full border border-muted-foreground/20 bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+                <Pencil className="h-3 w-3" />
+                Mettre à jour
+              </button>
+            }
+          />
           {onOpenChat && (
             <button
               onClick={() => onOpenChat(
@@ -272,7 +282,7 @@ function SkillRow({
               className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
             >
               <Sparkles className="h-3 w-3" />
-              Conseil IA
+              Mentor IA
             </button>
           )}
           {comparedMember != null && (comparedMember.skillRatings[skillId] ?? 0) > rating && onOpenChat && (
@@ -291,21 +301,17 @@ function SkillRow({
   )
 }
 
-/** Feature #6/#7: Header with skill name (date tooltip), rating, and hover pill */
+/** Header with skill name (date tooltip) and rating */
 function SkillRowHeader({
-  skillId, label, rating, teamAvg, comparedMember, isOwnProfile,
-  memberId, changes, descriptors, onSkillUp,
+  skillId, label, rating, teamAvg, comparedMember,
+  changes,
 }: {
   skillId: string
   label: string
   rating: number
   teamAvg?: number
   comparedMember?: ComparedMember | null
-  isOwnProfile?: boolean
-  memberId: string
   changes: SkillChange[]
-  descriptors: { level: number; label: string; description: string }[]
-  onSkillUp: (skillId: string, oldLevel: number, newLevel: number) => void
 }) {
   const hasComparison = comparedMember != null
   const comparedRating = comparedMember?.skillRatings[skillId] ?? 0
@@ -316,7 +322,7 @@ function SkillRowHeader({
       ? `(équipe: ${teamAvg.toFixed(1)})`
       : ''
 
-  // Feature #8: Date tooltip data
+  // Date tooltip data
   const skillChanges = useMemo(
     () => changes.filter(c => c.skillId === skillId),
     [changes, skillId],
@@ -332,7 +338,6 @@ function SkillRowHeader({
   return (
     <div className="flex items-center justify-between mb-1">
       <div className="flex items-center gap-2 min-w-0">
-        {/* Feature #8: Date tooltip on skill name */}
         <Tooltip>
           <TooltipTrigger render={<span className="text-sm font-medium truncate" />}>
             {label}
@@ -341,24 +346,6 @@ function SkillRowHeader({
             {dateTooltip}
           </TooltipContent>
         </Tooltip>
-
-        {/* Feature #6/#7: Hover pill "J'ai progressé!" */}
-        {isOwnProfile && (
-          <LevelUpDialog
-            skillId={skillId}
-            skillName={label}
-            currentLevel={rating}
-            descriptors={descriptors}
-            slug={memberId}
-            onSuccess={(oldLevel, newLevel) => onSkillUp(skillId, oldLevel, newLevel)}
-            trigger={
-              <button className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors">
-                <Pencil className="h-2.5 w-2.5" />
-                Mettre à jour
-              </button>
-            }
-          />
-        )}
       </div>
       <span className="text-sm tabular-nums flex items-center gap-1 shrink-0">
         <span className={cn('font-semibold', strengthColor(rating))}>{rating}/5</span>
@@ -413,7 +400,7 @@ function SkillRowLevelBar({
   )
 }
 
-/** Sparkline row + expandable progression chart */
+/** Expandable progression chart toggle */
 function SkillRowSparkline({
   changes, skillId, label, showChart, onToggleChart,
 }: {
@@ -423,21 +410,21 @@ function SkillRowSparkline({
   showChart: boolean
   onToggleChart: () => void
 }) {
-  const hasHistory = changes.filter(c => c.skillId === skillId).length >= 1
+  const historyCount = changes.filter(c => c.skillId === skillId).length
+
+  if (historyCount < 2) return null
 
   return (
     <>
-      {hasHistory && (
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            onClick={onToggleChart}
-            className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <SkillSparkline changes={changes} skillId={skillId} />
-            <span>Voir progression</span>
-          </button>
-        </div>
-      )}
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          onClick={onToggleChart}
+          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <TrendingUp className="h-3 w-3" />
+          <span>{showChart ? 'Masquer' : 'Voir progression'}</span>
+        </button>
+      </div>
       {showChart && (
         <SkillProgressionChart changes={changes} skillId={skillId} skillName={label} />
       )}

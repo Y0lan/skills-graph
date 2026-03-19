@@ -1,6 +1,5 @@
 import { useMemo } from 'react'
 import { LineChart, Line, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SkillChange } from '@/lib/types'
 
@@ -37,23 +36,12 @@ export function SkillProgressionChart({ changes, skillId }: SkillProgressionChar
 
   if (data.length === 0) return null
 
-  if (data.length === 1) {
-    return (
-      <div className="mt-2 mb-1">
-        <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-          <TrendingUp className="h-4 w-4 text-primary/40 shrink-0" />
-          <span>
-            Niveau initial validé le {formatShortDate(data[0].date)} — <span className="font-semibold">{data[0].level}/5</span>.
-            {' '}Mettez à jour pour voir la progression.
-          </span>
-        </div>
-      </div>
-    )
-  }
+  if (data.length === 1) return null
 
   const first = data[0]
   const last = data[data.length - 1]
   const delta = last.level - first.level
+  const chartHeight = data.length <= 3 ? 50 : 80
 
   return (
     <div className="mt-2 mb-1 space-y-1">
@@ -72,7 +60,7 @@ export function SkillProgressionChart({ changes, skillId }: SkillProgressionChar
           </span>
         )}
       </div>
-      <ResponsiveContainer width="100%" height={80}>
+      <ResponsiveContainer width="100%" height={chartHeight}>
         <LineChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: -24 }}>
           <YAxis
             domain={[0, 5]}
