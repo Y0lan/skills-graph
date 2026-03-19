@@ -476,13 +476,16 @@ function SkillRowDescriptors({
           // Comparison label
           let compLabel = ''
           if (hasComparison) {
-            if (myAcquired && theirAcquired) compLabel = 'les 2'
-            else if (myAcquired && !theirAcquired) {
+            // Show label only at the member's exact level, not every acquired level
+            const isMyExactLevel = d.level === rating
+            const isTheirExactLevel = d.level === comparedRating
+            if (isMyExactLevel && isTheirExactLevel) compLabel = 'les 2'
+            else if (isMyExactLevel) {
               const profileOwner = teamMembers.find(m => m.slug === memberId)
               const profileFirstName = profileOwner?.name?.split(' ')[0] ?? ''
               compLabel = isOwnProfile ? 'moi' : profileFirstName
             }
-            else if (!myAcquired && theirAcquired) compLabel = comparedMember!.name.split(' ')[0]
+            else if (isTheirExactLevel) compLabel = comparedMember!.name.split(' ')[0]
           }
 
           const cardClasses = myAcquired
