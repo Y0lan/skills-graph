@@ -21,7 +21,7 @@ export default function LevelUpDialog({ skillId, skillName, currentLevel, descri
   const [selected, setSelected] = useState(currentLevel)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const buttonRef = useRef<HTMLElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   const handleOpen = (isOpen: boolean) => {
     setOpen(isOpen)

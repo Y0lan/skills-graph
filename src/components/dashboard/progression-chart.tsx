@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { LineChart, Line, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SkillChange } from '@/lib/types'
@@ -18,14 +18,14 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 interface SkillProgressionChartProps {
   changes: SkillChange[]
   skillId: string
-  skillName: string
+  skillName?: string
 }
 
 function formatShortDate(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
-export function SkillProgressionChart({ changes, skillId, skillName }: SkillProgressionChartProps) {
+export function SkillProgressionChart({ changes, skillId }: SkillProgressionChartProps) {
   const data = useMemo(() => {
     return changes
       .filter(c => c.skillId === skillId)
