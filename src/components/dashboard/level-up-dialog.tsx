@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, cloneElement, isValidElement } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ export default function LevelUpDialog({ skillId, skillName, currentLevel, descri
   const [selected, setSelected] = useState(currentLevel)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const buttonRef = useRef<HTMLElement>(null)
 
   const handleOpen = (isOpen: boolean) => {
     setOpen(isOpen)
@@ -76,7 +76,11 @@ export default function LevelUpDialog({ skillId, skillName, currentLevel, descri
 
   return (
     <Popover open={open} onOpenChange={handleOpen}>
-      <PopoverTrigger render={trigger ?? <button ref={buttonRef} className="text-xs text-muted-foreground hover:text-foreground transition-colors" />}>
+      <PopoverTrigger render={
+        trigger && isValidElement(trigger)
+          ? cloneElement(trigger, { ref: buttonRef } as Record<string, unknown>)
+          : <button ref={buttonRef} className="text-xs text-muted-foreground hover:text-foreground transition-colors" />
+      }>
         {trigger ? undefined : 'Mettre à jour'}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
