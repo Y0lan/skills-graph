@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import confetti from 'canvas-confetti'
+import { toast } from 'sonner'
 
 interface LevelUpDialogProps {
   skillId: string
@@ -12,9 +13,10 @@ interface LevelUpDialogProps {
   descriptors: { level: number; label: string; description: string }[]
   slug: string
   onSuccess: (oldLevel: number, newLevel: number) => void
+  trigger?: React.ReactElement
 }
 
-export default function LevelUpDialog({ skillId, skillName, currentLevel, descriptors, slug, onSuccess }: LevelUpDialogProps) {
+export default function LevelUpDialog({ skillId, skillName, currentLevel, descriptors, slug, onSuccess, trigger }: LevelUpDialogProps) {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState(currentLevel)
   const [loading, setLoading] = useState(false)
@@ -62,6 +64,7 @@ export default function LevelUpDialog({ skillId, skillName, currentLevel, descri
         })
       }
 
+      toast.success(`${skillName} → Niveau ${selected}`)
       onSuccess(data.oldLevel, data.newLevel)
     } catch {
       // silent
@@ -73,8 +76,8 @@ export default function LevelUpDialog({ skillId, skillName, currentLevel, descri
 
   return (
     <Popover open={open} onOpenChange={handleOpen}>
-      <PopoverTrigger render={<button ref={buttonRef} className="text-xs text-muted-foreground hover:text-foreground transition-colors" />}>
-        Mettre à jour
+      <PopoverTrigger render={trigger ?? <button ref={buttonRef} className="text-xs text-muted-foreground hover:text-foreground transition-colors" />}>
+        {trigger ? undefined : 'Mettre à jour'}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
         <div className="px-3 py-2 border-b">

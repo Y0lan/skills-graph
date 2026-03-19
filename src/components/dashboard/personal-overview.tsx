@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, TrendingUp, ArrowUp, ArrowRight, ArrowDown } from 'lucide-react'
+import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,8 +10,9 @@ import VisxRadarChart from '@/components/visx-radar-chart'
 import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
-import { shortLabel } from '@/lib/utils'
-import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
+import { useSkillHistory } from '@/hooks/use-skill-history'
+import { shortLabel, cn, daysSince, freshnessColor } from '@/lib/utils'
+import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
 import MentorSuggestions from '@/components/dashboard/mentor-suggestions'
 
@@ -49,6 +51,62 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     setProfileSummary(aggregate.profileSummary)
     comparisonCache.current.clear()
   }
+
+  // Feature #4: Freshness counter
+  const { changes } = useSkillHistory(memberId)
+  const lastUpdateDate = useMemo(() => {
+    if (changes.length === 0) return submittedAt ?? null
+    return changes.reduce((latest, c) =>
+      c.changedAt > latest ? c.changedAt : latest, changes[0].changedAt)
+  }, [changes, submittedAt])
+  const freshnessDays = lastUpdateDate ? daysSince(lastUpdateDate) : null
+
+  // Feature #11: Progression summary data
+  const progressionData = useMemo(() => {
+    if (changes.length === 0) return null
+
+    // Compute initial levels (first change per skill = old level or first recorded level)
+    const firstLevelBySkill: Record<string, number> = {}
+    const currentLevelBySkill: Record<string, number> = {}
+    for (const c of changes) {
+      if (!(c.skillId in firstLevelBySkill)) {
+        // First entry for this skill is the initial assessment (oldLevel=0, newLevel=X)
+        firstLevelBySkill[c.skillId] = c.oldLevel === 0 ? c.newLevel : c.oldLevel
+      }
+      currentLevelBySkill[c.skillId] = c.newLevel
+    }
+
+    const initialLevels = Object.values(firstLevelBySkill)
+    const currentLevels = Object.values(currentLevelBySkill)
+    if (initialLevels.length === 0) return null
+
+    const initialAvg = initialLevels.reduce((a, b) => a + b, 0) / initialLevels.length
+    const currentAvg = currentLevels.reduce((a, b) => a + b, 0) / currentLevels.length
+    const delta = Math.round((currentAvg - initialAvg) * 10) / 10
+
+    // Count skills that have been updated (more than 1 change entry)
+    const skillChangeCounts: Record<string, number> = {}
+    for (const c of changes) {
+      skillChangeCounts[c.skillId] = (skillChangeCounts[c.skillId] ?? 0) + 1
+    }
+    const updatedSkillCount = Object.values(skillChangeCounts).filter(n => n > 1).length
+
+    // Build sparkline: running average over time
+    const latestLevel: Record<string, number> = {}
+    const points: { level: number }[] = []
+    for (const c of changes) {
+      latestLevel[c.skillId] = c.newLevel
+      const levels = Object.values(latestLevel)
+      const avg = levels.reduce((a, b) => a + b, 0) / levels.length
+      points.push({ level: Math.round(avg * 10) / 10 })
+    }
+
+    // Get first change date for "depuis" label
+    const firstDate = changes[0].changedAt.split('T')[0]
+    const firstMonth = new Date(firstDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+
+    return { currentAvg, delta, updatedSkillCount, sparklineData: points.slice(-10), firstMonth }
+  }, [changes])
 
   const handleGenerateSummary = useCallback(async () => {
     setSummaryLoading(true)
@@ -174,6 +232,12 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                 Brouillon
               </Badge>
             )}
+            {/* Feature #4: Freshness counter */}
+            {freshnessDays !== null && (
+              <span className={cn('text-xs', freshnessColor(freshnessDays))}>
+                Mis à jour il y a {freshnessDays}j
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {teamMembers && teamMembers.length > 0 && (
@@ -221,6 +285,56 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Feature #11: Progression summary card */}
+        {progressionData ? (
+          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Progression
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-lg font-bold tabular-nums">{progressionData.currentAvg.toFixed(1)}/5</span>
+              {progressionData.delta > 0.05 ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <ArrowUp className="h-3 w-3" />
+                  +{progressionData.delta.toFixed(1)} depuis {progressionData.firstMonth}
+                </span>
+              ) : progressionData.delta < -0.05 ? (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                  <ArrowDown className="h-3 w-3" />
+                  {progressionData.delta.toFixed(1)} depuis {progressionData.firstMonth}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                  <ArrowRight className="h-3 w-3" />
+                  Stable depuis {progressionData.firstMonth}
+                </span>
+              )}
+              {progressionData.sparklineData.length >= 2 && (
+                <div className="inline-block align-middle ml-auto" style={{ width: 80, height: 24 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={progressionData.sparklineData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                      <Line type="monotone" dataKey="level" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+            {progressionData.updatedSkillCount > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {progressionData.updatedSkillCount} compétence{progressionData.updatedSkillCount > 1 ? 's' : ''} mise{progressionData.updatedSkillCount > 1 ? 's' : ''} à jour
+              </p>
+            )}
+          </div>
+        ) : hasRatings ? (
+          <div className="rounded-md border border-dashed bg-muted/30 px-4 py-3 text-sm">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Pas encore de progression — mettez à jour vos compétences pour voir l'évolution
+            </div>
+          </div>
+        ) : null}
+
         {/* Summary block: pill badges + AI narrative — hidden when side-by-side is active */}
         {!compareSlug && ((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">

@@ -17,3 +17,17 @@ export function strengthColor(avg: number): string {
   if (avg >= 2) return 'text-amber-600 dark:text-amber-400'
   return 'text-red-600 dark:text-red-400'
 }
+
+/** Number of full days since a given ISO date string */
+export function daysSince(isoDate: string): number {
+  const ms = Date.now() - new Date(isoDate).getTime()
+  if (Number.isNaN(ms)) return 0
+  return Math.max(0, Math.floor(ms / 86400000))
+}
+
+/** Tailwind color class based on freshness (days since last update) */
+export function freshnessColor(days: number): string {
+  if (days <= 14) return 'text-muted-foreground'
+  if (days <= 60) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+}
