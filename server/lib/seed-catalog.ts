@@ -63,12 +63,6 @@ export function seedCatalog(db: Database.Database): void {
   )
 
   const seed = db.transaction(() => {
-    // Clear old catalog data (preserves evaluations)
-    db.exec('DELETE FROM skill_descriptors')
-    db.exec('DELETE FROM skills')
-    db.exec('DELETE FROM calibration_prompts')
-    db.exec('DELETE FROM categories')
-    db.exec('DELETE FROM rating_scale')
 
     // Migrate renamed skill IDs in existing evaluations
     const SKILL_RENAMES: Record<string, string> = {
@@ -108,7 +102,7 @@ export function seedCatalog(db: Database.Database): void {
       }
 
       // Rename category IDs in skipped_categories
-      let skipped: string[] = JSON.parse(row.skipped_categories)
+      const skipped: string[] = JSON.parse(row.skipped_categories)
       const newSkipped = skipped.map((id) => CATEGORY_RENAMES[id] ?? id)
       const skippedChanged = JSON.stringify(skipped) !== JSON.stringify(newSkipped)
 
@@ -145,6 +139,20 @@ export function seedCatalog(db: Database.Database): void {
           insertDescriptor.run(skill.id, level, levelLabels[level] ?? `Level ${level}`, description)
         }
       }
+    }
+
+    // Clean up orphaned rows from skills/categories removed from the catalog
+    const currentSkillIds = catalog.categories.flatMap(c => c.skills.map(s => s.id))
+    const currentCatIds = catalog.categories.map(c => c.id)
+    if (currentSkillIds.length > 0) {
+      const skillPlaceholders = currentSkillIds.map(() => '?').join(',')
+      db.prepare(`DELETE FROM skill_descriptors WHERE skill_id NOT IN (${skillPlaceholders})`).run(...currentSkillIds)
+      db.prepare(`DELETE FROM skills WHERE id NOT IN (${skillPlaceholders})`).run(...currentSkillIds)
+    }
+    if (currentCatIds.length > 0) {
+      const catPlaceholders = currentCatIds.map(() => '?').join(',')
+      db.prepare(`DELETE FROM calibration_prompts WHERE category_id NOT IN (${catPlaceholders})`).run(...currentCatIds)
+      db.prepare(`DELETE FROM categories WHERE id NOT IN (${catPlaceholders})`).run(...currentCatIds)
     }
   })
 

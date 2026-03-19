@@ -3,7 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { getSkillCategories } from './catalog.js'
 import { teamMembers } from '../data/team-roster.js'
-import { getAllEvaluations } from './db.js'
+import { getAllEvaluations, getDb } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const TARGETS_FILE = path.join(__dirname, '..', 'data', 'targets.json')
@@ -87,6 +87,9 @@ interface TeamMemberAggregateResponse {
   skillRatings: Record<string, number>
   topGaps: { categoryId: string; gap: number }[]
   topStrengths: { categoryId: string; avg: number }[]
+  lastActivityAt: string | null
+  skillDates: Record<string, string>
+  progressionDelta: number
 }
 
 interface TeamAggregateResponse {
@@ -224,6 +227,47 @@ export function computeTeamAggregate(): TeamAggregateResponse {
     }
   })
 
+  // R8: Fetch all skill changes for lastActivityAt, skillDates, and progressionDelta
+  const db = getDb()
+  const allChanges = db.prepare(`
+    SELECT slug, skill_id, old_level, new_level, changed_at
+    FROM skill_changes ORDER BY changed_at ASC
+  `).all() as { slug: string; skill_id: string; old_level: number; new_level: number; changed_at: string }[]
+
+  const lastActivityBySlug: Record<string, string> = {}
+  const skillDatesBySlug: Record<string, Record<string, string>> = {}
+  const firstLevelBySlugSkill: Record<string, Record<string, number>> = {}
+  const lastLevelBySlugSkill: Record<string, Record<string, number>> = {}
+
+  for (const row of allChanges) {
+    // Last activity (latest date per member)
+    if (!lastActivityBySlug[row.slug] || row.changed_at > lastActivityBySlug[row.slug]) {
+      lastActivityBySlug[row.slug] = row.changed_at
+    }
+    // Skill dates (latest date per skill — last one wins since ordered ASC)
+    if (!skillDatesBySlug[row.slug]) skillDatesBySlug[row.slug] = {}
+    skillDatesBySlug[row.slug][row.skill_id] = row.changed_at
+    // First level per skill (initial assessment baseline)
+    if (!firstLevelBySlugSkill[row.slug]) firstLevelBySlugSkill[row.slug] = {}
+    if (!(row.skill_id in firstLevelBySlugSkill[row.slug])) {
+      firstLevelBySlugSkill[row.slug][row.skill_id] = row.old_level === 0 ? row.new_level : row.old_level
+    }
+    // Last level per skill
+    if (!lastLevelBySlugSkill[row.slug]) lastLevelBySlugSkill[row.slug] = {}
+    lastLevelBySlugSkill[row.slug][row.skill_id] = row.new_level
+  }
+
+  // Compute progression delta per member: current avg - initial avg
+  const progressionDeltaBySlug: Record<string, number> = {}
+  for (const slug of Object.keys(lastLevelBySlugSkill)) {
+    const firsts = Object.values(firstLevelBySlugSkill[slug] ?? {})
+    const lasts = Object.values(lastLevelBySlugSkill[slug] ?? {})
+    if (firsts.length === 0) continue
+    const initialAvg = firsts.reduce((a, b) => a + b, 0) / firsts.length
+    const currentAvg = lasts.reduce((a, b) => a + b, 0) / lasts.length
+    progressionDeltaBySlug[slug] = Math.round((currentAvg - initialAvg) * 10) / 10
+  }
+
   // Per-member summaries
   const members: TeamMemberAggregateResponse[] = teamMembers.map((member) => {
     const memberData = allRatings[member.slug]
@@ -282,6 +326,9 @@ export function computeTeamAggregate(): TeamAggregateResponse {
       skillRatings,
       topGaps,
       topStrengths,
+      lastActivityAt: lastActivityBySlug[member.slug] ?? memberData?.submittedAt ?? null,
+      skillDates: skillDatesBySlug[member.slug] ?? {},
+      progressionDelta: progressionDeltaBySlug[member.slug] ?? 0,
     }
   })
 

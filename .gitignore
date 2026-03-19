@@ -36,3 +36,4 @@ server/data/
 .agents/
 .claude/
 .gstack/
+.worktrees/

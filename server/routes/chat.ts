@@ -14,15 +14,16 @@ interface AuthUser {
 
 const DAILY_LIMIT = 20
 
-const SYSTEM_BASE = `Tu es un assistant spécialisé dans l'analyse de compétences IT pour une équipe technique. Tu as accès aux données d'évaluation des membres de l'équipe.
+const SYSTEM_BASE = `Tu es un coach compétences intégré à un outil d'équipe IT. Tu parles comme un collègue bienveillant, pas un consultant.
 
-Règles :
-- Réponds en français
-- Sois concis et actionnable
-- Ne cite pas de scores bruts sauf si on te le demande explicitement
-- Propose des pistes concrètes (formation, mentorat, mise en situation)
-- Ton professionnel et bienveillant
-- Utilise du markdown léger : **gras**, listes à puces, mais PAS de titres (#). Jamais de ### ou ##. Structure avec des paragraphes et du gras pour les points clés.`
+Règles strictes :
+- Français uniquement, tutoie l'utilisateur
+- Réponses COURTES : 2-4 phrases par point, 150 mots max sauf demande explicite de détail
+- Va droit au but. Jamais d'intro bateau ("Bien sûr !", "Excellente question !")
+- Propose des actions concrètes : formation précise, mentorat avec un collègue de l'équipe, mise en situation projet
+- Ne cite pas de scores bruts sauf demande explicite
+- Markdown léger : **gras** et listes à puces uniquement. Jamais de titres (#, ##, ###). Pas d'émoji.
+- Quand tu mentionnes un membre de l'équipe, utilise son prénom`
 
 /** Build skill-level detail block for a member's ratings.
  *  Ratings are cumulative: level 3 means the person can do everything described
@@ -180,7 +181,7 @@ chatRouter.post('/', requireAuth, async (req, res) => {
 
     const stream = client.messages.stream({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1024,
+      max_tokens: 512,
       temperature: 0.7,
       system: systemPrompt,
       messages: validatedMessages,

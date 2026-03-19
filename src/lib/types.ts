@@ -92,4 +92,14 @@ export interface TeamMemberAggregateResponse {
   skillRatings: Record<string, number>
   topGaps: { categoryId: string; gap: number }[]
   topStrengths: { categoryId: string; avg: number }[]
+  lastActivityAt: string | null
+  skillDates: Record<string, string>
+  progressionDelta: number
+}
+
+export interface SkillChange {
+  skillId: string
+  oldLevel: number
+  newLevel: number
+  changedAt: string
 }

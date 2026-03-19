@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/providers/theme-provider'
 import { CatalogProvider } from '@/providers/catalog-provider'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useFullRoster } from '@/hooks/use-full-roster'
+import { Toaster } from '@/components/ui/sonner'
 
 const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
@@ -36,6 +37,7 @@ function App() {
             </Suspense>
           </ErrorBoundary>
         </TooltipProvider>
+        <Toaster position="bottom-left" />
         </CatalogProvider>
       </ThemeProvider>
     </BrowserRouter>

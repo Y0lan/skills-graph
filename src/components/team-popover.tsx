@@ -7,6 +7,7 @@ import { StatusIcon } from '@/components/status-icon'
 import { useTeamStatus } from '@/hooks/use-team-status'
 import { teamMembers, findMember } from '@/data/team-roster'
 import { cn } from '@/lib/utils'
+import MemberAvatar from '@/components/member-avatar'
 
 interface TeamPopoverProps {
   currentSlug?: string
@@ -54,6 +55,7 @@ export function TeamPopover({ currentSlug }: TeamPopoverProps) {
                 )}
               >
                 <StatusIcon status={status} />
+                <MemberAvatar slug={member.slug} name={resolved.name} size={20} className="shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className={cn('truncate', isCurrent && 'font-medium')}>
                     {resolved.name}

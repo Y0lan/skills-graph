@@ -16,6 +16,7 @@ import { Download, Info } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import type { TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
 import { useCatalog } from '@/hooks/use-catalog'
+import MemberAvatar from '@/components/member-avatar'
 
 interface SkillsGapTableProps {
   members: TeamMemberAggregateResponse[]
@@ -232,14 +233,17 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
                       className={`font-medium align-top ${i > 0 ? 'border-t-0 pt-0' : ''}`}
                     >
                       {i === 0 ? (
-                        <div>
-                          <Link
-                            to={`/dashboard/${group.memberSlug}`}
-                            className="hover:text-primary hover:underline"
-                          >
-                            {group.memberName}
-                          </Link>
-                          <p className="text-xs text-muted-foreground font-normal">{group.role}</p>
+                        <div className="flex items-center gap-2">
+                          <MemberAvatar slug={group.memberSlug} name={group.memberName} size={20} />
+                          <div>
+                            <Link
+                              to={`/dashboard/${group.memberSlug}`}
+                              className="hover:text-primary hover:underline"
+                            >
+                              {group.memberName}
+                            </Link>
+                            <p className="text-xs text-muted-foreground font-normal">{group.role}</p>
+                          </div>
                         </div>
                       ) : null}
                     </TableCell>

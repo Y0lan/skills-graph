@@ -103,6 +103,43 @@ export function initDatabase(): void {
   `)
   db.exec('CREATE INDEX IF NOT EXISTS idx_chat_usage_user ON chat_usage(user_id, used_at)')
 
+  // Skill change history (progression tracking)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS skill_changes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL,
+      skill_id TEXT NOT NULL,
+      old_level INTEGER NOT NULL CHECK(old_level BETWEEN 0 AND 5),
+      new_level INTEGER NOT NULL CHECK(new_level BETWEEN 0 AND 5),
+      changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_skill_changes_slug ON skill_changes(slug, skill_id, changed_at)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_skill_changes_skill ON skill_changes(skill_id, changed_at)')
+
+  // Seed initial history from existing evaluations (one-time)
+  const hasHistory = (db.prepare('SELECT COUNT(*) as c FROM skill_changes').get() as { c: number }).c
+  if (hasHistory === 0) {
+    const evals = db.prepare('SELECT slug, ratings, submitted_at FROM evaluations WHERE submitted_at IS NOT NULL').all() as {
+      slug: string; ratings: string; submitted_at: string
+    }[]
+    if (evals.length > 0) {
+      const insert = db.prepare('INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, 0, ?, ?)')
+      const seedHistory = db.transaction(() => {
+        for (const ev of evals) {
+          const ratings: Record<string, number> = JSON.parse(ev.ratings)
+          for (const [skillId, level] of Object.entries(ratings)) {
+            if (level > 0) {
+              insert.run(ev.slug, skillId, level, ev.submitted_at)
+            }
+          }
+        }
+      })
+      seedHistory()
+      console.log(`[DB] Seeded initial skill history from ${evals.length} evaluations`)
+    }
+  }
+
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty or catalog version changed

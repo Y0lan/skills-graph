@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react'
+import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,8 +10,10 @@ import VisxRadarChart from '@/components/visx-radar-chart'
 import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
-import { shortLabel } from '@/lib/utils'
-import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
+import { useSkillHistory } from '@/hooks/use-skill-history'
+import { shortLabel, cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
+import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
+import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
 import MentorSuggestions from '@/components/dashboard/mentor-suggestions'
 
@@ -21,9 +24,10 @@ interface PersonalOverviewProps {
   isOwnProfile?: boolean
   onFindExpert?: (categoryId: string) => void
   onCompareChange?: (slug: string | null) => void
+  onOpenChat?: (prefill: string) => void
 }
 
-export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange }: PersonalOverviewProps) {
+export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange, onOpenChat }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
@@ -48,6 +52,62 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     setProfileSummary(aggregate.profileSummary)
     comparisonCache.current.clear()
   }
+
+  // Feature #4: Freshness counter
+  const { changes } = useSkillHistory(memberId)
+  const lastUpdateDate = useMemo(() => {
+    if (changes.length === 0) return submittedAt ?? null
+    return changes.reduce((latest, c) =>
+      c.changedAt > latest ? c.changedAt : latest, changes[0].changedAt)
+  }, [changes, submittedAt])
+  const freshnessDays = lastUpdateDate ? daysSince(lastUpdateDate) : null
+
+  // Feature #11: Progression summary data
+  const progressionData = useMemo(() => {
+    if (changes.length === 0) return null
+
+    // Compute initial levels (first change per skill = old level or first recorded level)
+    const firstLevelBySkill: Record<string, number> = {}
+    const currentLevelBySkill: Record<string, number> = {}
+    for (const c of changes) {
+      if (!(c.skillId in firstLevelBySkill)) {
+        // First entry for this skill is the initial assessment (oldLevel=0, newLevel=X)
+        firstLevelBySkill[c.skillId] = c.oldLevel === 0 ? c.newLevel : c.oldLevel
+      }
+      currentLevelBySkill[c.skillId] = c.newLevel
+    }
+
+    const initialLevels = Object.values(firstLevelBySkill)
+    const currentLevels = Object.values(currentLevelBySkill)
+    if (initialLevels.length === 0) return null
+
+    const initialAvg = initialLevels.reduce((a, b) => a + b, 0) / initialLevels.length
+    const currentAvg = currentLevels.reduce((a, b) => a + b, 0) / currentLevels.length
+    const delta = Math.round((currentAvg - initialAvg) * 10) / 10
+
+    // Count skills that have been updated (more than 1 change entry)
+    const skillChangeCounts: Record<string, number> = {}
+    for (const c of changes) {
+      skillChangeCounts[c.skillId] = (skillChangeCounts[c.skillId] ?? 0) + 1
+    }
+    const updatedSkillCount = Object.values(skillChangeCounts).filter(n => n > 1).length
+
+    // Build sparkline: running average over time
+    const latestLevel: Record<string, number> = {}
+    const points: { level: number }[] = []
+    for (const c of changes) {
+      latestLevel[c.skillId] = c.newLevel
+      const levels = Object.values(latestLevel)
+      const avg = levels.reduce((a, b) => a + b, 0) / levels.length
+      points.push({ level: Math.round(avg * 10) / 10 })
+    }
+
+    // Get first change date for "depuis" label
+    const firstDate = changes[0].changedAt.split('T')[0]
+    const firstMonth = new Date(firstDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+
+    return { currentAvg, delta, updatedSkillCount, sparklineData: points.slice(-10), firstMonth }
+  }, [changes])
 
   const handleGenerateSummary = useCallback(async () => {
     setSummaryLoading(true)
@@ -142,6 +202,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
 
   const isDraft = !submittedAt
 
+  // Header stats
+  const ratedCategories = categories.filter(c => c.avgRank > 0)
+  const overallAvg = ratedCategories.length > 0
+    ? Math.round((ratedCategories.reduce((sum, c) => sum + c.avgRank, 0) / ratedCategories.length) * 10) / 10
+    : 0
+  const totalRated = categories.reduce((sum, c) => sum + c.ratedCount, 0)
+  const totalSkills = categories.reduce((sum, c) => sum + c.totalCount, 0)
+  const memberRole = teamMembers?.find(m => m.slug === memberId)?.role ?? aggregate.role
+
   const data = categories.map((cat) => ({
     label: shortLabel(cat.categoryLabel),
     value: cat.avgRank,
@@ -164,26 +233,32 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
+      <CardHeader className="space-y-3">
+        {/* Row 1: Avatar + name + role + controls */}
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <CardTitle>{isOwnProfile ? 'Mon profil' : memberName}</CardTitle>
-            {isDraft && (
-              <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                Brouillon
-              </Badge>
-            )}
+            <MemberAvatar slug={memberId} name={memberName} size={40} className="shrink-0" />
+            <div>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{isOwnProfile ? 'Mon profil' : memberName}</CardTitle>
+                {isDraft && (
+                  <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    Brouillon
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">{memberRole}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {teamMembers && teamMembers.length > 0 && (
               <>
                 <Select value={compareSlug ?? ''} onValueChange={(v) => {
                   const newSlug = v || null
-                  if (newSlug === compareSlug) return // Same selection — skip reset
+                  if (newSlug === compareSlug) return
                   setCompareSlug(newSlug)
                   onCompareChange?.(newSlug)
                   setCompareAggregate(null)
-                  // Restore from cache if available
                   if (newSlug) {
                     const key = [memberId, newSlug].sort().join(':')
                     setComparisonSummary(comparisonCache.current.get(key) ?? null)
@@ -217,6 +292,34 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
             )}
             <ChartViewToggle view={view} onChange={setView} />
           </div>
+        </div>
+        {/* Row 2: Key stats at a glance */}
+        <div className="flex items-center gap-4 text-sm">
+          <span className="font-bold tabular-nums text-lg">{overallAvg.toFixed(1)}<span className="text-muted-foreground font-normal text-sm">/5</span></span>
+          {progressionData && progressionData.delta > 0.05 ? (
+            <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <ArrowUp className="h-3 w-3" />+{progressionData.delta.toFixed(1)}
+            </span>
+          ) : progressionData && progressionData.delta < -0.05 ? (
+            <span className="inline-flex items-center gap-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <ArrowDown className="h-3 w-3" />{progressionData.delta.toFixed(1)}
+            </span>
+          ) : null}
+          <span className="text-xs text-muted-foreground">{totalRated}/{totalSkills} compétences évaluées</span>
+          {freshnessDays !== null && (
+            <span className={cn('text-xs', freshnessColor(freshnessDays))}>
+              {humanFreshness(freshnessDays)}
+            </span>
+          )}
+          {progressionData?.sparklineData && progressionData.sparklineData.length >= 2 && (
+            <div className="inline-block align-middle ml-auto" style={{ width: 80, height: 24 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={progressionData.sparklineData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="level" stroke="var(--color-primary)" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -286,7 +389,19 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
               </div>
               {/* Compared profile */}
               <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground">{compareTarget.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground">{compareTarget.name}</p>
+                  {compareTarget.progressionDelta > 0.05 && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      <ArrowUp className="h-2.5 w-2.5" />+{compareTarget.progressionDelta.toFixed(1)}
+                    </span>
+                  )}
+                  {compareTarget.lastActivityAt && (
+                    <span className={cn('text-[10px]', freshnessColor(daysSince(compareTarget.lastActivityAt)))}>
+                      {humanFreshness(daysSince(compareTarget.lastActivityAt))}
+                    </span>
+                  )}
+                </div>
                 {compareAggregate && ((compareAggregate.topStrengths?.length > 0) || (compareAggregate.topGaps?.length > 0)) && (
                   <div className="flex flex-wrap gap-1">
                     {compareAggregate.topStrengths.map(s => (
@@ -383,6 +498,13 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
             categories={categories}
             teamMembers={teamMembers}
             teamCategories={teamCategories}
+            comparedMember={compareSlug && compareTarget ? {
+              slug: compareSlug,
+              name: compareTarget.name,
+              skillRatings: compareTarget.skillRatings,
+            } : null}
+            isOwnProfile={isOwnProfile}
+            onOpenChat={onOpenChat}
           />
         )}
 
