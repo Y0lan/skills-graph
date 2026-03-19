@@ -15,6 +15,7 @@ import { useCatalog } from '@/hooks/use-catalog'
 import { rankMembersBySkills, type ExpertResult } from '@/lib/expert-finder'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import MemberAvatar from '@/components/member-avatar'
 
 interface ExpertFinderProps {
   members: TeamMemberAggregateResponse[]
@@ -310,10 +311,15 @@ export default function ExpertFinder({ members, initialCategoryId }: ExpertFinde
                       {index + 1}
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium">{result.name}</div>
-                      {result.role && (
-                        <div className="text-xs text-muted-foreground">{result.role}</div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <MemberAvatar slug={result.slug} name={result.name} size={20} />
+                        <div>
+                          <div className="font-medium">{result.name}</div>
+                          {result.role && (
+                            <div className="text-xs text-muted-foreground">{result.role}</div>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1.5">

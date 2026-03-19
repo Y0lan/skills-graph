@@ -31,3 +31,12 @@ export function freshnessColor(days: number): string {
   if (days <= 60) return 'text-amber-600 dark:text-amber-400'
   return 'text-red-600 dark:text-red-400'
 }
+
+/** Human-readable freshness label */
+export function humanFreshness(days: number): string {
+  if (days === 0) return 'Mis à jour aujourd\'hui'
+  if (days === 1) return 'Mis à jour il y a 1j'
+  if (days <= 30) return `Mis à jour il y a ${days}j`
+  if (days <= 365) return `Mis à jour il y a ${Math.round(days / 30)} mois`
+  return 'Mis à jour il y a plus d\'un an'
+}

@@ -1,5 +1,6 @@
+import React, { useState } from 'react'
+import { ChevronRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import {
   Table,
   TableBody,
@@ -8,14 +9,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Info } from 'lucide-react'
+import { cn, shortLabel } from '@/lib/utils'
 import type { TeamCategoryAggregateResponse } from '@/lib/types'
 import { useCatalog } from '@/hooks/use-catalog'
 
 interface CategorySummaryCardsProps {
   categories: TeamCategoryAggregateResponse[]
   categoryTargets: Record<string, number>
-  onFindExpert?: (categoryId: string) => void
 }
 
 /**
@@ -36,20 +36,34 @@ const strengthColor = (avg: number): string => {
   return 'text-red-600 dark:text-red-400'
 }
 
+function barBgColorClass(avg: number): string {
+  if (avg >= 4) return 'bg-emerald-500 dark:bg-emerald-400'
+  if (avg >= 3) return 'bg-sky-500 dark:bg-sky-400'
+  if (avg >= 2) return 'bg-amber-500 dark:bg-amber-400'
+  return 'bg-red-500 dark:bg-red-400'
+}
+
 export default function CategorySummaryCards({
   categories,
   categoryTargets,
-  onFindExpert,
 }: CategorySummaryCardsProps) {
   const { categories: skillCategories } = useCatalog()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggle = (catId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(catId)) next.delete(catId)
+      else next.add(catId)
+      return next
+    })
+  }
   return (
     <Card>
       <CardHeader>
         <CardTitle>Synthèse par catégorie</CardTitle>
       </CardHeader>
       <CardContent>
-        <TooltipProvider>
-          <Table>
+        <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Catégorie</TableHead>
@@ -68,32 +82,16 @@ export default function CategorySummaryCards({
                 const targetPct = Math.min((target / 5) * 100, 100)
 
                 return (
-                  <TableRow key={cat.categoryId}>
+                  <React.Fragment key={cat.categoryId}>
+                  <TableRow>
                     <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        {onFindExpert ? (
-                          <button
-                            onClick={() => onFindExpert(cat.categoryId)}
-                            className="font-medium text-left hover:text-primary hover:underline"
-                          >
-                            {cat.categoryLabel}
-                          </button>
-                        ) : (
-                          <span className="font-medium">{cat.categoryLabel}</span>
-                        )}
-                        <Tooltip>
-                          <TooltipTrigger className="rounded-full p-0.5 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-muted-foreground">
-                            <Info className="h-3 w-3" />
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom" align="start" className="max-w-xs">
-                            <ul className="space-y-0.5">
-                              {skills.map((s) => (
-                                <li key={s.id}>{s.label}</li>
-                              ))}
-                            </ul>
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
+                      <button
+                        onClick={() => toggle(cat.categoryId)}
+                        className="flex items-center gap-1.5 font-medium text-left hover:text-primary"
+                      >
+                        <ChevronRight className={cn('h-4 w-4 shrink-0 transition-transform', expanded.has(cat.categoryId) && 'rotate-90')} />
+                        {cat.categoryLabel}
+                      </button>
                     </TableCell>
                     <TableCell className="text-right">
                       <span className={`font-bold tabular-nums ${strengthColor(cat.teamAvgRank)}`}>
@@ -121,11 +119,34 @@ export default function CategorySummaryCards({
                       </div>
                     </TableCell>
                   </TableRow>
+                  {expanded.has(cat.categoryId) && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="bg-muted/30 px-6 py-3">
+                        <div className="space-y-1.5">
+                          {skills.map(skill => {
+                            const avg = cat.skillAverages[skill.id] ?? 0
+                            const pct = (avg / 5) * 100
+                            return (
+                              <div key={skill.id} className="flex items-center gap-3 text-sm">
+                                <span className="w-40 truncate text-muted-foreground">{shortLabel(skill.label)}</span>
+                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                                  <div className={cn('h-full rounded-full', barBgColorClass(avg))} style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={cn('w-10 text-right tabular-nums text-xs font-semibold', strengthColor(avg))}>
+                                  {avg.toFixed(1)}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </React.Fragment>
                 )
               })}
             </TableBody>
-          </Table>
-        </TooltipProvider>
+        </Table>
       </CardContent>
     </Card>
   )

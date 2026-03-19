@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import { TrendingUp } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import type { SkillChange } from '@/lib/types'
 
 /** Custom Recharts tooltip that respects dark/light theme via CSS vars */
@@ -18,6 +19,10 @@ interface SkillProgressionChartProps {
   changes: SkillChange[]
   skillId: string
   skillName: string
+}
+
+function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 export function SkillProgressionChart({ changes, skillId, skillName }: SkillProgressionChartProps) {
@@ -38,41 +43,52 @@ export function SkillProgressionChart({ changes, skillId, skillName }: SkillProg
         <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
           <TrendingUp className="h-4 w-4 text-primary/40 shrink-0" />
           <span>
-            Niveau initial validé le {data[0].date} — <span className="font-semibold">● {data[0].level}/5</span>.
-            {' '}Mettez à jour pour voir la courbe de progression.
+            Niveau initial validé le {formatShortDate(data[0].date)} — <span className="font-semibold">{data[0].level}/5</span>.
+            {' '}Mettez à jour pour voir la progression.
           </span>
         </div>
       </div>
     )
   }
 
+  const first = data[0]
+  const last = data[data.length - 1]
+  const delta = last.level - first.level
+
   return (
-    <div className="mt-2 mb-1">
-      <p className="text-[11px] text-muted-foreground mb-1">{skillName} — progression</p>
-      <ResponsiveContainer width="100%" height={100}>
-        <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
-          <XAxis
-            dataKey="date"
-            tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
-            tickLine={false}
-            axisLine={{ stroke: 'hsl(var(--border))' }}
-          />
+    <div className="mt-2 mb-1 space-y-1">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{formatShortDate(first.date)}</span>
+        <span className="text-foreground font-semibold tabular-nums">{first.level}/5</span>
+        <span>→</span>
+        <span>{formatShortDate(last.date)}</span>
+        <span className="text-foreground font-semibold tabular-nums">{last.level}/5</span>
+        {delta !== 0 && (
+          <span className={cn(
+            'font-semibold',
+            delta > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400',
+          )}>
+            {delta > 0 ? '+' : ''}{delta}
+          </span>
+        )}
+      </div>
+      <ResponsiveContainer width="100%" height={80}>
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: -24 }}>
           <YAxis
             domain={[0, 5]}
-            ticks={[0, 1, 2, 3, 4, 5]}
-            tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+            ticks={[1, 3, 5]}
+            tick={{ fontSize: 9, fill: 'var(--color-muted-foreground)' }}
             tickLine={false}
-            axisLine={{ stroke: 'hsl(var(--border))' }}
+            axisLine={false}
           />
           <Tooltip content={<CustomTooltip />} />
           <Line
-            type="monotone"
+            type="stepAfter"
             dataKey="level"
-            stroke="hsl(var(--primary))"
+            stroke="var(--color-primary)"
             strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 4 }}
+            dot={{ r: 4, fill: 'var(--color-primary)' }}
+            activeDot={{ r: 6 }}
           />
         </LineChart>
       </ResponsiveContainer>
@@ -106,7 +122,7 @@ export function SkillSparkline({ changes, skillId }: { changes: SkillChange[]; s
           <Line
             type="monotone"
             dataKey="level"
-            stroke="hsl(var(--primary))"
+            stroke="var(--color-primary)"
             strokeWidth={2}
             dot={false}
           />
@@ -138,7 +154,15 @@ export function CategorySparkline({ changes, skillIds }: { changes: SkillChange[
     return points.slice(-5)
   }, [changes, skillIds])
 
-  if (data.length < 2) return null
+  if (data.length === 0) return null
+
+  if (data.length === 1) {
+    return (
+      <span className="inline-flex items-center">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary/50" />
+      </span>
+    )
+  }
 
   return (
     <div className="inline-block align-middle" style={{ width: 40, height: 16 }}>
@@ -147,7 +171,7 @@ export function CategorySparkline({ changes, skillIds }: { changes: SkillChange[
           <Line
             type="monotone"
             dataKey="level"
-            stroke="hsl(var(--primary))"
+            stroke="var(--color-primary)"
             strokeWidth={1.5}
             dot={false}
           />

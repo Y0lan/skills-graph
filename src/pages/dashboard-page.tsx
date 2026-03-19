@@ -6,6 +6,7 @@ import { MessageSquare, ArrowLeft } from 'lucide-react'
 import AppHeader from '@/components/app-header'
 import { TeamPopover } from '@/components/team-popover'
 import { authClient } from '@/lib/auth-client'
+import MemberAvatar from '@/components/member-avatar'
 import type { MemberAggregateResponse, TeamAggregateResponse } from '@/lib/types'
 
 const PersonalOverview = lazy(() => import('@/components/dashboard/personal-overview'))
@@ -165,13 +166,17 @@ export default function DashboardPage() {
                       to={`/dashboard/${session.user.slug}`}
                       className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20"
                     >
+                      <MemberAvatar slug={session.user.slug as string} name={findMember(session.user.slug as string)?.name ?? ''} size={16} className="shrink-0" />
                       <ArrowLeft className="h-3 w-3" />
                       Mon profil
                     </Link>
                   )}
-                  <p className="text-base text-muted-foreground">
-                    <span className="font-medium text-foreground">{member.name}</span> — {member.role}
-                  </p>
+                  <div className="flex items-center gap-2 text-base text-muted-foreground">
+                    <MemberAvatar slug={member.slug} name={member.name} size={24} className="shrink-0" />
+                    <p>
+                      <span className="font-medium text-foreground">{member.name}</span> — {member.role}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -235,10 +240,6 @@ export default function DashboardPage() {
                         <CategorySummaryCards
                           categories={teamAggregate.categories}
                           categoryTargets={teamAggregate.categoryTargets}
-                          onFindExpert={(categoryId) => {
-                            setExpertCategoryHint(categoryId)
-                            setActiveTab('expert')
-                          }}
                         />
                         <CategoryDeepDive
                           categories={teamAggregate.categories}

@@ -4,6 +4,7 @@ import { Users } from 'lucide-react'
 import { useCatalog } from '@/hooks/use-catalog'
 import { rankMembersBySkills } from '@/lib/expert-finder'
 import { shortLabel } from '@/lib/utils'
+import MemberAvatar from '@/components/member-avatar'
 import type { CategoryAggregateResponse, TeamMemberAggregateResponse } from '@/lib/types'
 
 interface MentorSuggestionsProps {
@@ -84,11 +85,14 @@ export default function MentorSuggestions({ memberId, categories, teamMembers }:
               <div className="space-y-1.5">
                 {group.mentors.map(mentor => (
                   <div key={mentor.slug} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
-                    <div>
-                      <Link to={`/dashboard/${mentor.slug}`} className="text-sm font-medium text-primary hover:underline">
-                        {mentor.name}
-                      </Link>
-                      <span className="ml-2 text-xs text-muted-foreground">{mentor.role}</span>
+                    <div className="flex items-center gap-2">
+                      <MemberAvatar slug={mentor.slug} name={mentor.name} size={20} />
+                      <div>
+                        <Link to={`/dashboard/${mentor.slug}`} className="text-sm font-medium text-primary hover:underline">
+                          {mentor.name}
+                        </Link>
+                        <span className="ml-2 text-xs text-muted-foreground">{mentor.role}</span>
+                      </div>
                     </div>
                     <span className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
                       {mentor.averageScore.toFixed(1)}/5 moy.

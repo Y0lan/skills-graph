@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { ChevronRight, Sparkles, TrendingUp } from 'lucide-react'
+import { ChevronRight, Sparkles, Pencil, ArrowUp, ArrowDown } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillHistory } from '@/hooks/use-skill-history'
@@ -38,6 +38,33 @@ export default function SkillDetailAccordion({
   const [localOverrides, setLocalOverrides] = useState<Record<string, number>>({})
 
   const memberData = teamMembers.find(m => m.slug === memberId)
+
+  // Compute per-category progression deltas from skill change history
+  const categoryDeltas = useMemo(() => {
+    if (changes.length === 0) return new Map<string, number>()
+    const firstLevel: Record<string, number> = {}
+    const lastLevel: Record<string, number> = {}
+    for (const c of changes) {
+      if (!(c.skillId in firstLevel)) {
+        firstLevel[c.skillId] = c.oldLevel === 0 ? c.newLevel : c.oldLevel
+      }
+      lastLevel[c.skillId] = c.newLevel
+    }
+    const map = new Map<string, number>()
+    for (const cat of categories) {
+      const catDef = categoryById.get(cat.categoryId)
+      if (!catDef) continue
+      const catSkillIds = catDef.skills.map(s => s.id)
+      const firsts = catSkillIds.map(id => firstLevel[id]).filter((v): v is number => v !== undefined)
+      const lasts = catSkillIds.map(id => lastLevel[id]).filter((v): v is number => v !== undefined)
+      if (firsts.length === 0) continue
+      const initAvg = firsts.reduce((a, b) => a + b, 0) / firsts.length
+      const curAvg = lasts.reduce((a, b) => a + b, 0) / lasts.length
+      const delta = Math.round((curAvg - initAvg) * 10) / 10
+      if (delta !== 0) map.set(cat.categoryId, delta)
+    }
+    return map
+  }, [changes, categories, categoryById])
 
   const toggle = (catId: string) => {
     setExpanded(prev => {
@@ -93,6 +120,21 @@ export default function SkillDetailAccordion({
                   <span className={cn('text-sm font-semibold tabular-nums', strengthColor(cat.avgRank))}>
                     {cat.avgRank.toFixed(1)}/5
                   </span>
+                  {(() => {
+                    const delta = categoryDeltas.get(cat.categoryId)
+                    if (delta && delta > 0) return (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        <ArrowUp className="h-2.5 w-2.5" />+{delta.toFixed(1)}
+                      </span>
+                    )
+                    if (delta && delta < 0) return (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                        <ArrowDown className="h-2.5 w-2.5" />{delta.toFixed(1)}
+                      </span>
+                    )
+                    return null
+                  })()}
+                  <span className="text-xs text-muted-foreground">({ratedSkills.length}/{skills.length})</span>
                 </span>
               </button>
 
@@ -310,13 +352,9 @@ function SkillRowHeader({
             slug={memberId}
             onSuccess={(oldLevel, newLevel) => onSkillUp(skillId, oldLevel, newLevel)}
             trigger={
-              <button className={cn(
-                'inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 transition-opacity',
-                // Mobile: always visible. Desktop with hover: hidden until group hover
-                'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/skill:opacity-100',
-              )}>
-                <TrendingUp className="h-3 w-3" />
-                J'ai progressé !
+              <button className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors">
+                <Pencil className="h-2.5 w-2.5" />
+                Mettre à jour
               </button>
             }
           />
@@ -423,11 +461,12 @@ function SkillRowDescriptors({
   const comparedRating = comparedMember?.skillRatings[skillId] ?? 0
 
   // Build avatar lookup: which members are at each level
+  // Use `rating` for self so local overrides (skill-up) move the avatar immediately
   const membersByLevel = useMemo(() => {
     const map = new Map<number, TeamMemberAggregateResponse[]>()
     for (const m of teamMembers) {
-      if (m.slug === memberId) continue
-      const level = m.skillRatings[skillId]
+      const isSelf = m.slug === memberId
+      const level = isSelf ? rating : m.skillRatings[skillId]
       if (level !== undefined && level > 0) {
         const list = map.get(level) ?? []
         list.push(m)
@@ -435,7 +474,7 @@ function SkillRowDescriptors({
       }
     }
     return map
-  }, [teamMembers, memberId, skillId])
+  }, [teamMembers, skillId, memberId, rating])
 
   if (descriptors.length === 0) return null
 
@@ -501,17 +540,31 @@ function SkillRowDescriptors({
               {/* Feature #9: Avatar click → navigate to profile */}
               {membersAtLevel.length > 0 && (
                 <div className="flex items-center shrink-0 -space-x-1">
-                  {membersAtLevel.slice(0, 3).map(m => (
-                    <MemberAvatar
-                      key={m.slug}
-                      slug={m.slug}
-                      name={m.name}
-                      role={m.role}
-                      size={20}
-                      className="border border-background"
-                      href={`/dashboard/${m.slug}`}
-                    />
-                  ))}
+                  {membersAtLevel.slice(0, 3).map(m => {
+                    const isSelfAvatar = m.slug === memberId && isOwnProfile
+                    const isProfileOwner = m.slug === memberId
+                    const isCompared = hasComparison && m.slug === comparedMember!.slug
+                    const highlight = isProfileOwner ? 'primary' as const
+                      : isCompared ? 'muted' as const
+                      : undefined
+                    return (
+                      <MemberAvatar
+                        key={m.slug}
+                        slug={m.slug}
+                        name={m.name}
+                        role={m.role}
+                        size={20}
+                        className={cn(
+                          'border border-background transition-all duration-500',
+                          isSelfAvatar && 'animate-[avatar-pop_0.4s_ease-out]',
+                        )}
+                        highlight={highlight}
+                        isSelf={isSelfAvatar}
+                        validatedAt={m.skillDates?.[skillId]}
+                        href={`/dashboard/${m.slug}`}
+                      />
+                    )
+                  })}
                   {membersAtLevel.length > 3 && (
                     <Tooltip>
                       <TooltipTrigger

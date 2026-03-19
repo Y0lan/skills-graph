@@ -10,6 +10,10 @@ interface MemberAvatarProps {
   size?: number
   className?: string
   href?: string
+  isSelf?: boolean
+  validatedAt?: string
+  /** Persistent highlight ring: 'primary' (blue) or 'muted' (grey) */
+  highlight?: 'primary' | 'muted'
 }
 
 function getInitials(name: string): string {
@@ -19,7 +23,7 @@ function getInitials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-export default function MemberAvatar({ slug, name, role, size = 20, className, href }: MemberAvatarProps) {
+export default function MemberAvatar({ slug, name, role, size = 20, className, href, isSelf, validatedAt, highlight }: MemberAvatarProps) {
   const [imgError, setImgError] = useState(false)
   const fontSize = Math.max(8, Math.round(size * 0.45))
 
@@ -41,8 +45,15 @@ export default function MemberAvatar({ slug, name, role, size = 20, className, h
     </div>
   )
 
+  const highlightClasses = highlight === 'primary'
+    ? 'ring-2 ring-primary hover:scale-[1.4]'
+    : highlight === 'muted'
+      ? 'ring-2 ring-muted-foreground/40 hover:scale-[1.5]'
+      : ''
+
   const sharedClassName = cn(
     'rounded-full shrink-0 overflow-hidden transition-transform hover:scale-[1.3] hover:z-10',
+    highlightClasses,
     className,
   )
 
@@ -66,9 +77,13 @@ export default function MemberAvatar({ slug, name, role, size = 20, className, h
       >
         {avatarContent}
       </TooltipTrigger>
-      <TooltipContent side="top" className="px-2.5 py-1.5">
-        <p className="text-xs font-medium">{name}</p>
-        {role && <p className="text-[10px] opacity-60">{role}</p>}
+      <TooltipContent side="top" className="max-w-48 px-2 py-1.5 text-center">
+        <p className="text-xs font-medium">{isSelf ? 'Moi' : name}</p>
+        {(role || validatedAt) && (
+          <p className="text-[10px] opacity-60">
+            {role}{role && validatedAt && ' · '}{validatedAt && `validé ${new Date(validatedAt).toLocaleDateString('fr-FR')}`}
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   )

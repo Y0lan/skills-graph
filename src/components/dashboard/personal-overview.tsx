@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare, TrendingUp, ArrowUp, ArrowRight, ArrowDown } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -11,8 +11,9 @@ import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { useSkillHistory } from '@/hooks/use-skill-history'
-import { shortLabel, cn, daysSince, freshnessColor } from '@/lib/utils'
+import { shortLabel, cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
 import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
+import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
 import MentorSuggestions from '@/components/dashboard/mentor-suggestions'
 
@@ -201,6 +202,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
 
   const isDraft = !submittedAt
 
+  // Header stats
+  const ratedCategories = categories.filter(c => c.avgRank > 0)
+  const overallAvg = ratedCategories.length > 0
+    ? Math.round((ratedCategories.reduce((sum, c) => sum + c.avgRank, 0) / ratedCategories.length) * 10) / 10
+    : 0
+  const totalRated = categories.reduce((sum, c) => sum + c.ratedCount, 0)
+  const totalSkills = categories.reduce((sum, c) => sum + c.totalCount, 0)
+  const memberRole = teamMembers?.find(m => m.slug === memberId)?.role ?? aggregate.role
+
   const data = categories.map((cat) => ({
     label: shortLabel(cat.categoryLabel),
     value: cat.avgRank,
@@ -223,32 +233,32 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
 
   return (
     <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
+      <CardHeader className="space-y-3">
+        {/* Row 1: Avatar + name + role + controls */}
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <CardTitle>{isOwnProfile ? 'Mon profil' : memberName}</CardTitle>
-            {isDraft && (
-              <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                Brouillon
-              </Badge>
-            )}
-            {/* Feature #4: Freshness counter */}
-            {freshnessDays !== null && (
-              <span className={cn('text-xs', freshnessColor(freshnessDays))}>
-                Mis à jour il y a {freshnessDays}j
-              </span>
-            )}
+            <MemberAvatar slug={memberId} name={memberName} size={40} className="shrink-0" />
+            <div>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">{isOwnProfile ? 'Mon profil' : memberName}</CardTitle>
+                {isDraft && (
+                  <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    Brouillon
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">{memberRole}</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {teamMembers && teamMembers.length > 0 && (
               <>
                 <Select value={compareSlug ?? ''} onValueChange={(v) => {
                   const newSlug = v || null
-                  if (newSlug === compareSlug) return // Same selection — skip reset
+                  if (newSlug === compareSlug) return
                   setCompareSlug(newSlug)
                   onCompareChange?.(newSlug)
                   setCompareAggregate(null)
-                  // Restore from cache if available
                   if (newSlug) {
                     const key = [memberId, newSlug].sort().join(':')
                     setComparisonSummary(comparisonCache.current.get(key) ?? null)
@@ -283,58 +293,36 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
             <ChartViewToggle view={view} onChange={setView} />
           </div>
         </div>
+        {/* Row 2: Key stats at a glance */}
+        <div className="flex items-center gap-4 text-sm">
+          <span className="font-bold tabular-nums text-lg">{overallAvg.toFixed(1)}<span className="text-muted-foreground font-normal text-sm">/5</span></span>
+          {progressionData && progressionData.delta > 0.05 ? (
+            <span className="inline-flex items-center gap-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <ArrowUp className="h-3 w-3" />+{progressionData.delta.toFixed(1)}
+            </span>
+          ) : progressionData && progressionData.delta < -0.05 ? (
+            <span className="inline-flex items-center gap-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+              <ArrowDown className="h-3 w-3" />{progressionData.delta.toFixed(1)}
+            </span>
+          ) : null}
+          <span className="text-xs text-muted-foreground">{totalRated}/{totalSkills} compétences évaluées</span>
+          {freshnessDays !== null && (
+            <span className={cn('text-xs', freshnessColor(freshnessDays))}>
+              {humanFreshness(freshnessDays)}
+            </span>
+          )}
+          {progressionData?.sparklineData && progressionData.sparklineData.length >= 2 && (
+            <div className="inline-block align-middle ml-auto" style={{ width: 80, height: 24 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={progressionData.sparklineData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+                  <Line type="monotone" dataKey="level" stroke="var(--color-primary)" strokeWidth={1.5} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Feature #11: Progression summary card */}
-        {progressionData ? (
-          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Progression
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-lg font-bold tabular-nums">{progressionData.currentAvg.toFixed(1)}/5</span>
-              {progressionData.delta > 0.05 ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  <ArrowUp className="h-3 w-3" />
-                  +{progressionData.delta.toFixed(1)} depuis {progressionData.firstMonth}
-                </span>
-              ) : progressionData.delta < -0.05 ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-                  <ArrowDown className="h-3 w-3" />
-                  {progressionData.delta.toFixed(1)} depuis {progressionData.firstMonth}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  <ArrowRight className="h-3 w-3" />
-                  Stable depuis {progressionData.firstMonth}
-                </span>
-              )}
-              {progressionData.sparklineData.length >= 2 && (
-                <div className="inline-block align-middle ml-auto" style={{ width: 80, height: 24 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={progressionData.sparklineData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                      <Line type="monotone" dataKey="level" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-            {progressionData.updatedSkillCount > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {progressionData.updatedSkillCount} compétence{progressionData.updatedSkillCount > 1 ? 's' : ''} mise{progressionData.updatedSkillCount > 1 ? 's' : ''} à jour
-              </p>
-            )}
-          </div>
-        ) : hasRatings ? (
-          <div className="rounded-md border border-dashed bg-muted/30 px-4 py-3 text-sm">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Pas encore de progression — mettez à jour vos compétences pour voir l'évolution
-            </div>
-          </div>
-        ) : null}
-
         {/* Summary block: pill badges + AI narrative — hidden when side-by-side is active */}
         {!compareSlug && ((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
@@ -401,7 +389,19 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
               </div>
               {/* Compared profile */}
               <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground">{compareTarget.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground">{compareTarget.name}</p>
+                  {compareTarget.progressionDelta > 0.05 && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      <ArrowUp className="h-2.5 w-2.5" />+{compareTarget.progressionDelta.toFixed(1)}
+                    </span>
+                  )}
+                  {compareTarget.lastActivityAt && (
+                    <span className={cn('text-[10px]', freshnessColor(daysSince(compareTarget.lastActivityAt)))}>
+                      {humanFreshness(daysSince(compareTarget.lastActivityAt))}
+                    </span>
+                  )}
+                </div>
                 {compareAggregate && ((compareAggregate.topStrengths?.length > 0) || (compareAggregate.topGaps?.length > 0)) && (
                   <div className="flex flex-wrap gap-1">
                     {compareAggregate.topStrengths.map(s => (

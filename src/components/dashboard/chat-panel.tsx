@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
+import MemberAvatar from '@/components/member-avatar'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -246,6 +247,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
                 key={slug}
                 className="bg-primary/10 text-primary border border-primary/20 text-xs gap-1 pr-1"
               >
+                <MemberAvatar slug={slug} name={memberName(slug)} size={14} className="shrink-0" />
                 {memberName(slug)}
                 <button
                   onClick={() => removeBadge(slug)}
@@ -300,6 +302,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
                       <div className="h-4 w-4 flex items-center justify-center">
                         {contextSlugs.includes(m.slug) && <Check className="h-3.5 w-3.5 text-primary" />}
                       </div>
+                      <MemberAvatar slug={m.slug} name={m.name} size={20} className="shrink-0" />
                       <div className="min-w-0 flex-1 text-left">
                         <p className="truncate">{m.name}</p>
                         <p className="text-xs text-muted-foreground truncate">{m.role}</p>

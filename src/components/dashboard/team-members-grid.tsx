@@ -1,10 +1,13 @@
 import { Link } from 'react-router-dom'
+import { ArrowUp, ArrowDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { teamOrder } from '@/data/team-roster'
+import { cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import { useCatalog } from '@/hooks/use-catalog'
+import MemberAvatar from '@/components/member-avatar'
 
 interface TeamMembersGridProps {
   members: TeamMemberAggregateResponse[]
@@ -56,6 +59,12 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                   {hasSubmitted && radarData.length > 0 && (
                     <VisxRadarChart data={radarData} height={180} compact />
                   )}
+                  <MemberAvatar
+                    slug={member.slug}
+                    name={member.name}
+                    size={28}
+                    href={`/dashboard/${member.slug}`}
+                  />
                   <div className="text-center">
                     <Link
                       to={`/dashboard/${member.slug}`}
@@ -65,6 +74,23 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                     </Link>
                     <p className="text-xs text-muted-foreground">{member.role}</p>
                     <p className="mt-0.5 text-xs font-medium text-primary/70">{member.team}</p>
+                    <div className="flex items-center justify-center gap-2 mt-0.5">
+                      {member.progressionDelta > 0.05 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <ArrowUp className="h-2.5 w-2.5" />+{member.progressionDelta.toFixed(1)}
+                        </span>
+                      )}
+                      {member.progressionDelta < -0.05 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                          <ArrowDown className="h-2.5 w-2.5" />{member.progressionDelta.toFixed(1)}
+                        </span>
+                      )}
+                      {(member.lastActivityAt || member.submittedAt) && (
+                        <span className={cn('text-[10px]', freshnessColor(daysSince(member.lastActivityAt ?? member.submittedAt!)))}>
+                          {humanFreshness(daysSince(member.lastActivityAt ?? member.submittedAt!))}
+                        </span>
+                      )}
+                    </div>
                     {!hasSubmitted && (
                       <Badge variant="outline" className="mt-1 text-xs">
                         En attente
