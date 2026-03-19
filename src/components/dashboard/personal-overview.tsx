@@ -21,9 +21,10 @@ interface PersonalOverviewProps {
   isOwnProfile?: boolean
   onFindExpert?: (categoryId: string) => void
   onCompareChange?: (slug: string | null) => void
+  onOpenChat?: (prefill: string) => void
 }
 
-export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange }: PersonalOverviewProps) {
+export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange, onOpenChat }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
@@ -383,6 +384,13 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
             categories={categories}
             teamMembers={teamMembers}
             teamCategories={teamCategories}
+            comparedMember={compareSlug && compareTarget ? {
+              slug: compareSlug,
+              name: compareTarget.name,
+              skillRatings: compareTarget.skillRatings,
+            } : null}
+            isOwnProfile={isOwnProfile}
+            onOpenChat={onOpenChat}
           />
         )}
 

@@ -95,6 +95,8 @@ export default function DashboardPage() {
   const [prevSlug, setPrevSlug] = useState(slug)
   const [chatOpen, setChatOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [chatInitialInput, setChatInitialInput] = useState<string | undefined>(undefined)
+  const [chatInputNonce, setChatInputNonce] = useState(0)
   const [contextSlugs, setContextSlugs] = useState<string[]>([])
   const [prevContextKey, setPrevContextKey] = useState(`${activeTab}:${slug ?? ''}`)
 
@@ -123,6 +125,12 @@ export default function DashboardPage() {
       return [...new Set(base)]
     })
   }, [slug])
+
+  const handleOpenChat = useCallback((prefill: string) => {
+    setChatInitialInput(prefill)
+    setChatInputNonce(n => n + 1)
+    setChatOpen(true)
+  }, [])
 
   const loading = memberLoading || teamLoading
 
@@ -206,6 +214,7 @@ export default function DashboardPage() {
                             setActiveTab('expert')
                           }}
                           onCompareChange={handleCompareChange}
+                          onOpenChat={handleOpenChat}
                         />
                       )}
                     </Suspense>
@@ -275,9 +284,11 @@ export default function DashboardPage() {
                 contextSlugs={contextSlugs}
                 onContextChange={setContextSlugs}
                 teamMembers={teamAggregate?.members ?? []}
-                onClose={() => setChatOpen(false)}
+                onClose={() => { setChatOpen(false); setChatInitialInput(undefined) }}
                 messages={chatMessages}
                 onMessagesChange={setChatMessages}
+                initialInput={chatInitialInput}
+                initialInputNonce={chatInputNonce}
               />
             </div>
           ) : (

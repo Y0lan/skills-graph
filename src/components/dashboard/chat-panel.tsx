@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { MessageSquare, Send, Loader2, X, Plus, Check } from 'lucide-react'
+import { MessageSquare, Send, X, Plus, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,8 @@ interface ChatPanelProps {
   onClose: () => void
   messages: ChatMessage[]
   onMessagesChange: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  initialInput?: string
+  initialInputNonce?: number
 }
 
 function formatResetTime(resetsAt: string): string {
@@ -33,8 +35,8 @@ function formatResetTime(resetsAt: string): string {
   return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, onClose, messages, onMessagesChange }: ChatPanelProps) {
-  const [input, setInput] = useState('')
+export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, onClose, messages, onMessagesChange, initialInput, initialInputNonce }: ChatPanelProps) {
+  const [input, setInput] = useState(initialInput ?? '')
   const [streaming, setStreaming] = useState(false)
   const [remaining, setRemaining] = useState<number | null>(null)
   const [limit, setLimit] = useState(20)
@@ -57,6 +59,13 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
       })
       .catch(() => {})
   }, [])
+
+  // Sync pre-fill input when nonce changes
+  useEffect(() => {
+    if (initialInput !== undefined && initialInput !== '') {
+      setInput(initialInput)
+    }
+  }, [initialInput, initialInputNonce])
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -103,7 +112,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
         return
       }
 
-      // Read SSE stream
+      // Read SSE stream — buffer full response, reveal at end
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let assistantText = ''
@@ -135,17 +144,20 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
             const data = JSON.parse(line.slice(6))
             if (data.text) {
               assistantText += data.text
-              updateAssistant(assistantText)
             }
             if (data.done && data.remaining !== undefined) {
               setRemaining(data.remaining)
             }
             if (data.error) {
               assistantText += data.error
-              updateAssistant(assistantText)
             }
           } catch { /* ignore malformed lines */ }
         }
+      }
+
+      // Reveal complete response
+      if (assistantText) {
+        updateAssistant(assistantText)
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
@@ -307,50 +319,70 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
             {welcomeMessage}
           </p>
         )}
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`text-sm ${
-              msg.role === 'user'
-                ? 'ml-8 rounded-lg bg-primary/10 px-3 py-2'
-                : 'mr-8 rounded-lg bg-muted/50 px-3 py-2'
-            }`}
-          >
-            {msg.role === 'assistant' ? (
-              <div className="chat-markdown text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    // Keep headings small — render as bold paragraphs
-                    h1: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
-                    h2: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
-                    h3: ({ children }) => <p className="font-semibold mt-2 mb-1">{children}</p>,
-                    p: ({ children }) => <p className="mb-1.5">{children}</p>,
-                    ul: ({ children }) => <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>,
-                    li: ({ children }) => <li>{children}</li>,
-                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                    code: ({ children, className }) => {
-                      const isBlock = className?.includes('language-')
-                      return isBlock
-                        ? <code className="block bg-muted rounded px-2 py-1 text-xs my-1.5 overflow-x-auto">{children}</code>
-                        : <code className="bg-muted rounded px-1 py-0.5 text-xs">{children}</code>
-                    },
-                    pre: ({ children }) => <>{children}</>,
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              </div>
-            ) : (
-              <p className="whitespace-pre-wrap">{msg.content}</p>
-            )}
-          </div>
-        ))}
-        {streaming && messages[messages.length - 1]?.content === '' && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Réflexion en cours...
+        {messages.map((msg, i) => {
+          // Hide empty assistant message while buffering
+          if (msg.role === 'assistant' && msg.content === '') return null
+          return (
+            <div
+              key={i}
+              className={`text-sm ${
+                msg.role === 'user'
+                  ? 'ml-8 rounded-lg bg-primary/10 px-3 py-2'
+                  : 'mr-8 rounded-lg bg-muted/50 px-3 py-2'
+              }`}
+            >
+              {msg.role === 'assistant' ? (
+                <div className="chat-markdown text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Keep headings small — render as bold paragraphs
+                      h1: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
+                      h2: ({ children }) => <p className="font-bold mt-2 mb-1">{children}</p>,
+                      h3: ({ children }) => <p className="font-semibold mt-2 mb-1">{children}</p>,
+                      p: ({ children }) => <p className="mb-1.5">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc list-inside mb-1.5 space-y-0.5">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside mb-1.5 space-y-0.5">{children}</ol>,
+                      li: ({ children }) => <li>{children}</li>,
+                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                      code: ({ children, className }) => {
+                        const isBlock = className?.includes('language-')
+                        return isBlock
+                          ? <code className="block bg-muted rounded px-2 py-1 text-xs my-1.5 overflow-x-auto">{children}</code>
+                          : <code className="bg-muted rounded px-1 py-0.5 text-xs">{children}</code>
+                      },
+                      pre: ({ children }) => <>{children}</>,
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+              )}
+            </div>
+          )
+        })}
+        {streaming && (
+          <div className="flex items-center justify-between mr-8 rounded-lg bg-muted/50 px-3 py-2.5">
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="flex gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '0ms', animationDuration: '0.8s' }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '150ms', animationDuration: '0.8s' }} />
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '300ms', animationDuration: '0.8s' }} />
+              </span>
+            </span>
+            <button
+              onClick={() => {
+                abortRef.current?.abort()
+                abortRef.current = null
+                setStreaming(false)
+                onMessagesChange(prev => prev.filter(m => !(m.role === 'assistant' && m.content === '')))
+              }}
+              className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Annuler
+            </button>
           </div>
         )}
       </div>
