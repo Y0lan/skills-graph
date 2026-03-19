@@ -25,14 +25,16 @@ function memberCategoryAvg(
   if (!cat) return { avg: 0, ratedCount: 0, totalCount: 0 }
 
   const values: number[] = []
+  let ratedCount = 0
   for (const skill of cat.skills) {
     const val = ratings[skill.id]
-    if (val !== undefined && val > 0) {
-      values.push(val)
+    if (val !== undefined) {
+      ratedCount++
+      if (val > 0) values.push(val)
     }
   }
   const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0
-  return { avg, ratedCount: values.length, totalCount: cat.skills.length }
+  return { avg, ratedCount, totalCount: cat.skills.length }
 }
 
 // ─── Response interfaces matching src/lib/types.ts ───────────
