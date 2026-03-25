@@ -104,15 +104,9 @@ export default function RecruitPage() {
     return <Badge variant="secondary">En attente</Badge>
   }
 
-  const headerNav = (
-    <Link to="/recruit" className="text-sm font-medium text-primary">
-      Recrutement
-    </Link>
-  )
-
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader headerNav={headerNav} />
+      <AppHeader />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex items-center justify-between">
           <div>

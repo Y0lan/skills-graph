@@ -152,17 +152,11 @@ export default function CandidateDetailPage() {
     }).filter(Boolean)
   ).sort((a, b) => (b?.gap ?? 0) - (a?.gap ?? 0))
 
-  const headerNav = (
-    <Link to="/recruit" className="text-sm font-medium text-primary">
-      Recrutement
-    </Link>
-  )
-
   const isPending = !candidate.submittedAt
 
   return (
     <div className="min-h-screen bg-background">
-      <AppHeader headerNav={headerNav} />
+      <AppHeader />
       <div className="mx-auto max-w-5xl px-4 py-8">
         <Link to="/recruit" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Retour
