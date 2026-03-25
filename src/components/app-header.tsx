@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { LogOut, FileText } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
+import { LogOut, FileText, Users } from 'lucide-react'
 import ThemeToggle from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
 import { LoginDialog } from '@/components/auth/login-dialog'
 import { authClient } from '@/lib/auth-client'
 import { findMember } from '@/data/team-roster'
+import { isRecruitmentLead } from '@/lib/recruitment-leads'
 
 interface AppHeaderProps {
   headerActions?: ReactNode
@@ -38,6 +39,13 @@ export default function AppHeader({ headerActions, headerNav, hideSessionNav }: 
         </div>
         <div className="flex items-center gap-2">
           {headerNav}
+
+          {session && isRecruitmentLead(session.user.slug as string) && (
+            <Link to="/recruit" className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline">Recrutement</span>
+            </Link>
+          )}
 
           {session && (
             <>
