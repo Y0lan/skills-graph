@@ -113,7 +113,7 @@ export default function RecruitPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <div className="mx-auto max-w-5xl px-4 py-8">
+      <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Recrutement</h1>
