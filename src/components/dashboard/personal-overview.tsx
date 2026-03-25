@@ -50,7 +50,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     setComparisonSummary(null)
     setCompareAggregate(null)
     setProfileSummary(aggregate.profileSummary)
-    comparisonCache.current.clear()
+    comparisonCache.current.clear() // eslint-disable-line react-hooks/refs
   }
 
   // Feature #4: Freshness counter

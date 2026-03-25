@@ -70,6 +70,7 @@ app.post('/api/auth/customize-pin', express.json(), async (req, res) => {
 
 // Better Auth handler for all auth routes — BEFORE express.json()
 const authHandler = toNodeHandler(auth)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.all('/api/auth/{*splat}', async (req, res, _next) => {
   try {
     await authHandler(req, res)

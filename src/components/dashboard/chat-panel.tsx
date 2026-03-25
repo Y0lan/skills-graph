@@ -64,7 +64,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
   // Sync pre-fill input when nonce changes
   useEffect(() => {
     if (initialInput !== undefined && initialInput !== '') {
-      setInput(initialInput)
+      setInput(initialInput) // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [initialInput, initialInputNonce])
 
