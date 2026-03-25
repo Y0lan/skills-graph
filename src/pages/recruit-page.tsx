@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
-function formatDate(dateStr: string): string {
-  // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" (no T, no Z)
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR')
 }

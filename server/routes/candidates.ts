@@ -38,7 +38,14 @@ candidatesRouter.get('/', (_req, res) => {
     .all() as (Pick<CandidateRow, 'id' | 'name' | 'role' | 'email' | 'created_by' | 'created_at' | 'expires_at' | 'submitted_at'> & { has_report: number })[]
 
   res.json(rows.map(r => ({
-    ...r,
+    id: r.id,
+    name: r.name,
+    role: r.role,
+    email: r.email,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    submittedAt: r.submitted_at,
     hasReport: !!r.has_report,
   })))
 })
