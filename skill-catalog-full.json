@@ -1043,6 +1043,267 @@
           }
         }
       ]
+    },
+    {
+      "id": "design-ux",
+      "label": "Design & UX",
+      "scenario": "Vous travaillez sur l'interface d'un outil interne utilisé quotidiennement par 50 personnes. Évaluez votre capacité à concevoir des interfaces utiles, accessibles et agréables.",
+      "skills": [
+        {
+          "id": "user-research",
+          "label": "Recherche Utilisateur",
+          "descriptors": {
+            "0": "N'a jamais mené de recherche utilisateur",
+            "1": "Comprend l'intérêt de la recherche utilisateur ; a observé des tests utilisateurs",
+            "2": "Mène des entretiens simples avec un guide ; synthétise les retours en points clés",
+            "3": "Conçoit et mène des études utilisateurs ; crée des personas et des parcours utilisateurs",
+            "4": "Combine méthodes qualitatives et quantitatives ; mesure l'impact des changements UX",
+            "5": "Définit la stratégie de recherche produit ; forme l'équipe aux méthodes UX research"
+          }
+        },
+        {
+          "id": "information-architecture",
+          "label": "Architecture de l'Information",
+          "descriptors": {
+            "0": "N'a jamais structuré un système de navigation",
+            "1": "Comprend la notion de hiérarchie d'information ; identifie les problèmes de navigation évidents",
+            "2": "Organise le contenu d'une page de manière logique ; crée des menus et fils d'Ariane simples",
+            "3": "Conçoit des systèmes de navigation complets ; réalise des tris de cartes et arborescences",
+            "4": "Conçoit l'architecture d'information pour des produits complexes multi-modules",
+            "5": "Définit les standards d'IA de l'organisation ; audite et restructure des architectures existantes"
+          }
+        },
+        {
+          "id": "ui-design",
+          "label": "Design d'Interface (UI)",
+          "descriptors": {
+            "0": "N'a jamais conçu d'interface graphique",
+            "1": "Distingue un bon design d'un mauvais ; connaît les principes de base (contraste, alignement)",
+            "2": "Crée des maquettes simples avec Figma ou équivalent ; applique un design system existant",
+            "3": "Conçoit des interfaces complètes ; maîtrise typographie, couleur, espacement et hiérarchie visuelle",
+            "4": "Crée et maintient un design system ; définit les composants, tokens et patterns de l'équipe",
+            "5": "Définit la direction artistique du produit ; forme l'équipe aux principes de design"
+          }
+        },
+        {
+          "id": "ux-design",
+          "label": "Design d'Interaction (UX)",
+          "descriptors": {
+            "0": "N'a jamais conçu un parcours utilisateur",
+            "1": "Comprend la différence entre UI et UX ; identifie les frictions dans un parcours",
+            "2": "Conçoit des wireframes et prototypes simples ; applique les heuristiques de Nielsen",
+            "3": "Conçoit des parcours utilisateurs complets avec gestion des états (vide, erreur, chargement)",
+            "4": "Optimise les parcours critiques par itération data-driven ; maîtrise les micro-interactions",
+            "5": "Définit la vision UX produit ; arbitre les compromis entre UX, technique et business"
+          }
+        },
+        {
+          "id": "prototyping-tools",
+          "label": "Prototypage & Outils (Figma)",
+          "descriptors": {
+            "0": "N'a jamais utilisé Figma ou équivalent",
+            "1": "Navigue dans Figma ; inspecte les designs et récupère les propriétés CSS",
+            "2": "Crée des écrans simples dans Figma ; utilise les composants existants d'une librairie",
+            "3": "Crée des prototypes interactifs ; maîtrise auto-layout, variants et composants",
+            "4": "Construit des librairies de composants Figma ; met en place des systèmes de tokens",
+            "5": "Expert Figma : plugins, APIs, intégration CI/CD design ; forme l'équipe"
+          }
+        },
+        {
+          "id": "design-system",
+          "label": "Design System",
+          "descriptors": {
+            "0": "Ne sait pas ce qu'est un design system",
+            "1": "Comprend le concept ; utilise les composants d'un design system existant",
+            "2": "Contribue au design system : documente un composant, propose des variantes",
+            "3": "Crée des composants réutilisables avec documentation ; gère les tokens de design",
+            "4": "Architecte le design system : gouvernance, versioning, adoption cross-équipe",
+            "5": "Définit la stratégie design system de l'organisation ; aligne design et développement"
+          }
+        },
+        {
+          "id": "accessibility",
+          "label": "Accessibilité (a11y)",
+          "descriptors": {
+            "0": "N'a jamais considéré l'accessibilité",
+            "1": "Connaît les bases : alt text, contraste, navigation clavier",
+            "2": "Implémente les bonnes pratiques WCAG de base ; utilise les outils d'audit",
+            "3": "Conçoit des interfaces accessibles dès le départ ; maîtrise ARIA et les tests d'accessibilité",
+            "4": "Audite et corrige l'accessibilité de produits existants ; forme les développeurs",
+            "5": "Définit la politique d'accessibilité ; pilote la conformité RGAA/WCAG de l'organisation"
+          }
+        }
+      ]
+    },
+    {
+      "id": "management-leadership",
+      "label": "Management & Leadership",
+      "scenario": "Vous encadrez ou accompagnez une équipe de 5 à 15 personnes sur des projets techniques. Évaluez votre capacité à diriger, développer et fédérer une équipe.",
+      "skills": [
+        {
+          "id": "team-management",
+          "label": "Gestion d'Équipe",
+          "descriptors": {
+            "0": "N'a jamais encadré de personnes",
+            "1": "A aidé à coordonner une petite équipe informellement",
+            "2": "Gère les tâches quotidiennes d'une équipe ; anime les stand-ups et rétrospectives",
+            "3": "Gère une équipe de 5+ personnes : 1-on-1, objectifs, charge de travail, conflits",
+            "4": "Manage des managers ou des équipes transverses ; gère la croissance d'équipe",
+            "5": "Définit la culture managériale de l'organisation ; forme et mentor les managers"
+          }
+        },
+        {
+          "id": "coaching-development",
+          "label": "Coaching & Développement",
+          "descriptors": {
+            "0": "N'a jamais accompagné le développement d'un collègue",
+            "1": "Donne des retours constructifs quand on le demande",
+            "2": "Identifie les forces et axes d'amélioration ; propose des plans de montée en compétence",
+            "3": "Mène des entretiens de développement ; crée des plans de carrière individualisés",
+            "4": "Met en place des programmes de mentorat ; développe les talents et prépare les successions",
+            "5": "Définit la stratégie de développement des talents de l'organisation"
+          }
+        },
+        {
+          "id": "strategic-planning",
+          "label": "Planification Stratégique",
+          "descriptors": {
+            "0": "N'a jamais participé à la planification au-delà du sprint",
+            "1": "Comprend la roadmap produit et les objectifs de l'équipe",
+            "2": "Contribue à la planification trimestrielle ; priorise avec des critères explicites",
+            "3": "Définit la roadmap de son périmètre ; aligne les objectifs équipe avec la stratégie",
+            "4": "Planifie sur 12+ mois ; arbitre les investissements tech/produit/dette",
+            "5": "Définit la vision technologique de l'organisation ; influence la stratégie globale"
+          }
+        },
+        {
+          "id": "change-management",
+          "label": "Gestion du Changement",
+          "descriptors": {
+            "0": "N'a jamais piloté de changement organisationnel",
+            "1": "S'adapte bien au changement ; aide les collègues à comprendre les nouvelles pratiques",
+            "2": "Communique les changements clairement ; recueille les retours et préoccupations",
+            "3": "Pilote des transitions (nouveaux outils, réorgs, nouvelles pratiques) avec un plan structuré",
+            "4": "Gère des transformations complexes multi-équipes ; mesure l'adoption et itère",
+            "5": "Architecte du changement organisationnel ; anticipe les résistances et construit l'adhésion"
+          }
+        },
+        {
+          "id": "management-communication",
+          "label": "Communication Managériale",
+          "descriptors": {
+            "0": "N'a jamais présenté devant un groupe professionnel",
+            "1": "Communique clairement en réunion ; rédige des comptes-rendus utiles",
+            "2": "Présente les avancées et blocages aux parties prenantes ; adapte le discours à l'audience",
+            "3": "Communique la vision et la stratégie à son équipe ; gère les annonces difficiles",
+            "4": "Influence les décisions au niveau direction ; représente l'équipe tech auprès du management",
+            "5": "Porte la communication technologique de l'organisation ; construit la marque employeur tech"
+          }
+        },
+        {
+          "id": "recruiting-onboarding",
+          "label": "Recrutement & Onboarding",
+          "descriptors": {
+            "0": "N'a jamais participé à un processus de recrutement",
+            "1": "A participé à des entretiens techniques comme observateur",
+            "2": "Mène des entretiens techniques ; évalue les compétences avec une grille structurée",
+            "3": "Conçoit le processus de recrutement technique ; crée les exercices et grilles d'évaluation",
+            "4": "Pilote le recrutement de bout en bout ; optimise le funnel et réduit le time-to-hire",
+            "5": "Définit la stratégie de recrutement tech ; construit la marque employeur et les partenariats écoles"
+          }
+        }
+      ]
+    },
+    {
+      "id": "product-project",
+      "label": "Product & Gestion de Projet",
+      "scenario": "Vous participez à la conception et à la livraison d'un produit numérique interne ou externe. Évaluez votre capacité à comprendre les besoins, prioriser et livrer.",
+      "skills": [
+        {
+          "id": "product-discovery",
+          "label": "Discovery Produit",
+          "descriptors": {
+            "0": "N'a jamais participé à une phase de discovery",
+            "1": "Comprend la différence entre discovery et delivery ; participe aux ateliers",
+            "2": "Mène des interviews utilisateurs simples ; identifie les problèmes prioritaires",
+            "3": "Structure une phase de discovery complète : problème, hypothèses, expérimentations",
+            "4": "Combine discovery continu et delivery ; valide les hypothèses avec des métriques",
+            "5": "Définit la méthode de discovery de l'organisation ; forme les product managers"
+          }
+        },
+        {
+          "id": "prioritization-roadmap",
+          "label": "Priorisation & Roadmap",
+          "descriptors": {
+            "0": "N'a jamais priorisé un backlog",
+            "1": "Comprend les critères de priorisation (valeur, effort, urgence)",
+            "2": "Priorise un backlog avec des frameworks (RICE, MoSCoW) ; maintient la roadmap à jour",
+            "3": "Définit la roadmap trimestrielle avec arbitrages explicites ; dit non aux demandes hors scope",
+            "4": "Gère des roadmaps multi-produits ; aligne les priorités tech avec les objectifs business",
+            "5": "Définit la stratégie produit de l'organisation ; arbitre les investissements cross-produits"
+          }
+        },
+        {
+          "id": "metrics-analytics",
+          "label": "Métriques & Analytics",
+          "descriptors": {
+            "0": "N'a jamais suivi de métriques produit",
+            "1": "Connaît les métriques de base (DAU, conversion, rétention) ; consulte les dashboards",
+            "2": "Définit les KPIs d'une fonctionnalité ; met en place le tracking avec des outils existants",
+            "3": "Conçoit un plan de mesure complet ; analyse les données pour guider les décisions produit",
+            "4": "Met en place une culture data-driven ; A/B testing, cohortes, funnel analysis",
+            "5": "Définit la stratégie data produit ; construit l'infrastructure de mesure de l'organisation"
+          }
+        },
+        {
+          "id": "agile-project-management",
+          "label": "Gestion de Projet Agile",
+          "descriptors": {
+            "0": "N'a jamais travaillé en méthodologie agile",
+            "1": "Participe aux cérémonies agiles ; comprend les rôles (PO, SM, dev)",
+            "2": "Anime les cérémonies ; gère le board et les estimations ; identifie les blocages",
+            "3": "Adapte la méthode au contexte ; gère les dépendances inter-équipes ; mesure la vélocité",
+            "4": "Coach agile : transforme les pratiques, résout les dysfonctionnements d'équipe",
+            "5": "Définit le framework agile de l'organisation ; adapte Scrum/Kanban au contexte entreprise"
+          }
+        },
+        {
+          "id": "spec-writing",
+          "label": "Rédaction de Spécifications",
+          "descriptors": {
+            "0": "N'a jamais rédigé de spécification fonctionnelle",
+            "1": "Comprend et suit des spécifications existantes ; pose les bonnes questions",
+            "2": "Rédige des user stories avec critères d'acceptation ; documente les règles de gestion",
+            "3": "Rédige des specs complètes avec cas limites, maquettes et critères de succès",
+            "4": "Définit les standards de documentation produit ; template et forme l'équipe",
+            "5": "Rédige des spécifications stratégiques (RFC, ADR) ; documente les décisions d'architecture produit"
+          }
+        },
+        {
+          "id": "stakeholder-coordination",
+          "label": "Coordination Parties Prenantes",
+          "descriptors": {
+            "0": "N'a jamais interagi avec des parties prenantes non-tech",
+            "1": "Communique les avancées techniques en langage compréhensible",
+            "2": "Anime des réunions avec des parties prenantes variées ; gère les attentes",
+            "3": "Aligne les parties prenantes sur les priorités ; négocie les compromis scope/délai",
+            "4": "Gère les parties prenantes à haut niveau (direction, clients stratégiques)",
+            "5": "Construit et maintient les relations stratégiques ; influence les décisions au COMEX"
+          }
+        },
+        {
+          "id": "go-to-market",
+          "label": "Go-to-Market",
+          "descriptors": {
+            "0": "N'a jamais participé au lancement d'un produit",
+            "1": "Comprend les étapes d'un lancement ; prépare la documentation technique",
+            "2": "Coordonne le lancement avec les équipes (support, comm, formation) ; prépare les release notes",
+            "3": "Pilote le go-to-market de bout en bout : beta, soft launch, GA ; mesure l'adoption",
+            "4": "Définit la stratégie de lancement pour des produits complexes multi-marché",
+            "5": "Expert en lancement produit ; construit les playbooks GTM de l'organisation"
+          }
+        }
+      ]
     }
   ]
 }

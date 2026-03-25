@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillForm } from '@/hooks/use-skill-form'
-import { useAutosave } from '@/hooks/use-autosave'
+import { useAutosave, type SaveStatus } from '@/hooks/use-autosave'
 import type { SkillFormValues } from '@/lib/schemas'
 import RatingLegend from './rating-legend'
 import ProgressBar from './progress-bar'
@@ -16,6 +16,7 @@ export interface WizardNavigation {
   isReview: boolean
   editingFromReview: boolean
   submitting: boolean
+  saveStatus: SaveStatus
   onPrev: () => void
   onNext: () => void
   onBackToReview: () => void
@@ -28,6 +29,7 @@ interface SkillFormWizardProps {
   onSubmit: (data: SkillFormValues) => Promise<void>
   submitting: boolean
   onNavigationChange?: (nav: WizardNavigation) => void
+  autosaveEndpoint?: string
 }
 
 export default function SkillFormWizard({
@@ -36,6 +38,7 @@ export default function SkillFormWizard({
   onSubmit,
   submitting,
   onNavigationChange,
+  autosaveEndpoint,
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
@@ -45,7 +48,7 @@ export default function SkillFormWizard({
   const { form, ratings, skippedCategories, setRating, toggleSkipCategory, isSkipped } =
     useSkillForm({ defaultValues: initialData })
 
-  useAutosave({ control: form.control, slug })
+  const { saveStatus } = useAutosave({ control: form.control, slug, endpoint: autosaveEndpoint })
 
   const [editingFromReview, setEditingFromReview] = useState(false)
   const [unratedSkillIds, setUnratedSkillIds] = useState<string[]>([])
@@ -174,13 +177,14 @@ export default function SkillFormWizard({
       isReview: isReviewStep,
       editingFromReview,
       submitting,
+      saveStatus,
       onPrev: handlePrev,
       onNext: handleNext,
       onBackToReview: handleBackToReview,
       onSubmit: handleSubmit,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, isReviewStep, editingFromReview, submitting, ratings, skippedCategories])
+  }, [step, isReviewStep, editingFromReview, submitting, saveStatus, ratings, skippedCategories])
 
   return (
     <div className="space-y-6">

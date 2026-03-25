@@ -140,11 +140,30 @@ export function initDatabase(): void {
     }
   }
 
+  // Candidates table (recruitment feature)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      email TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT DEFAULT (datetime('now', '+30 days')),
+      ratings TEXT NOT NULL DEFAULT '{}',
+      experience TEXT NOT NULL DEFAULT '{}',
+      skipped_categories TEXT NOT NULL DEFAULT '[]',
+      submitted_at TEXT,
+      ai_report TEXT,
+      notes TEXT
+    )
+  `)
+
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty or catalog version changed
   db.exec('CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT)')
-  const CATALOG_VERSION = '2.1.0'
+  const CATALOG_VERSION = '3.0.0'
   const currentVersion = (db.prepare("SELECT value FROM catalog_meta WHERE key = 'version'").get() as { value: string } | undefined)?.value
   const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
   if (count === 0 || currentVersion !== CATALOG_VERSION) {
