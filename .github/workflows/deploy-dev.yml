@@ -69,19 +69,17 @@ jobs:
 
       - name: Smoke test
         run: |
-          for i in $(seq 1 12); do
-            IP=$(kubectl -n skill-radar-dev get gateway skill-radar-dev-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
-            [ -n "$IP" ] && break
-            echo "Waiting for Gateway IP... ($i/12)"
-            sleep 10
-          done
-          if [ -z "$IP" ]; then
-            echo "Warning: Gateway IP not yet assigned (normal on first deploy)"
-            exit 0
+          # Wait for rollout to complete (pod ready)
+          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=90s
+
+          # Test via port-forward (bypasses LB propagation delay)
+          kubectl -n skill-radar-dev port-forward deploy/skill-radar 9090:8080 &
+          PF_PID=$!
+          sleep 3
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
+          kill $PF_PID 2>/dev/null || true
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed (via port-forward)"
+          else
+            echo "Health check failed: HTTP $STATUS" && exit 1
           fi
-          for i in 1 2 3 4 5; do
-            STATUS=$(curl -sL -o /dev/null -w '%{http_code}' "http://$IP/health")
-            [ "$STATUS" = "200" ] && echo "Health check passed" && exit 0
-            sleep 5
-          done
-          echo "Health check failed after 5 retries" && exit 1
