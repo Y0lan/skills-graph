@@ -24,8 +24,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Server data
-server/data/
+# Server data (DB files, not source code)
+server/data/*
+!server/data/team-roster.ts
 
 # Environment variables
 .env
