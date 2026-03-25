@@ -35,6 +35,7 @@ server/data/*
 
 # K8s secrets (never commit real values)
 k8s/secret.yaml
+k8s-dev/secret.yaml
 
 # AI tool artifacts
 .agents/

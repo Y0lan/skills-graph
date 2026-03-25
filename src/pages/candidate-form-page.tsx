@@ -51,12 +51,16 @@ export default function CandidateFormPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleSubmit = useCallback(async (_data: SkillFormValues) => {
+  const handleSubmit = useCallback(async (data: SkillFormValues) => {
     if (!id) return
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/evaluate/${id}/submit`, { method: 'POST' })
+      // Send final ratings with submit to prevent autosave race
+      const res = await fetch(`/api/evaluate/${id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Erreur' }))
         throw new Error(body.error)
