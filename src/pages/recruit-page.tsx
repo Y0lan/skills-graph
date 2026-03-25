@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+
+function formatDate(dateStr: string): string {
+  // SQLite datetime('now') returns "YYYY-MM-DD HH:MM:SS" (no T, no Z)
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
+  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR')
+}
 import AppHeader from '@/components/app-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -184,7 +190,7 @@ export default function RecruitPage() {
                     <td className="py-3 text-muted-foreground">{c.role}</td>
                     <td className="py-3">{statusBadge(c)}</td>
                     <td className="py-3 text-muted-foreground">
-                      {new Date(c.createdAt).toLocaleDateString('fr-FR')}
+                      {formatDate(c.createdAt)}
                     </td>
                     <td className="py-3">
                       <div className="flex items-center justify-end gap-1">
