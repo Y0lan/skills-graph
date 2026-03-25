@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
+import type { WizardNavigation } from '@/components/form/skill-form-wizard'
 import type { SkillFormValues } from '@/lib/schemas'
 import { Card, CardContent } from '@/components/ui/card'
-import { Loader2, CheckCircle2, AlertTriangle, Clock } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Loader2, CheckCircle2, AlertTriangle, Clock, Send } from 'lucide-react'
 
 interface CandidateFormData {
   id: string
@@ -23,6 +25,7 @@ export default function CandidateFormPage() {
   const [existingRatings, setExistingRatings] = useState<SkillFormValues | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [started, setStarted] = useState(false)
+  const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -164,9 +167,31 @@ export default function CandidateFormPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-xl font-bold">{formData.name}</h1>
-          <p className="text-sm text-muted-foreground">Évaluation pour le poste de {formData.role}</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">{formData.name}</h1>
+            <p className="text-sm text-muted-foreground">Évaluation pour le poste de {formData.role}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {wizardNav && wizardNav.saveStatus !== 'idle' && (
+              <span className={`text-xs ${wizardNav.saveStatus === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>
+                {wizardNav.saveStatus === 'saving' && 'Sauvegarde...'}
+                {wizardNav.saveStatus === 'saved' && 'Sauvegardé ✓'}
+                {wizardNav.saveStatus === 'error' && 'Erreur ⚠'}
+              </span>
+            )}
+            {wizardNav?.isReview && (
+              <Button
+                size="sm"
+                onClick={() => wizardNav.onSubmit()}
+                disabled={submitting}
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                {submitting ? 'Envoi...' : 'Soumettre'}
+              </Button>
+            )}
+          </div>
         </div>
         <SkillFormWizard
           slug={id!}
@@ -174,6 +199,7 @@ export default function CandidateFormPage() {
           onSubmit={handleSubmit}
           submitting={submitting}
           autosaveEndpoint={`/api/evaluate/${id}/ratings`}
+          onNavigationChange={setWizardNav}
         />
       </div>
     </div>
