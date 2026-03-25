@@ -32,6 +32,9 @@ server/data/
 .env.*
 !.env.example
 
+# K8s secrets (never commit real values)
+k8s/secret.yaml
+
 # AI tool artifacts
 .agents/
 .claude/

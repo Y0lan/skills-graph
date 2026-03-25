@@ -8,8 +8,13 @@ interface CalibrationPromptProps {
   tools?: string[]
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function CalibrationPrompt({ text, categoryEmoji, categoryLabel, tools }: CalibrationPromptProps) {
+export default function CalibrationPrompt({
+  text,
+  categoryEmoji: _categoryEmoji,
+  categoryLabel: _categoryLabel,
+  tools,
+}: CalibrationPromptProps) {
+  void _categoryEmoji; void _categoryLabel
   return (
     <div className="relative flex min-h-[50vh] flex-col items-center justify-center px-4 pb-16">
       {/* Subtle radial gradient background */}

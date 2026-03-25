@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { findMember } from '@/data/team-roster'
 import { useRatings } from '@/hooks/use-ratings'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
 import type { WizardNavigation } from '@/components/form/skill-form-wizard'
 import AppHeader from '@/components/app-header'
 import ResetConfirmDialog from '@/components/reset-confirm-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft, LayoutDashboard, Loader2, RotateCcw, Send } from 'lucide-react'
@@ -19,6 +30,7 @@ export default function FormPage() {
   const [ready, setReady] = useState(false)
   const [resetKey, setResetKey] = useState(0)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
 
@@ -100,6 +112,7 @@ export default function FormPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader
+        hideSessionNav
         headerActions={
           <>
             <Button
@@ -124,9 +137,23 @@ export default function FormPage() {
             </Button>
           </>
         }
-        headerNav={wizardNav?.isReview && (
+        headerNav={
           <div className="flex items-center gap-2">
-            {!wizardNav.isFirstStep && (
+            {wizardNav && wizardNav.saveStatus !== 'idle' && (
+              <span
+                aria-live="polite"
+                className={`text-xs ${
+                  wizardNav.saveStatus === 'error'
+                    ? 'text-destructive'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {wizardNav.saveStatus === 'saving' && 'Sauvegarde...'}
+                {wizardNav.saveStatus === 'saved' && 'Sauvegardé ✓'}
+                {wizardNav.saveStatus === 'error' && 'Erreur ⚠'}
+              </span>
+            )}
+            {wizardNav?.isReview && !wizardNav.isFirstStep && (
               <Button
                 variant="outline"
                 size="sm"
@@ -137,17 +164,26 @@ export default function FormPage() {
                 <span className="hidden sm:inline">Retour</span>
               </Button>
             )}
-            <Button
-              size="sm"
-              onClick={wizardNav.onSubmit}
-              disabled={wizardNav.submitting}
-              className="gap-1.5"
-            >
-              <Send className="h-4 w-4" />
-              {wizardNav.submitting ? 'Envoi...' : 'Soumettre'}
-            </Button>
+            {wizardNav && (
+              <Button
+                data-testid="header-submit-btn"
+                size="sm"
+                onClick={() => {
+                  if (wizardNav.isReview) {
+                    wizardNav.onSubmit()
+                  } else {
+                    setSubmitDialogOpen(true)
+                  }
+                }}
+                disabled={wizardNav.submitting}
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                {wizardNav.submitting ? 'Envoi...' : 'Soumettre'}
+              </Button>
+            )}
           </div>
-        )}
+        }
       />
       <ResetConfirmDialog
         open={resetDialogOpen}
@@ -155,6 +191,28 @@ export default function FormPage() {
         onConfirm={handleReset}
         loading={resetting}
       />
+      <AlertDialog open={submitDialogOpen} onOpenChange={setSubmitDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Soumettre sans vérifier ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vous n'avez pas encore consulté le récapitulatif de vos réponses.
+              Souhaitez-vous soumettre directement ?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setSubmitDialogOpen(false)
+                wizardNav?.onSubmit()
+              }}
+            >
+              Soumettre
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="mx-auto max-w-3xl p-4 pt-14 sm:p-8 sm:pt-14">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{member.name}</h1>
@@ -180,8 +238,12 @@ export default function FormPage() {
           onSubmit={async (payload) => {
             setAnalyzing(true)
             const result = await submitRatings(slug!, payload)
-            if (result) navigate(`/dashboard/${slug}`)
-            else setAnalyzing(false)
+            if (result) {
+              toast.success('Évaluation soumise avec succès !')
+              navigate(`/dashboard/${slug}`)
+            } else {
+              setAnalyzing(false)
+            }
           }}
           onNavigationChange={handleNavigationChange}
         />

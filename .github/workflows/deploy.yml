@@ -1,0 +1,88 @@
+name: Deploy to GKE Autopilot
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deploy@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install gke-gcloud-auth-plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials skill-radar \
+            --region australia-southeast1 \
+            --project ${{ vars.GCP_PROJECT_ID }}
+
+      - name: Deploy to GKE
+        run: |
+          cd k8s
+          kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:${{ github.sha }}
+          kubectl apply -k .
+          kubectl -n skill-radar rollout status deployment/skill-radar --timeout=120s
+
+      - name: Smoke test
+        run: |
+          # Wait for Gateway to assign an IP (may take a moment on first deploy)
+          for i in $(seq 1 12); do
+            IP=$(kubectl -n skill-radar get gateway skill-radar-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
+            [ -n "$IP" ] && break
+            echo "Waiting for Gateway IP... ($i/12)"
+            sleep 10
+          done
+          if [ -z "$IP" ]; then
+            echo "Warning: Gateway IP not yet assigned (normal on first deploy — can take 2-5 min)"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -sL -o /dev/null -w '%{http_code}' "http://$IP/health")
+            [ "$STATUS" = "200" ] && echo "Health check passed" && exit 0
+            sleep 5
+          done
+          echo "Health check failed after 5 retries" && exit 1

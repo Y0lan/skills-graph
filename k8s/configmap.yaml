@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: skill-radar-config
+  namespace: skill-radar
+data:
+  NODE_ENV: "production"
+  PORT: "8080"
+  DATA_DIR: "/data"
+  # Set these to your Gateway external IP or custom domain after first deploy:
+  #   kubectl -n skill-radar get gateway skill-radar-gateway -o jsonpath='{.status.addresses[0].value}'
+  CORS_ORIGIN: "https://radar.sinapse.nc"
+  BETTER_AUTH_URL: "https://radar.sinapse.nc"

@@ -10,9 +10,10 @@ import { findMember } from '@/data/team-roster'
 interface AppHeaderProps {
   headerActions?: ReactNode
   headerNav?: ReactNode
+  hideSessionNav?: boolean
 }
 
-export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) {
+export default function AppHeader({ headerActions, headerNav, hideSessionNav }: AppHeaderProps) {
   const { data: session } = authClient.useSession()
   const navigate = useNavigate()
 
@@ -40,7 +41,7 @@ export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) 
 
           {session && (
             <>
-              {session.user.slug && (
+              {!hideSessionNav && session.user.slug && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -50,11 +51,13 @@ export default function AppHeader({ headerActions, headerNav }: AppHeaderProps) 
                   Mon formulaire
                 </Button>
               )}
-              <span className="text-sm text-muted-foreground hidden sm:inline">
-                {loggedInMember
-                  ? `${loggedInMember.name} — ${loggedInMember.role}`
-                  : session.user.email}
-              </span>
+              {!hideSessionNav && (
+                <span className="text-sm text-muted-foreground hidden sm:inline">
+                  {loggedInMember
+                    ? `${loggedInMember.name} — ${loggedInMember.role}`
+                    : session.user.email}
+                </span>
+              )}
               <Button variant="ghost" size="sm" onClick={handleSignOut}>
                 <LogOut className="h-4 w-4" />
               </Button>
