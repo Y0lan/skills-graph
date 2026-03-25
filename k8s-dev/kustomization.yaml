@@ -5,10 +5,10 @@ namespace: skill-radar-dev
 
 resources:
 - namespace.yaml
-- ../k8s/service-account.yaml
-- ../k8s/pvc.yaml
-- ../k8s/deployment.yaml
-- ../k8s/service.yaml
+- service-account.yaml
+- pvc.yaml
+- deployment.yaml
+- service.yaml
 - gateway.yaml
 - configmap.yaml
 - secret.yaml
@@ -16,13 +16,10 @@ resources:
 images:
 - name: skill-radar
   newName: australia-southeast1-docker.pkg.dev/sinapse-core/skill-radar/app
-  newTag: dev-initial
+  newTag: initial
 
 patches:
-- target:
-    kind: Deployment
-    name: skill-radar
-  patch: |
+- patch: |
     - op: replace
       path: /metadata/labels/app
       value: skill-radar-dev
@@ -32,10 +29,13 @@ patches:
     - op: replace
       path: /spec/template/metadata/labels/app
       value: skill-radar-dev
-- target:
-    kind: Service
+  target:
+    kind: Deployment
     name: skill-radar
-  patch: |
+- patch: |
     - op: replace
       path: /spec/selector/app
       value: skill-radar-dev
+  target:
+    kind: Service
+    name: skill-radar
