@@ -1046,19 +1046,31 @@
     },
     {
       "id": "design-ux",
-      "label": "Design & UX",
-      "scenario": "Vous travaillez sur l'interface d'un outil interne utilisé quotidiennement par 50 personnes. Évaluez votre capacité à concevoir des interfaces utiles, accessibles et agréables.",
+      "label": "Design & UX — Services Numériques",
+      "scenario": "Vous concevez le portail de téléservices SINAPSE utilisé par des travailleurs indépendants, des employeurs de toute taille et des agents CAFAT. Les utilisateurs ont des niveaux numériques très variés, les parcours impliquent des démarches administratives complexes (déclarations, paiements, contestations) et les erreurs ont un impact direct sur les droits sociaux des assurés. Évaluez votre capacité à concevoir des services numériques utiles, accessibles et compréhensibles.",
       "skills": [
         {
           "id": "user-research",
-          "label": "Recherche Utilisateur",
+          "label": "Recherche Utilisateur & Terrain",
           "descriptors": {
             "0": "N'a jamais mené de recherche utilisateur",
-            "1": "Comprend l'intérêt de la recherche utilisateur ; a observé des tests utilisateurs",
-            "2": "Mène des entretiens simples avec un guide ; synthétise les retours en points clés",
-            "3": "Conçoit et mène des études utilisateurs ; crée des personas et des parcours utilisateurs",
-            "4": "Combine méthodes qualitatives et quantitatives ; mesure l'impact des changements UX",
-            "5": "Définit la stratégie de recherche produit ; forme l'équipe aux méthodes UX research"
+            "1": "Comprend l'intérêt de la recherche utilisateur ; a observé des tests ou des entretiens",
+            "2": "Mène des entretiens exploratoires avec un guide ; synthétise les retours en points clés",
+            "3": "Conçoit et mène des études terrain (entretiens, observations in situ, tests d'usage) ; crée des personas et cartographie les parcours actuels vs. cibles",
+            "4": "Combine quali et quanti ; segmente les utilisateurs par niveau numérique et contexte métier (TI, employeur TPE, agent CAFAT) ; mesure l'impact UX sur l'adoption",
+            "5": "Définit la stratégie de recherche produit ; installe une culture de la preuve utilisateur dans les arbitrages ; forme l'équipe aux méthodes UX research"
+          }
+        },
+        {
+          "id": "service-design",
+          "label": "Design de Service (parcours multi-canal)",
+          "descriptors": {
+            "0": "N'a jamais cartographié un service de bout en bout",
+            "1": "Comprend qu'un service numérique s'inscrit dans un parcours plus large (avant/pendant/après l'écran)",
+            "2": "Cartographie un parcours de service simple (service blueprint) incluant front et back-office",
+            "3": "Conçoit des parcours multi-canaux (portail, guichet, courrier, téléphone) ; identifie les moments de vérité et les ruptures de canal",
+            "4": "Optimise des services complexes impliquant plusieurs acteurs (usager, agent, prestataire) ; réduit les étapes et les délais perçus",
+            "5": "Définit la stratégie de design de service de l'organisation ; aligne expérience usager et contraintes réglementaires NC"
           }
         },
         {
@@ -1067,22 +1079,22 @@
           "descriptors": {
             "0": "N'a jamais structuré un système de navigation",
             "1": "Comprend la notion de hiérarchie d'information ; identifie les problèmes de navigation évidents",
-            "2": "Organise le contenu d'une page de manière logique ; crée des menus et fils d'Ariane simples",
-            "3": "Conçoit des systèmes de navigation complets ; réalise des tris de cartes et arborescences",
-            "4": "Conçoit l'architecture d'information pour des produits complexes multi-modules",
-            "5": "Définit les standards d'IA de l'organisation ; audite et restructure des architectures existantes"
+            "2": "Organise le contenu d'une section de manière logique ; crée des menus et fils d'Ariane cohérents",
+            "3": "Conçoit des systèmes de navigation complets pour des produits multi-modules ; réalise des tris de cartes et arborescences",
+            "4": "Conçoit l'architecture d'information d'un écosystème (portail public + espace pro + back-office) avec des logiques de navigation adaptées par profil utilisateur",
+            "5": "Définit les standards d'AI de l'organisation ; audite et restructure des architectures existantes complexes"
           }
         },
         {
-          "id": "ui-design",
-          "label": "Design d'Interface (UI)",
+          "id": "ui-design-prototyping",
+          "label": "Design d'Interface & Prototypage (UI / Figma)",
           "descriptors": {
             "0": "N'a jamais conçu d'interface graphique",
-            "1": "Distingue un bon design d'un mauvais ; connaît les principes de base (contraste, alignement)",
-            "2": "Crée des maquettes simples avec Figma ou équivalent ; applique un design system existant",
-            "3": "Conçoit des interfaces complètes ; maîtrise typographie, couleur, espacement et hiérarchie visuelle",
-            "4": "Crée et maintient un design system ; définit les composants, tokens et patterns de l'équipe",
-            "5": "Définit la direction artistique du produit ; forme l'équipe aux principes de design"
+            "1": "Distingue un bon design d'un mauvais ; connaît les principes de base (contraste, alignement, hiérarchie) ; navigue dans Figma et inspecte les designs",
+            "2": "Crée des maquettes dans Figma ; applique un design system existant ; produit des prototypes cliquables simples",
+            "3": "Conçoit des interfaces complètes ; maîtrise typographie, couleur, espacement ; crée des prototypes interactifs avec auto-layout, variants et composants",
+            "4": "Crée et maintient un design system (composants, tokens, documentation) ; construit des librairies Figma réutilisables ; forme les développeurs au hand-off",
+            "5": "Définit la direction visuelle du produit ; expertise Figma avancée (plugins, APIs, intégration CI/CD design) ; forme l'équipe"
           }
         },
         {
@@ -1090,55 +1102,43 @@
           "label": "Design d'Interaction (UX)",
           "descriptors": {
             "0": "N'a jamais conçu un parcours utilisateur",
-            "1": "Comprend la différence entre UI et UX ; identifie les frictions dans un parcours",
-            "2": "Conçoit des wireframes et prototypes simples ; applique les heuristiques de Nielsen",
-            "3": "Conçoit des parcours utilisateurs complets avec gestion des états (vide, erreur, chargement)",
-            "4": "Optimise les parcours critiques par itération data-driven ; maîtrise les micro-interactions",
-            "5": "Définit la vision UX produit ; arbitre les compromis entre UX, technique et business"
+            "1": "Comprend la différence entre UI et UX ; identifie les frictions dans un parcours existant",
+            "2": "Conçoit des wireframes et parcours simples ; applique les heuristiques de Nielsen ; gère les états de base (vide, erreur, chargement)",
+            "3": "Conçoit des parcours utilisateurs complets avec gestion de tous les états (succès, erreur, timeout, session expirée, droits insuffisants) ; documente les micro-interactions",
+            "4": "Optimise les parcours critiques par itération data-driven ; arbitre les compromis UX/technique/réglementaire ; maîtrise les formulaires complexes multi-étapes",
+            "5": "Définit la vision UX produit ; arbitre les compromis entre UX, technique et business ; référent sur les patterns d'interaction de l'organisation"
           }
         },
         {
-          "id": "prototyping-tools",
-          "label": "Prototypage & Outils (Figma)",
+          "id": "ux-writing",
+          "label": "Rédaction UX & Langage Clair",
           "descriptors": {
-            "0": "N'a jamais utilisé Figma ou équivalent",
-            "1": "Navigue dans Figma ; inspecte les designs et récupère les propriétés CSS",
-            "2": "Crée des écrans simples dans Figma ; utilise les composants existants d'une librairie",
-            "3": "Crée des prototypes interactifs ; maîtrise auto-layout, variants et composants",
-            "4": "Construit des librairies de composants Figma ; met en place des systèmes de tokens",
-            "5": "Expert Figma : plugins, APIs, intégration CI/CD design ; forme l'équipe"
+            "0": "N'a jamais réfléchi à la rédaction des interfaces",
+            "1": "Comprend que les libellés, messages d'erreur et textes d'aide impactent la compréhension ; identifie les formulations confuses",
+            "2": "Rédige des libellés et messages d'erreur clairs pour des cas simples ; simplifie le jargon administratif avec de l'aide",
+            "3": "Applique les principes du langage clair aux interfaces : vocabulaire courant, phrases courtes, voix active ; traduit les concepts réglementaires NC en termes compréhensibles par les usagers",
+            "4": "Conçoit un guide éditorial produit (tone of voice, glossaire, règles de rédaction) ; teste la compréhension avec des utilisateurs à faible littératie numérique",
+            "5": "Définit la stratégie de contenu UX de l'organisation ; aligne le langage entre portail, courriers, guichet ; forme les équipes métier et dev"
           }
         },
         {
-          "id": "design-system",
-          "label": "Design System",
-          "descriptors": {
-            "0": "Ne sait pas ce qu'est un design system",
-            "1": "Comprend le concept ; utilise les composants d'un design system existant",
-            "2": "Contribue au design system : documente un composant, propose des variantes",
-            "3": "Crée des composants réutilisables avec documentation ; gère les tokens de design",
-            "4": "Architecte le design system : gouvernance, versioning, adoption cross-équipe",
-            "5": "Définit la stratégie design system de l'organisation ; aligne design et développement"
-          }
-        },
-        {
-          "id": "accessibility",
-          "label": "Accessibilité (a11y)",
+          "id": "accessibility-rgaa",
+          "label": "Accessibilité (RGAA / WCAG)",
           "descriptors": {
             "0": "N'a jamais considéré l'accessibilité",
-            "1": "Connaît les bases : alt text, contraste, navigation clavier",
-            "2": "Implémente les bonnes pratiques WCAG de base ; utilise les outils d'audit",
-            "3": "Conçoit des interfaces accessibles dès le départ ; maîtrise ARIA et les tests d'accessibilité",
-            "4": "Audite et corrige l'accessibilité de produits existants ; forme les développeurs",
-            "5": "Définit la politique d'accessibilité ; pilote la conformité RGAA/WCAG de l'organisation"
+            "1": "Connaît les bases : alt text, contraste, navigation clavier ; sait que le RGAA est le référentiel français applicable",
+            "2": "Implémente les bonnes pratiques WCAG de base ; utilise les outils d'audit (axe, Lighthouse, WAVE)",
+            "3": "Conçoit des interfaces accessibles dès le départ ; maîtrise ARIA, les tests au lecteur d'écran, et les critères RGAA prioritaires",
+            "4": "Audite et remédie l'accessibilité de produits existants ; forme développeurs et designers ; rédige les déclarations de conformité",
+            "5": "Définit la politique d'accessibilité de l'organisation ; pilote la conformité RGAA ; suit les évolutions réglementaires NC"
           }
         }
       ]
     },
     {
       "id": "management-leadership",
-      "label": "Management & Leadership",
-      "scenario": "Vous encadrez ou accompagnez une équipe de 5 à 15 personnes sur des projets techniques. Évaluez votre capacité à diriger, développer et fédérer une équipe.",
+      "label": "Management & Leadership (contexte GIE)",
+      "scenario": "Vous encadrez ou accompagnez une équipe de 5 à 15 personnes dans le contexte du GIE SINAPSE : gouvernance tripartite (CAFAT, Gouvernement NC, FSH), coexistence avec la DSI CAFAT, prestataires externes (AMOA/AMOE), migration progressive du SI legacy, et transfert de compétences programmé vers la DSI en phase Run. Évaluez votre capacité à diriger, fédérer et faire réussir une équipe dans cet environnement multi-acteurs.",
       "skills": [
         {
           "id": "team-management",
@@ -1147,57 +1147,81 @@
             "0": "N'a jamais encadré de personnes",
             "1": "A aidé à coordonner une petite équipe informellement",
             "2": "Gère les tâches quotidiennes d'une équipe ; anime les stand-ups et rétrospectives",
-            "3": "Gère une équipe de 5+ personnes : 1-on-1, objectifs, charge de travail, conflits",
-            "4": "Manage des managers ou des équipes transverses ; gère la croissance d'équipe",
-            "5": "Définit la culture managériale de l'organisation ; forme et mentor les managers"
+            "3": "Gère une équipe de 5+ personnes : 1-on-1, objectifs, charge de travail, conflits ; ajuste entre internes GIE et prestataires",
+            "4": "Manage des équipes mixtes (internes + prestataires + experts CAFAT détachés) ; gère la croissance d'équipe et les départs",
+            "5": "Définit la culture managériale de l'organisation ; forme et accompagne les managers ; structure les rituels inter-équipes"
           }
         },
         {
           "id": "coaching-development",
-          "label": "Coaching & Développement",
+          "label": "Coaching & Développement des Compétences",
           "descriptors": {
             "0": "N'a jamais accompagné le développement d'un collègue",
             "1": "Donne des retours constructifs quand on le demande",
             "2": "Identifie les forces et axes d'amélioration ; propose des plans de montée en compétence",
-            "3": "Mène des entretiens de développement ; crée des plans de carrière individualisés",
-            "4": "Met en place des programmes de mentorat ; développe les talents et prépare les successions",
-            "5": "Définit la stratégie de développement des talents de l'organisation"
+            "3": "Mène des entretiens de développement ; crée des plans de carrière individualisés ; identifie les potentiels à faire monter",
+            "4": "Met en place des programmes de mentorat et de formation interne ; prépare les successions et les mobilités",
+            "5": "Définit la stratégie de développement des talents ; conçoit les parcours de progression technique et managériale"
+          }
+        },
+        {
+          "id": "multi-stakeholder-piloting",
+          "label": "Pilotage Multi-Parties Prenantes (GIE / CAFAT / Prestataires)",
+          "descriptors": {
+            "0": "N'a jamais travaillé dans un environnement multi-parties prenantes institutionnel",
+            "1": "Comprend que le GIE, la DSI CAFAT, les directions métier et les prestataires ont des intérêts et des temporalités différents",
+            "2": "Participe aux instances de gouvernance (CDI, copils) ; relaie l'information entre les parties prenantes",
+            "3": "Anime des comités de pilotage ; arbitre les conflits de priorités entre GIE, DSI et directions métier ; gère les attentes des prestataires",
+            "4": "Pilote des programmes impliquant toutes les parties prenantes ; négocie les arbitrages scope/délai/qualité au niveau direction ; gère les escalades",
+            "5": "Conseiller de confiance de la DG ; influence la gouvernance ; construit les relations stratégiques avec les partenaires institutionnels (URSSAF, CNAM, AFD)"
           }
         },
         {
           "id": "strategic-planning",
-          "label": "Planification Stratégique",
+          "label": "Planification Stratégique & Roadmap",
           "descriptors": {
             "0": "N'a jamais participé à la planification au-delà du sprint",
-            "1": "Comprend la roadmap produit et les objectifs de l'équipe",
-            "2": "Contribue à la planification trimestrielle ; priorise avec des critères explicites",
-            "3": "Définit la roadmap de son périmètre ; aligne les objectifs équipe avec la stratégie",
-            "4": "Planifie sur 12+ mois ; arbitre les investissements tech/produit/dette",
-            "5": "Définit la vision technologique de l'organisation ; influence la stratégie globale"
+            "1": "Comprend la roadmap projet et les objectifs de l'équipe ; situe son travail dans le plan global",
+            "2": "Contribue à la planification trimestrielle ; priorise avec des critères explicites (valeur métier, risque, dette)",
+            "3": "Définit la roadmap de son périmètre ; aligne les objectifs équipe avec la trajectoire SINAPSE (Compose → Build → Run)",
+            "4": "Planifie sur 12+ mois avec les jalons de paliers (P1, P2, P3) ; arbitre les investissements tech/produit/dette ; anticipe les dépendances inter-paliers",
+            "5": "Définit la vision technologique de l'organisation ; influence la stratégie SDSI ; prépare la trajectoire post-transfert DSI"
           }
         },
         {
-          "id": "change-management",
-          "label": "Gestion du Changement",
+          "id": "change-management-legacy",
+          "label": "Gestion du Changement & Coexistence Legacy/Moderne",
           "descriptors": {
-            "0": "N'a jamais piloté de changement organisationnel",
+            "0": "N'a jamais piloté de changement organisationnel ou technologique",
             "1": "S'adapte bien au changement ; aide les collègues à comprendre les nouvelles pratiques",
-            "2": "Communique les changements clairement ; recueille les retours et préoccupations",
-            "3": "Pilote des transitions (nouveaux outils, réorgs, nouvelles pratiques) avec un plan structuré",
-            "4": "Gère des transformations complexes multi-équipes ; mesure l'adoption et itère",
-            "5": "Architecte du changement organisationnel ; anticipe les résistances et construit l'adhésion"
+            "2": "Communique les changements clairement ; recueille les retours et les résistances",
+            "3": "Pilote des transitions (nouveaux outils, nouvelles pratiques, bascules legacy → SINAPSE) avec un plan structuré ; gère la période de double-run",
+            "4": "Gère des transformations complexes multi-équipes (DSI + GIE + métiers) ; anticipe les résistances ; mesure l'adoption et itère ; gère la coexistence SI legacy et SINAPSE en production",
+            "5": "Architecte du changement organisationnel ; construit l'adhésion à tous les niveaux ; conçoit les stratégies de bascule progressive par domaine métier"
           }
         },
         {
           "id": "management-communication",
-          "label": "Communication Managériale",
+          "label": "Communication Managériale & Institutionnelle",
           "descriptors": {
             "0": "N'a jamais présenté devant un groupe professionnel",
             "1": "Communique clairement en réunion ; rédige des comptes-rendus utiles",
-            "2": "Présente les avancées et blocages aux parties prenantes ; adapte le discours à l'audience",
-            "3": "Communique la vision et la stratégie à son équipe ; gère les annonces difficiles",
-            "4": "Influence les décisions au niveau direction ; représente l'équipe tech auprès du management",
-            "5": "Porte la communication technologique de l'organisation ; construit la marque employeur tech"
+            "2": "Présente les avancées et blocages aux parties prenantes ; adapte le discours à l'audience (technique vs direction vs métier)",
+            "3": "Communique la vision et la stratégie à son équipe ; gère les annonces difficiles (retards, réorgs, arrêts de chantier)",
+            "4": "Influence les décisions en CDI et AG ; représente l'équipe tech auprès de la direction ; rédige des notes d'arbitrage pour les instances de gouvernance",
+            "5": "Porte la communication technologique de l'organisation ; construit la marque employeur tech SINAPSE ; présente devant le CA CAFAT et les partenaires institutionnels"
+          }
+        },
+        {
+          "id": "knowledge-transfer-run",
+          "label": "Transfert de Compétences & Préparation au Run",
+          "descriptors": {
+            "0": "N'a jamais participé à un transfert de compétences ou une transition vers le RUN",
+            "1": "Comprend que le GIE doit transférer le SI vers la DSI CAFAT à terme ; sait que cela nécessite de la préparation",
+            "2": "Documente ses activités dans une optique de reprise ; participe aux sessions de transfert quand on le lui demande",
+            "3": "Conçoit des plans de transfert structurés (documentation, shadowing, exercices de run autonome) ; identifie les compétences critiques à transférer",
+            "4": "Pilote le transfert d'un domaine complet (formation, documentation, exercices de crise, critères de go/no-go) ; mesure la readiness de l'équipe réceptrice",
+            "5": "Définit la stratégie globale de transfert GIE → DSI ; conçoit les critères de RUN readiness par palier ; anime les revues de maturité"
           }
         },
         {
@@ -1207,100 +1231,555 @@
             "0": "N'a jamais participé à un processus de recrutement",
             "1": "A participé à des entretiens techniques comme observateur",
             "2": "Mène des entretiens techniques ; évalue les compétences avec une grille structurée",
-            "3": "Conçoit le processus de recrutement technique ; crée les exercices et grilles d'évaluation",
-            "4": "Pilote le recrutement de bout en bout ; optimise le funnel et réduit le time-to-hire",
-            "5": "Définit la stratégie de recrutement tech ; construit la marque employeur et les partenariats écoles"
+            "3": "Conçoit le processus de recrutement technique ; crée les exercices et grilles d'évaluation adaptés au contexte NC (bassin restreint, profils rares)",
+            "4": "Pilote le recrutement de bout en bout ; optimise le funnel ; gère les contraintes NC (visa, rémunération XPF, attractivité vs métropole)",
+            "5": "Définit la stratégie de recrutement tech SINAPSE ; construit la marque employeur et les partenariats (UNC, écoles, réseau diaspora NC)"
           }
         }
       ]
     },
     {
-      "id": "product-project",
-      "label": "Product & Gestion de Projet",
-      "scenario": "Vous participez à la conception et à la livraison d'un produit numérique interne ou externe. Évaluez votre capacité à comprendre les besoins, prioriser et livrer.",
+      "id": "analyse-fonctionnelle",
+      "label": "Analyse Fonctionnelle & Ingénierie des Exigences",
+      "scenario": "Vous êtes Business Analyst sur le projet SINAPSE. Vous devez interpréter des textes réglementaires NC, modéliser les processus métier du recouvrement, rédiger les spécifications fonctionnelles d'un module de télédéclaration, piloter la recette avec les agents CAFAT, et planifier la migration des données depuis le SI legacy (Visual / IBMi). Évaluez votre niveau sur chaque compétence.",
       "skills": [
         {
-          "id": "product-discovery",
-          "label": "Discovery Produit",
+          "id": "requirements-elicitation",
+          "label": "Élicitation & Analyse des Besoins",
           "descriptors": {
-            "0": "N'a jamais participé à une phase de discovery",
-            "1": "Comprend la différence entre discovery et delivery ; participe aux ateliers",
-            "2": "Mène des interviews utilisateurs simples ; identifie les problèmes prioritaires",
-            "3": "Structure une phase de discovery complète : problème, hypothèses, expérimentations",
-            "4": "Combine discovery continu et delivery ; valide les hypothèses avec des métriques",
-            "5": "Définit la méthode de discovery de l'organisation ; forme les product managers"
+            "0": "N'a jamais recueilli de besoins auprès d'utilisateurs ou de parties prenantes",
+            "1": "Comprend la différence entre un besoin et une solution ; sait poser des questions ouvertes",
+            "2": "Mène des ateliers de recueil de besoins avec un guide ; formalise les besoins en user stories basiques",
+            "3": "Anime des ateliers de cadrage (event storming, story mapping, interviews) ; distingue besoins explicites, implicites et latents ; hiérarchise par valeur métier",
+            "4": "Gère des périmètres complexes multi-directions (recouvrement, prestations, santé) ; fait converger des exigences contradictoires ; produit des matrices de traçabilité",
+            "5": "Définit la méthodologie d'élicitation de l'équipe ; référent sur les besoins transverses (portail, référentiels, interopérabilité)"
           }
         },
         {
-          "id": "prioritization-roadmap",
-          "label": "Priorisation & Roadmap",
+          "id": "regulatory-interpretation",
+          "label": "Interprétation Réglementaire NC",
           "descriptors": {
-            "0": "N'a jamais priorisé un backlog",
-            "1": "Comprend les critères de priorisation (valeur, effort, urgence)",
-            "2": "Priorise un backlog avec des frameworks (RICE, MoSCoW) ; maintient la roadmap à jour",
-            "3": "Définit la roadmap trimestrielle avec arbitrages explicites ; dit non aux demandes hors scope",
-            "4": "Gère des roadmaps multi-produits ; aligne les priorités tech avec les objectifs business",
-            "5": "Définit la stratégie produit de l'organisation ; arbitre les investissements cross-produits"
+            "0": "N'a jamais lu de texte réglementaire ou de délibération",
+            "1": "Sait que la protection sociale NC a son propre cadre juridique distinct de la métropole ; identifie les grandes catégories de textes (délibérations, arrêtés, loi du pays)",
+            "2": "Lit un texte réglementaire et en extrait les règles de gestion principales avec de l'aide ; identifie les renvois à d'autres textes",
+            "3": "Traduit des délibérations en règles de gestion implémentables (taux, plafonds, assiettes, cas d'exonération) ; identifie les ambiguïtés et les soumet au métier",
+            "4": "Gère l'impact des évolutions réglementaires sur le SI (rétroactivité, régimes transitoires) ; anime les ateliers de validation métier-juridique",
+            "5": "Référent sur le cadre réglementaire NC applicable au SI ; anticipe les évolutions à venir ; construit le dictionnaire de règles de gestion de l'organisation"
           }
         },
         {
-          "id": "metrics-analytics",
-          "label": "Métriques & Analytics",
+          "id": "process-modeling",
+          "label": "Modélisation de Processus (BPMN / UML)",
           "descriptors": {
-            "0": "N'a jamais suivi de métriques produit",
-            "1": "Connaît les métriques de base (DAU, conversion, rétention) ; consulte les dashboards",
-            "2": "Définit les KPIs d'une fonctionnalité ; met en place le tracking avec des outils existants",
-            "3": "Conçoit un plan de mesure complet ; analyse les données pour guider les décisions produit",
-            "4": "Met en place une culture data-driven ; A/B testing, cohortes, funnel analysis",
-            "5": "Définit la stratégie data produit ; construit l'infrastructure de mesure de l'organisation"
+            "0": "N'a jamais modélisé un processus métier",
+            "1": "Comprend les concepts de processus, activité, flux ; peut lire un diagramme BPMN simple",
+            "2": "Modélise des processus simples en BPMN avec de l'aide ; documente les activités et les responsables",
+            "3": "Modélise des processus complets en BPMN 2.0 (événements, gateways, sous-processus, messages) ; produit des diagrammes UML (séquence, activité, cas d'utilisation)",
+            "4": "Modélise les processus cibles en intégrant les contraintes legacy ; identifie les automatisations possibles ; optimise les circuits de validation",
+            "5": "Définit les conventions de modélisation de l'organisation ; valide la cohérence des processus entre quartiers SINAPSE (REC, PERS, COT, SERV)"
           }
         },
         {
-          "id": "agile-project-management",
-          "label": "Gestion de Projet Agile",
-          "descriptors": {
-            "0": "N'a jamais travaillé en méthodologie agile",
-            "1": "Participe aux cérémonies agiles ; comprend les rôles (PO, SM, dev)",
-            "2": "Anime les cérémonies ; gère le board et les estimations ; identifie les blocages",
-            "3": "Adapte la méthode au contexte ; gère les dépendances inter-équipes ; mesure la vélocité",
-            "4": "Coach agile : transforme les pratiques, résout les dysfonctionnements d'équipe",
-            "5": "Définit le framework agile de l'organisation ; adapte Scrum/Kanban au contexte entreprise"
-          }
-        },
-        {
-          "id": "spec-writing",
-          "label": "Rédaction de Spécifications",
+          "id": "functional-specifications",
+          "label": "Rédaction de Spécifications Fonctionnelles",
           "descriptors": {
             "0": "N'a jamais rédigé de spécification fonctionnelle",
-            "1": "Comprend et suit des spécifications existantes ; pose les bonnes questions",
-            "2": "Rédige des user stories avec critères d'acceptation ; documente les règles de gestion",
-            "3": "Rédige des specs complètes avec cas limites, maquettes et critères de succès",
-            "4": "Définit les standards de documentation produit ; template et forme l'équipe",
-            "5": "Rédige des spécifications stratégiques (RFC, ADR) ; documente les décisions d'architecture produit"
+            "1": "Comprend et suit des spécifications existantes ; pose les bonnes questions de clarification",
+            "2": "Rédige des user stories avec critères d'acceptation ; documente les règles de gestion basiques",
+            "3": "Rédige des specs fonctionnelles complètes : règles de gestion, cas nominaux et alternatifs, cas limites, maquettes annotées, critères de succès",
+            "4": "Définit les templates et standards de documentation fonctionnelle (MDD, fiches RG, CU) ; forme les analystes juniors ; revoit les specs des autres",
+            "5": "Rédige des spécifications stratégiques (études d'impact, notes d'architecture fonctionnelle) ; définit le cadre d'urbanisation fonctionnelle SINAPSE"
           }
         },
         {
-          "id": "stakeholder-coordination",
-          "label": "Coordination Parties Prenantes",
+          "id": "gap-analysis-legacy",
+          "label": "Gap Analysis Legacy → Cible",
           "descriptors": {
-            "0": "N'a jamais interagi avec des parties prenantes non-tech",
-            "1": "Communique les avancées techniques en langage compréhensible",
-            "2": "Anime des réunions avec des parties prenantes variées ; gère les attentes",
-            "3": "Aligne les parties prenantes sur les priorités ; négocie les compromis scope/délai",
-            "4": "Gère les parties prenantes à haut niveau (direction, clients stratégiques)",
-            "5": "Construit et maintient les relations stratégiques ; influence les décisions au COMEX"
+            "0": "N'a jamais réalisé d'analyse d'écart entre un système existant et un système cible",
+            "1": "Comprend que la migration nécessite de cartographier l'existant et de comparer avec la cible",
+            "2": "Documente les fonctionnalités existantes (écrans Visual, traitements IBMi) ; identifie les écarts évidents avec la cible",
+            "3": "Réalise des analyses d'écart complètes : fonctionnalités couvertes, partielles, manquantes, abandonnées ; propose des stratégies de comblement",
+            "4": "Pilote le gap analysis sur un domaine métier complet ; intègre les données, les processus et les interfaces dans l'analyse ; gère les arbitrages iso-fonctionnel vs évolution",
+            "5": "Définit la méthodologie de gap analysis de l'organisation ; cadre les critères de décision iso vs refonte ; supervise les analyses cross-domaines"
           }
         },
         {
-          "id": "go-to-market",
-          "label": "Go-to-Market",
+          "id": "functional-testing",
+          "label": "Recette Fonctionnelle & Critères d'Acceptation",
           "descriptors": {
-            "0": "N'a jamais participé au lancement d'un produit",
-            "1": "Comprend les étapes d'un lancement ; prépare la documentation technique",
-            "2": "Coordonne le lancement avec les équipes (support, comm, formation) ; prépare les release notes",
-            "3": "Pilote le go-to-market de bout en bout : beta, soft launch, GA ; mesure l'adoption",
-            "4": "Définit la stratégie de lancement pour des produits complexes multi-marché",
-            "5": "Expert en lancement produit ; construit les playbooks GTM de l'organisation"
+            "0": "N'a jamais participé à une recette fonctionnelle",
+            "1": "Comprend que la recette vérifie que le livré correspond au besoin ; sait exécuter des cas de test écrits par d'autres",
+            "2": "Rédige des cas de test fonctionnels avec de l'aide ; exécute la recette et remonte les anomalies de façon structurée",
+            "3": "Conçoit des plans de recette complets (jeux de données, scénarios de bout en bout, critères d'acceptation, PV de recette) ; anime les sessions de recette avec les utilisateurs métier CAFAT",
+            "4": "Pilote la recette d'un palier complet ; gère les arbitrages go/no-go avec les parties prenantes ; automatise les scénarios de non-régression fonctionnelle",
+            "5": "Définit la stratégie de recette de l'organisation ; conçoit les critères d'acceptation par palier ; forme les référents recette côté CAFAT"
+          }
+        },
+        {
+          "id": "data-dictionary-referentials",
+          "label": "Dictionnaire de Données & Référentiels Métier",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec un dictionnaire de données ou un référentiel métier",
+            "1": "Comprend qu'un dictionnaire de données définit le vocabulaire commun (entités, attributs, codifications)",
+            "2": "Consulte et utilise le dictionnaire de données existant ; identifie les incohérences de nommage basiques",
+            "3": "Enrichit le dictionnaire de données (définitions métier, formats, valeurs possibles, sources de vérité) ; modélise les référentiels (PP/PM, nomenclatures, codifications NC)",
+            "4": "Conçoit les référentiels transverses multi-domaines ; gère les conflits de définition entre directions métier ; définit les règles de gouvernance des référentiels",
+            "5": "Responsable du modèle de données métier SINAPSE ; arbitre les choix de modélisation ; valide la cohérence entre quartiers fonctionnels"
+          }
+        }
+      ]
+    },
+    {
+      "id": "data-engineering-governance",
+      "label": "Data Engineering & Gouvernance des Données",
+      "scenario": "Vous devez construire les fondations data de SINAPSE : pipelines d'alimentation depuis le SI legacy, référentiels maîtres (MDM) pour les personnes physiques et morales, data hub pour les échanges inter-domaines, qualité de données, reporting décisionnel, et gouvernance conforme aux exigences réglementaires NC. Évaluez votre niveau sur chaque brique.",
+      "skills": [
+        {
+          "id": "data-modeling-conceptual",
+          "label": "Modélisation de Données (conceptuel, logique, physique)",
+          "descriptors": {
+            "0": "N'a jamais modélisé de données au-delà d'une table SQL simple",
+            "1": "Connaît les concepts entité-relation, les clés primaires/étrangères, la normalisation basique",
+            "2": "Crée des MCD/MLD simples avec de l'aide ; comprend la différence entre modèle conceptuel, logique et physique",
+            "3": "Modélise des domaines de données complets (MCD → MLD → MPD) ; gère la dénormalisation argumentée, les historisations (SCD type 2), et les relations complexes",
+            "4": "Conçoit des modèles de données inter-domaines ; arbitre les choix de modélisation (star schema vs snowflake vs data vault) ; gère l'évolution de schéma avec rétrocompatibilité",
+            "5": "Définit les standards de modélisation de l'organisation ; responsable du modèle de données d'entreprise SINAPSE ; valide les choix cross-domaines"
+          }
+        },
+        {
+          "id": "etl-pipelines",
+          "label": "ETL / ELT & Pipelines de Données",
+          "descriptors": {
+            "0": "N'a jamais construit de pipeline de données",
+            "1": "Comprend les concepts ETL (extract, transform, load) ; sait que des outils dédiés existent",
+            "2": "Construit des pipelines simples (extraction SQL, transformation Python/dbt, chargement) avec de l'aide",
+            "3": "Conçoit des pipelines robustes avec orchestration (Kestra, Airflow), gestion d'erreurs, idempotence, logging ; gère les chargements incrémentaux et full",
+            "4": "Architecte des pipelines complexes multi-sources (legacy IBMi + API + fichiers) ; optimise les performances de transformation ; gère la montée en charge",
+            "5": "Définit les standards de pipeline de l'équipe ; conçoit les patterns de réplication temps réel (CDC) ; architécte l'alimentation du data hub SINAPSE"
+          }
+        },
+        {
+          "id": "mdm-referentials",
+          "label": "MDM & Gestion des Référentiels (PP/PM, tiers, nomenclatures)",
+          "descriptors": {
+            "0": "Aucune connaissance du Master Data Management",
+            "1": "Comprend que les données maîtres (personnes, entreprises, nomenclatures) doivent avoir une source de vérité unique",
+            "2": "Utilise les référentiels existants ; identifie les doublons et les incohérences basiques",
+            "3": "Conçoit des règles de rapprochement et de déduplication ; définit les golden records et les sources de vérité ; gère les workflows de validation",
+            "4": "Architecte une solution MDM (matching probabiliste, survivorship rules, stewardship) ; intègre le MDM avec les processus métier (immatriculation, radiation, fusion PP/PM)",
+            "5": "Définit la stratégie MDM de l'organisation ; responsable des référentiels maîtres SINAPSE ; arbitre les conflits de gouvernance entre domaines"
+          }
+        },
+        {
+          "id": "data-quality",
+          "label": "Qualité de Données (profiling, règles, monitoring)",
+          "descriptors": {
+            "0": "N'a jamais mesuré ou contrôlé la qualité de données",
+            "1": "Comprend les dimensions de qualité (complétude, exactitude, cohérence, fraîcheur) ; identifie les anomalies évidentes",
+            "2": "Exécute des requêtes de profiling basiques ; documente les problèmes de qualité rencontrés",
+            "3": "Conçoit des règles de qualité (great expectations, dbt tests, SQL checks) ; met en place un monitoring de qualité avec alertes ; produit des rapports de qualité périodiques",
+            "4": "Architecte un framework de qualité de données (règles centralisées, scoring, dashboards) ; intègre la qualité dans les pipelines (circuit-breaker si seuil non atteint)",
+            "5": "Définit la stratégie de qualité de données de l'organisation ; pilote les campagnes de remédiation ; mesure le coût de la non-qualité"
+          }
+        },
+        {
+          "id": "bi-reporting",
+          "label": "BI & Reporting Décisionnel",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec un outil de BI ou de reporting",
+            "1": "Consulte des rapports et dashboards existants ; comprend les concepts de dimension, mesure, filtre",
+            "2": "Crée des rapports et dashboards simples avec un outil BI (Metabase, Superset, Power BI) ; écrit des requêtes d'alimentation basiques",
+            "3": "Conçoit des modèles dimensionnels (star schema) ; construit des dashboards interactifs avec drill-down ; gère les rafraîchissements et les performances",
+            "4": "Architecte la couche BI (data mart, semantic layer, cache) ; définit les KPIs métier avec les directions CAFAT ; optimise les temps de requête",
+            "5": "Définit la stratégie BI de l'organisation ; construit la culture data-driven ; pilote le self-service analytics"
+          }
+        },
+        {
+          "id": "data-migration-legacy",
+          "label": "Migration de Données Legacy",
+          "descriptors": {
+            "0": "N'a jamais participé à une migration de données",
+            "1": "Comprend que la migration legacy → cible nécessite extraction, nettoyage, transformation et chargement",
+            "2": "Extrait des données depuis des sources simples (fichiers CSV, tables SQL) ; participe à la rédaction des règles de transformation avec de l'aide",
+            "3": "Conçoit des plans de migration avec règles de transformation, mapping source→cible, gestion des rejets, rapports de réconciliation ; gère les extractions depuis IBMi (CPYTOIMPF, SQL Services)",
+            "4": "Pilote la migration d'un domaine complet (dry run, validation croisée, bascule, rollback) ; gère les contraintes de volume et de temps (bascule week-end)",
+            "5": "Définit la stratégie de migration de l'organisation ; architécte le framework de migration réutilisable entre paliers ; cadre les critères de go/no-go data"
+          }
+        },
+        {
+          "id": "data-governance-compliance",
+          "label": "Gouvernance des Données & Conformité",
+          "descriptors": {
+            "0": "Aucune connaissance de la gouvernance des données",
+            "1": "Sait que les données ont des propriétaires, des classifications, et des règles d'accès",
+            "2": "Documente les métadonnées (catalogue de données) ; applique les classifications existantes (public, interne, confidentiel, secret)",
+            "3": "Définit les data owners et data stewards par domaine ; gère les politiques d'accès, de rétention et d'anonymisation ; catalogue les données avec un outil (DataHub, Amundsen)",
+            "4": "Conçoit le cadre de gouvernance des données (organisation, processus, outils) ; gère la conformité avec les exigences réglementaires NC (délibérations CNIL locale, ISEE)",
+            "5": "Définit la stratégie de gouvernance des données de l'organisation ; pilote le comité data ; arbitre les usages transverses ; assure la conformité avec les partenaires (URSSAF, CNAM)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "infrastructure-systems-network",
+      "label": "Infrastructure Système, Réseau & Stockage",
+      "scenario": "Vous administrez ou concevez l'infrastructure on-premise de la CAFAT : deux datacenters (Magenta et Sifra) en VMware vSAN stretched cluster, réseau LAN/WAN entre sites, stockage SAN/NAS, sauvegarde Veeam vers Wasabi Cloud, supervision Centreon/Zabbix, et sécurité périmétrique (firewalls, VPN, proxy). Vous devez garantir la disponibilité, la performance et la sécurité de cette infrastructure qui supporte à la fois le SI legacy et la plateforme SINAPSE. Évaluez votre niveau sur chaque domaine.",
+      "skills": [
+        {
+          "id": "vmware-virtualization",
+          "label": "Virtualisation (VMware vSphere / vSAN)",
+          "descriptors": {
+            "0": "N'a jamais administré d'infrastructure de virtualisation",
+            "1": "Comprend les concepts de VM, hyperviseur, datastore ; peut accéder au vCenter et consulter l'état des VMs",
+            "2": "Crée et configure des VMs (CPU, RAM, disque, réseau) ; effectue des snapshots et migrations à froid avec de l'aide",
+            "3": "Administre un cluster vSphere : vMotion, DRS, HA, gestion des ressources, templates ; gère les policies de stockage vSAN",
+            "4": "Conçoit des architectures vSAN stretched cluster ; optimise le dimensionnement ; gère les mises à jour de firmware et d'ESXi ; planifie la capacité",
+            "5": "Définit les standards de virtualisation de l'organisation ; architécte les topologies multi-datacenter ; pilote les migrations (vSphere → alternatives, consolidation)"
+          }
+        },
+        {
+          "id": "linux-administration",
+          "label": "Administration Linux (RHEL / Debian / Ubuntu)",
+          "descriptors": {
+            "0": "N'a jamais administré de serveur Linux",
+            "1": "Utilise la ligne de commande ; se connecte en SSH ; navigue dans le filesystem et lit les logs",
+            "2": "Gère les services (systemd), les packages, les utilisateurs, les permissions, et le cron avec de l'aide",
+            "3": "Administre des serveurs en production : LVM, pare-feu (nftables/firewalld), tuning kernel, gestion des certificats, hardening basique (CIS benchmarks)",
+            "4": "Automatise la configuration (Ansible, cloud-init) ; gère les golden images ; optimise les performances (I/O, mémoire, réseau) ; résout les problèmes kernel complexes",
+            "5": "Définit les standards Linux de l'organisation ; architécte la stratégie d'OS et de patching ; maintient les playbooks de durcissement"
+          }
+        },
+        {
+          "id": "windows-ad",
+          "label": "Windows Server & Active Directory",
+          "descriptors": {
+            "0": "N'a jamais administré Windows Server ou Active Directory",
+            "1": "Se connecte à un serveur Windows ; comprend les concepts d'AD (domaine, OU, GPO, utilisateurs)",
+            "2": "Gère les comptes, groupes et GPO basiques avec de l'aide ; installe et configure des rôles Windows (DNS, DHCP, File Server)",
+            "3": "Administre une forêt AD multi-sites : réplication, sites et services, trusts, tiering model ; gère les GPO complexes et le DNS intégré",
+            "4": "Conçoit des architectures AD sécurisées (Red Forest, PAW, tiering) ; gère les migrations de domaine et les consolidations ; intègre AD avec Keycloak/OIDC",
+            "5": "Définit les standards Windows/AD de l'organisation ; architécte la stratégie d'identité hybride (AD + IAM cloud) ; pilote les audits de conformité AD"
+          }
+        },
+        {
+          "id": "network-switching-routing",
+          "label": "Réseau (Switching, Routing, Firewall, VPN)",
+          "descriptors": {
+            "0": "Aucune connaissance réseau au-delà de l'utilisation d'un poste de travail",
+            "1": "Comprend les bases : IP, VLAN, DNS, DHCP, passerelle par défaut ; lit une table de routage simple",
+            "2": "Configure des VLANs, des routes statiques, et des règles de firewall basiques avec de l'aide ; utilise les outils de diagnostic (ping, traceroute, tcpdump)",
+            "3": "Administre des switches et routeurs (Cisco, HP/Aruba) ; configure le trunking, le spanning-tree, OSPF/BGP basique ; gère les tunnels VPN site-to-site et client",
+            "4": "Conçoit des architectures réseau multi-sites (Magenta ↔ Sifra) ; optimise le QoS, la segmentation, et la redondance ; gère la connectivité internationale (câbles sous-marins Gondwana)",
+            "5": "Définit les standards réseau de l'organisation ; architécte la stratégie de segmentation et de micro-segmentation ; pilote les audits réseau et les plans de capacité WAN"
+          }
+        },
+        {
+          "id": "storage-san-nas",
+          "label": "Stockage (SAN, NAS, baies de disques)",
+          "descriptors": {
+            "0": "N'a jamais administré d'infrastructure de stockage",
+            "1": "Comprend les concepts : SAN vs NAS, LUN, RAID, fibrechannel vs iSCSI ; identifie les composants d'une baie",
+            "2": "Provisionne des LUNs et des partages NFS/SMB avec de l'aide ; surveille l'espace et les performances basiques",
+            "3": "Administre des baies de stockage (provisioning, tiering, snapshots, réplication) ; gère le zoning FC et les performances I/O",
+            "4": "Conçoit des architectures de stockage (niveaux de service, réplication inter-sites, disaster recovery) ; optimise les coûts et la capacité",
+            "5": "Définit les standards de stockage de l'organisation ; architécte la stratégie de données on-premise (SAN + vSAN + NAS + objet) ; pilote les migrations de baies"
+          }
+        },
+        {
+          "id": "backup-disaster-recovery",
+          "label": "Sauvegarde & PRA (Veeam, Wasabi, PITR)",
+          "descriptors": {
+            "0": "N'a jamais configuré de sauvegardes ou de plan de reprise d'activité",
+            "1": "Comprend les concepts de RPO, RTO, rétention, et la règle 3-2-1 ; sait que Veeam sauvegarde les VMs",
+            "2": "Configure des jobs de sauvegarde Veeam basiques ; restaure des VMs et des fichiers individuels avec de l'aide",
+            "3": "Administre l'infrastructure Veeam complète : politiques de rétention, réplication vers Wasabi S3, tests de restauration planifiés, monitoring des jobs",
+            "4": "Conçoit le PRA/PCA : bascule inter-datacenter, orchestration de reprise, tests de sinistre ; gère le PITR pour PostgreSQL et les bases critiques",
+            "5": "Définit la stratégie de sauvegarde et de continuité de l'organisation ; pilote les exercices de PRA ; valide les RTO/RPO avec la direction"
+          }
+        },
+        {
+          "id": "monitoring-supervision",
+          "label": "Supervision & Monitoring (Centreon, Zabbix, SNMP)",
+          "descriptors": {
+            "0": "N'a jamais utilisé d'outil de supervision d'infrastructure",
+            "1": "Consulte les dashboards de supervision ; comprend les concepts d'alerte, de seuil, et de check",
+            "2": "Configure des checks et des alertes basiques (ping, CPU, disque, service) avec de l'aide ; acquitte les alertes",
+            "3": "Administre Centreon/Zabbix : templates, découverte automatique, SNMP traps, escalades d'alertes, cartographies réseau",
+            "4": "Conçoit la stratégie de supervision (quoi surveiller, à quels seuils, qui est notifié) ; intègre la supervision infra avec l'observabilité applicative (Prometheus/Grafana)",
+            "5": "Définit les standards de supervision de l'organisation ; architécte la corrélation d'événements (infra + appli + réseau) ; pilote l'amélioration continue des alertes"
+          }
+        },
+        {
+          "id": "security-perimeter",
+          "label": "Sécurité Périmétrique (Firewall, WAF, Proxy, EDR)",
+          "descriptors": {
+            "0": "Aucune connaissance en sécurité d'infrastructure",
+            "1": "Comprend les concepts de firewall, proxy, DMZ, et le principe de défense en profondeur",
+            "2": "Lit et modifie des règles de firewall existantes avec de l'aide ; configure des exceptions proxy basiques",
+            "3": "Administre les firewalls (Fortinet, Palo Alto, pfSense), WAF, reverse proxy ; gère les ouvertures de flux avec traçabilité ; configure l'EDR/antivirus centralisé",
+            "4": "Conçoit la politique de sécurité périmétrique (segmentation, DMZ, flux inter-zones) ; évalue les solutions EDR/XDR ; cadre les tests d'intrusion externes",
+            "5": "Définit la stratégie de sécurité infrastructure ; architécte la défense en profondeur ; pilote les audits de sécurité infra et les remédiations"
+          }
+        }
+      ]
+    },
+    {
+      "id": "project-management-pmo",
+      "label": "Gestion de Projet & PMO",
+      "scenario": "Vous pilotez un chantier du programme SINAPSE : planification d'un palier sur 18 mois, suivi budgétaire en XPF, gestion des risques formalisée, reporting aux instances de gouvernance (CDI, copil hebdomadaire, AG), coordination de lots avec des prestataires (AMOA Onepoint, AMOE), et gestion des marchés publics NC. Évaluez votre niveau sur chaque compétence de pilotage.",
+      "skills": [
+        {
+          "id": "planning-scheduling",
+          "label": "Planification & Jalonnement (Gantt, jalons, chemins critiques)",
+          "descriptors": {
+            "0": "N'a jamais planifié au-delà d'un sprint ou d'une to-do list",
+            "1": "Comprend les concepts de jalon, dépendance, chemin critique ; lit un diagramme de Gantt",
+            "2": "Crée un planning macro avec jalons et dépendances avec de l'aide ; utilise un outil de planification (MS Project, Jira, Notion)",
+            "3": "Planifie un chantier de 6+ mois : WBS, chemins critiques, marges, jalons de décision ; met à jour le planning en fonction des aléas et le communique aux parties prenantes",
+            "4": "Coordonne la planification multi-chantiers (paliers P1/P2/P3) ; gère les dépendances inter-lots et inter-équipes (GIE, DSI, prestataires) ; anticipe les goulets d'étranglement",
+            "5": "Définit les standards de planification du programme ; architécte le plan directeur SINAPSE ; arbitre les conflits de ressources et de calendrier au niveau direction"
+          }
+        },
+        {
+          "id": "budget-financial-tracking",
+          "label": "Suivi Budgétaire & Financier (XPF, engagements, consommé)",
+          "descriptors": {
+            "0": "N'a jamais suivi de budget projet",
+            "1": "Comprend les notions de budget prévisionnel, engagé, consommé, reste à faire",
+            "2": "Suit le consommé vs prévisionnel sur un périmètre simple ; remonte les écarts avec de l'aide",
+            "3": "Gère le budget d'un chantier : prévisions, engagements, facturations, atterrissage ; produit les tableaux de bord financiers pour le CDI",
+            "4": "Pilote le budget multi-lots avec arbitrages (réallocation, provisions, avenants) ; anticipe les dérives et propose des scénarios correctifs",
+            "5": "Définit les processus budgétaires du programme ; valide les estimations et les engagements ; présente le budget consolidé en AG"
+          }
+        },
+        {
+          "id": "risk-management",
+          "label": "Gestion des Risques & Opportunités",
+          "descriptors": {
+            "0": "N'a jamais formalisé un risque projet",
+            "1": "Comprend qu'un risque a une probabilité et un impact ; identifie les risques évidents (retards, indisponibilité de ressources)",
+            "2": "Documente les risques dans un registre avec probabilité, impact et action de mitigation ; met à jour le registre avec de l'aide",
+            "3": "Anime les revues de risques régulières ; identifie les risques techniques, humains, réglementaires et contractuels ; propose des plans de mitigation et de contingence",
+            "4": "Gère les risques programme (inter-chantiers, inter-paliers) ; escalade les risques critiques avec des notes d'arbitrage argumentées ; suit les indicateurs avancés (leading indicators)",
+            "5": "Définit le framework de gestion des risques de l'organisation ; intègre la gestion des risques dans la gouvernance ; anime les comités risques avec la direction"
+          }
+        },
+        {
+          "id": "governance-reporting",
+          "label": "Reporting & Gouvernance (CDI, copil, AG)",
+          "descriptors": {
+            "0": "N'a jamais produit de reporting projet pour une instance de gouvernance",
+            "1": "Comprend que les instances de gouvernance ont besoin de synthèses orientées décision ; remplit les templates existants",
+            "2": "Produit des points d'avancement structurés (météo, avancement, risques, décisions attendues) avec de l'aide",
+            "3": "Rédige des rapports de pilotage pour le CDI et les copils : dashboards, KPIs, alertes, décisions à prendre ; adapte le niveau de détail à l'audience",
+            "4": "Conçoit les tableaux de bord programme ; prépare les supports d'AG et de CA ; anticipe les questions et prépare les éléments de réponse",
+            "5": "Définit les standards de reporting du programme ; architécte le dispositif de gouvernance (instances, fréquences, livrables, escalades)"
+          }
+        },
+        {
+          "id": "procurement-contracts",
+          "label": "Marchés Publics & Gestion Contractuelle (AO, lots, CCTP)",
+          "descriptors": {
+            "0": "N'a jamais participé à un processus de marché public ou de contractualisation",
+            "1": "Sait que les marchés publics NC ont des règles spécifiques (seuils, publicité, mise en concurrence) ; comprend la différence entre CCTP, CCAP, BPU",
+            "2": "Contribue à la rédaction d'un CCTP ou d'un cahier des charges technique avec de l'aide ; participe à l'analyse des offres",
+            "3": "Rédige des CCTP techniques et des grilles d'évaluation ; participe aux commissions d'analyse ; suit l'exécution contractuelle (livrables, pénalités, avenants)",
+            "4": "Pilote un marché de bout en bout (expression de besoin → publication → attribution → exécution) ; gère les avenants et les contentieux ; négocie avec les prestataires",
+            "5": "Définit la stratégie achats SI de l'organisation ; architécte les allotissements du programme ; conseille la direction sur les montages contractuels"
+          }
+        },
+        {
+          "id": "dependency-coordination",
+          "label": "Coordination des Dépendances & Intégration",
+          "descriptors": {
+            "0": "N'a jamais géré de dépendances entre chantiers ou équipes",
+            "1": "Comprend que les équipes et les lots ont des dépendances mutuelles ; identifie les blocages évidents",
+            "2": "Documente les dépendances dans un registre ; relance les équipes sur les prérequis avec de l'aide",
+            "3": "Gère un registre de dépendances actif entre lots/équipes ; anime les points de synchronisation inter-chantiers ; anticipe les impacts en cascade",
+            "4": "Pilote l'intégration programme (socles transverses ↔ domaines métier ↔ infrastructure) ; résout les conflits de priorité entre chantiers",
+            "5": "Définit le modèle d'intégration du programme ; architécte les cérémonies de synchronisation ; garantit la cohérence des livraisons inter-paliers"
+          }
+        },
+        {
+          "id": "scope-change-control",
+          "label": "Maîtrise du Périmètre & Gestion des Changements",
+          "descriptors": {
+            "0": "N'a jamais formalisé un changement de périmètre",
+            "1": "Comprend qu'un changement de scope impacte le planning et le budget ; remonte les demandes de changement",
+            "2": "Documente les demandes de changement (description, impact, justification) avec de l'aide ; les soumet au comité de validation",
+            "3": "Évalue l'impact des changements (effort, coût, planning, risques) ; anime le comité de gestion des changements ; maintient la baseline projet à jour",
+            "4": "Gère le scope creep à l'échelle programme ; négocie les arbitrages scope/délai/budget avec les parties prenantes ; documente les décisions dans les ADR/notes d'arbitrage",
+            "5": "Définit le processus de gestion des changements du programme ; garantit la traçabilité des décisions de périmètre ; forme les chefs de projet"
+          }
+        }
+      ]
+    },
+    {
+      "id": "change-management-training",
+      "label": "Conduite du Changement & Formation Utilisateur",
+      "scenario": "SINAPSE remplace progressivement le SI legacy utilisé par 580 agents CAFAT et des milliers d'usagers externes (TI, employeurs). À chaque palier, vous devez concevoir la stratégie d'accompagnement : diagnostic d'impact, plan de communication, conception de supports de formation, animation de sessions (présentiel et e-learning), accompagnement au poste le jour J, et support post-bascule. Évaluez votre niveau sur chaque volet.",
+      "skills": [
+        {
+          "id": "impact-analysis",
+          "label": "Diagnostic d'Impact & Cartographie des Changements",
+          "descriptors": {
+            "0": "N'a jamais analysé l'impact d'un changement sur une organisation",
+            "1": "Comprend qu'un nouveau SI change les habitudes de travail ; identifie les populations impactées évidentes",
+            "2": "Cartographie les populations impactées et les changements par profil (agent, manager, usager) avec de l'aide",
+            "3": "Réalise un diagnostic d'impact complet : cartographie des changements par direction/métier, évaluation de l'ampleur (processus, outils, organisation, compétences), identification des ambassadeurs et des résistances",
+            "4": "Pilote le diagnostic d'impact à l'échelle d'un palier ; quantifie les efforts d'accompagnement par population ; produit la matrice de criticité des changements",
+            "5": "Définit la méthodologie de diagnostic d'impact du programme ; capitalise entre paliers ; conseille la direction sur les risques humains"
+          }
+        },
+        {
+          "id": "change-communication",
+          "label": "Communication du Changement",
+          "descriptors": {
+            "0": "N'a jamais conçu de communication liée à un changement SI",
+            "1": "Comprend qu'il faut informer les utilisateurs avant un changement ; relaie les messages préparés par d'autres",
+            "2": "Rédige des communications simples (emails d'annonce, FAQ) avec de l'aide ; adapte le ton à l'audience (agents vs direction)",
+            "3": "Conçoit un plan de communication multi-canal (intranet, emails, réunions, affiches) calé sur le calendrier projet ; rédige les messages clés par population",
+            "4": "Pilote la communication d'un palier : messages segmentés par direction, gestion des rumeurs et des résistances, communication de crise si incident post-bascule",
+            "5": "Définit la stratégie de communication du programme ; construit le narratif de transformation ; porte la communication auprès du CA et des partenaires sociaux"
+          }
+        },
+        {
+          "id": "training-design",
+          "label": "Conception Pédagogique (supports, parcours, e-learning)",
+          "descriptors": {
+            "0": "N'a jamais conçu de support de formation",
+            "1": "Comprend qu'un bon support doit être clair, progressif et adapté au public ; identifie les contenus manquants",
+            "2": "Crée des supports de formation simples (guides pas-à-pas, fiches réflexes, présentations) avec de l'aide",
+            "3": "Conçoit des parcours de formation complets : objectifs pédagogiques, supports différenciés par profil (agent, manager, usager), exercices pratiques sur environnement de formation",
+            "4": "Crée des modules e-learning interactifs ; conçoit des parcours blended (présentiel + distanciel) ; intègre des évaluations et des certifications internes",
+            "5": "Définit la stratégie pédagogique du programme ; architécte la plateforme de formation ; mesure l'efficacité pédagogique et itère"
+          }
+        },
+        {
+          "id": "training-delivery",
+          "label": "Animation de Formation & Accompagnement au Poste",
+          "descriptors": {
+            "0": "N'a jamais animé de session de formation",
+            "1": "A présenté un outil ou un processus à des collègues de façon informelle",
+            "2": "Anime des sessions de formation simples (présentation + démo + questions) pour des petits groupes avec de l'aide",
+            "3": "Anime des sessions structurées (objectifs, déroulé, exercices, évaluation) pour des groupes de 10-20 personnes ; s'adapte au rythme et aux questions du groupe",
+            "4": "Forme les formateurs relais côté CAFAT (train-the-trainer) ; accompagne les agents au poste le jour de la bascule ; gère les situations de blocage en temps réel",
+            "5": "Définit le dispositif d'animation du programme ; pilote les campagnes de formation à l'échelle (580 agents, multi-sites Magenta/Sifra) ; évalue et améliore la qualité d'animation"
+          }
+        },
+        {
+          "id": "adoption-measurement",
+          "label": "Mesure d'Adoption & Accompagnement Post-Bascule",
+          "descriptors": {
+            "0": "N'a jamais mesuré l'adoption d'un nouvel outil ou processus",
+            "1": "Comprend qu'il faut vérifier que les utilisateurs utilisent effectivement le nouveau système ; identifie les signaux faibles d'abandon",
+            "2": "Suit des indicateurs d'adoption basiques (connexions, taux d'usage, tickets support) avec de l'aide ; remonte les problèmes récurrents",
+            "3": "Définit les KPIs d'adoption par population ; met en place des baromètres de satisfaction ; organise le support de proximité post-bascule (permanences, hotline, FAQ vivante)",
+            "4": "Pilote le dispositif post-bascule d'un palier complet : support N1/N2, gestion des irritants, ajustements rapides, reporting à la direction ; corrèle adoption et satisfaction",
+            "5": "Définit la stratégie de mesure d'adoption du programme ; capitalise les retours entre paliers ; construit le dispositif de support pérenne pour le transfert au RUN"
+          }
+        },
+        {
+          "id": "stakeholder-network",
+          "label": "Réseau de Relais & Ambassadeurs",
+          "descriptors": {
+            "0": "N'a jamais animé de réseau de correspondants ou d'ambassadeurs",
+            "1": "Comprend l'intérêt d'avoir des relais dans les directions métier pour faciliter l'adoption",
+            "2": "Identifie les relais potentiels dans les équipes ; les informe des changements à venir avec de l'aide",
+            "3": "Constitue et anime un réseau d'ambassadeurs par direction ; les outille (kits de communication, réponses aux objections) ; organise des réunions régulières",
+            "4": "Pilote le réseau d'ambassadeurs à l'échelle du programme ; valorise les contributions ; utilise le réseau comme capteur d'alertes et levier d'adoption",
+            "5": "Définit la stratégie de réseau de relais de l'organisation ; intègre les ambassadeurs dans la gouvernance du changement ; pérennise le réseau pour le RUN"
+          }
+        }
+      ]
+    },
+    {
+      "id": "qa-test-engineering",
+      "label": "QA & Ingénierie des Tests",
+      "scenario": "Vous êtes responsable de la qualité logicielle d'un palier SINAPSE. Vous devez définir la stratégie de test globale (unitaire → intégration → E2E → performance → sécurité), automatiser les tests cross-domaines sur le portail de téléservices, gérer les environnements de test, produire les jeux de données de test réalistes (y compris migrés depuis le legacy), et garantir la non-régression entre releases. Évaluez votre niveau sur chaque compétence QA.",
+      "skills": [
+        {
+          "id": "test-strategy",
+          "label": "Stratégie de Test & Plan Qualité",
+          "descriptors": {
+            "0": "N'a jamais défini de stratégie de test au-delà des tests unitaires",
+            "1": "Comprend la pyramide de tests et la différence entre les niveaux (unitaire, intégration, E2E, performance)",
+            "2": "Contribue au plan de test avec de l'aide ; identifie les scénarios critiques à couvrir",
+            "3": "Définit la stratégie de test d'un service ou module : quoi tester, à quel niveau, avec quels outils, quels critères de couverture ; rédige le plan qualité",
+            "4": "Conçoit la stratégie de test d'un palier complet (cross-domaines, non-régression, performance) ; définit les quality gates dans la CI/CD ; arbitre les compromis couverture vs vélocité",
+            "5": "Définit les standards qualité du programme ; architécte la stratégie de test globale SINAPSE ; pilote les revues qualité avec la direction"
+          }
+        },
+        {
+          "id": "test-automation-frameworks",
+          "label": "Automatisation des Tests (frameworks, CI, maintenance)",
+          "descriptors": {
+            "0": "N'a jamais mis en place d'automatisation de tests",
+            "1": "Sait que l'automatisation réduit les régressions ; exécute des suites de tests existantes",
+            "2": "Écrit des tests automatisés avec un framework existant (JUnit, Jest, Cypress) en suivant les patterns de l'équipe",
+            "3": "Conçoit des suites de tests automatisés maintenables : page objects, fixtures, factories ; intègre dans la CI avec des rapports exploitables",
+            "4": "Architécte le framework de test automation de l'équipe ; gère la parallélisation, le sharding, les tests flaky ; optimise les temps d'exécution",
+            "5": "Définit les standards d'automatisation du programme ; évalue et sélectionne les outils ; forme les développeurs aux bonnes pratiques d'automatisation"
+          }
+        },
+        {
+          "id": "e2e-functional-testing",
+          "label": "Tests E2E & Parcours Fonctionnels (Cypress, Playwright)",
+          "descriptors": {
+            "0": "N'a jamais écrit ou exécuté de test E2E",
+            "1": "Comprend qu'un test E2E simule un parcours utilisateur complet ; exécute des scénarios écrits par d'autres",
+            "2": "Écrit des tests E2E simples (navigation, formulaire, assertion) avec de l'aide ; gère les sélecteurs et les attentes (waits)",
+            "3": "Conçoit des suites E2E couvrant les parcours critiques du portail (déclaration TI, paiement employeur, consultation agent) ; gère les données de test et les pré-conditions",
+            "4": "Automatise les parcours cross-domaines (portail → back-office → notification) ; gère les tests multi-navigateur, multi-résolution ; intègre les tests visuels de non-régression",
+            "5": "Définit la stratégie E2E du programme ; architécte les suites de parcours par palier ; optimise la stabilité et le temps de feedback"
+          }
+        },
+        {
+          "id": "performance-load-testing",
+          "label": "Tests de Performance & Charge (k6, Gatling, JMeter)",
+          "descriptors": {
+            "0": "N'a jamais réalisé de test de performance",
+            "1": "Comprend les concepts : temps de réponse, débit, concurrence, saturation ; sait que les problèmes de perf se détectent avant la prod",
+            "2": "Exécute des scénarios de charge pré-configurés ; lit les rapports de résultats avec de l'aide",
+            "3": "Conçoit des scénarios de charge réalistes (profils d'usage, rampe, pics) ; identifie les goulets d'étranglement (CPU, mémoire, I/O, requêtes SQL) ; produit des rapports argumentés",
+            "4": "Pilote les campagnes de performance d'un palier : baseline, objectifs, tirs, analyse, remédiation ; dimensionne l'infrastructure en fonction des résultats",
+            "5": "Définit la stratégie de performance du programme ; modélise la capacité cible (nombre d'usagers, pics de déclaration) ; intègre les tirs de charge dans la CI"
+          }
+        },
+        {
+          "id": "test-data-management",
+          "label": "Gestion des Données de Test (jeux de données, anonymisation)",
+          "descriptors": {
+            "0": "N'a jamais géré de données de test de façon structurée",
+            "1": "Comprend qu'il faut des données réalistes pour tester ; utilise des données créées manuellement",
+            "2": "Crée des jeux de données simples (fixtures, seeds) ; a besoin d'aide pour les cas complexes (relations, historiques, cohérence inter-tables)",
+            "3": "Conçoit des jeux de données représentatifs couvrant les cas nominaux, limites et d'erreur ; anonymise les données de production (masquage, pseudonymisation) ; gère les factories de données",
+            "4": "Architécte la stratégie de test data : génération synthétique pour les volumes, extraction/anonymisation de données legacy pour les cas réels, refresh automatisé des environnements",
+            "5": "Définit les standards de gestion des données de test du programme ; garantit la conformité (pas de données réelles d'assurés en environnement de test) ; outille la chaîne de bout en bout"
+          }
+        },
+        {
+          "id": "test-environments",
+          "label": "Gestion des Environnements de Test",
+          "descriptors": {
+            "0": "N'a jamais géré d'environnement de test au-delà de son poste local",
+            "1": "Comprend la chaîne d'environnements (dev, intégration, recette, pré-prod, prod) et leur rôle",
+            "2": "Déploie sur un environnement de test existant avec de l'aide ; identifie les différences de configuration entre environnements",
+            "3": "Gère la matrice d'environnements : provisionnement, configuration, versions, accès ; coordonne les créneaux de recette avec les équipes métier CAFAT",
+            "4": "Automatise le provisionnement des environnements (IaC, pipelines) ; gère les environnements éphémères pour les branches ; optimise les coûts et la disponibilité",
+            "5": "Définit la stratégie d'environnements du programme ; architécte la topologie (quels environnements, pour qui, avec quelles données, quel cycle de vie)"
+          }
+        },
+        {
+          "id": "defect-management",
+          "label": "Gestion des Anomalies & Reporting Qualité",
+          "descriptors": {
+            "0": "N'a jamais géré d'anomalies de façon structurée",
+            "1": "Crée des tickets d'anomalie dans Jira ; comprend les niveaux de sévérité (bloquant, majeur, mineur)",
+            "2": "Rédige des anomalies reproductibles (étapes, résultat attendu vs observé, captures) ; suit le cycle de vie des anomalies",
+            "3": "Anime les comités de triage des anomalies ; produit des métriques qualité (taux de détection, courbe de convergence, densité de défauts) ; arbitre les sévérités avec le métier",
+            "4": "Pilote le reporting qualité d'un palier : dashboards, tendances, zones à risque, critères de go/no-go qualité ; corrèle les défauts avec les domaines et les équipes",
+            "5": "Définit les standards de gestion des anomalies du programme ; construit la culture qualité ; anime les rétrospectives qualité entre paliers"
           }
         }
       ]
