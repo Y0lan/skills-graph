@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Copy, Trash2, Loader2, Users, Eye } from 'lucide-react'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -38,14 +38,35 @@ interface Candidate {
   hasReport: boolean
 }
 
+interface Role {
+  id: string
+  label: string
+  categoryIds: string[]
+}
+
+interface CatalogCategory {
+  id: string
+  label: string
+  emoji: string
+}
+
 export default function RecruitPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newRole, setNewRole] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [roles, setRoles] = useState<Role[]>([])
+  const [categories, setCategories] = useState<CatalogCategory[]>([])
+  const [selectedRoleId, setSelectedRoleId] = useState('')
+  const [cvFile, setCvFile] = useState<File | null>(null)
+  const [showRoleManager, setShowRoleManager] = useState(false)
+  const [newRoleLabel, setNewRoleLabel] = useState('')
+  const [newRoleCategoryIds, setNewRoleCategoryIds] = useState<string[]>([])
+  const [editingRole, setEditingRole] = useState<Role | null>(null)
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false)
+  const [roleSaving, setRoleSaving] = useState(false)
 
   const fetchCandidates = useCallback(async () => {
     try {
@@ -57,14 +78,37 @@ export default function RecruitPage() {
 
   useEffect(() => { fetchCandidates() }, [fetchCandidates])
 
+  const fetchRoles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/roles')
+      if (res.ok) setRoles(await res.json())
+    } catch { /* ignore */ }
+  }, [])
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await fetch('/api/catalog')
+      if (res.ok) {
+        const data = await res.json()
+        setCategories(data.categories ?? data)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { fetchRoles(); fetchCategories() }, [fetchRoles, fetchCategories])
+
   const handleCreate = async () => {
-    if (!newName.trim() || !newRole.trim()) return
+    if (!newName.trim() || !selectedRoleId) return
     setCreating(true)
     try {
+      const formData = new FormData()
+      formData.append('name', newName.trim())
+      formData.append('roleId', selectedRoleId)
+      if (newEmail.trim()) formData.append('email', newEmail.trim())
+      if (cvFile) formData.append('cv', cvFile)
       const res = await fetch('/api/candidates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim(), role: newRole.trim(), email: newEmail.trim() || undefined }),
+        body: formData,
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Erreur' }))
@@ -73,14 +117,15 @@ export default function RecruitPage() {
       const data = await res.json()
       const link = `${window.location.origin}/evaluate/${data.id}`
       await navigator.clipboard.writeText(link).catch(() => {})
-      if (data.emailSent) {
-        toast.success('Candidat créé — lien copié + email envoyé !')
-      } else {
-        toast.success('Candidat créé — lien copié !')
-      }
+      toast.success(
+        data.suggestionsCount > 0
+          ? `Candidat créé — ${data.suggestionsCount} compétences détectées depuis le CV !`
+          : 'Candidat créé — lien copié !'
+      )
       setNewName('')
-      setNewRole('')
       setNewEmail('')
+      setSelectedRoleId('')
+      setCvFile(null)
       setDialogOpen(false)
       fetchCandidates()
     } catch (err) {
@@ -114,6 +159,59 @@ export default function RecruitPage() {
     return <Badge variant="secondary">En attente</Badge>
   }
 
+  const handleSaveRole = async () => {
+    if (!newRoleLabel.trim() || newRoleCategoryIds.length === 0) return
+    setRoleSaving(true)
+    try {
+      const url = editingRole ? `/api/roles/${editingRole.id}` : '/api/roles'
+      const method = editingRole ? 'PUT' : 'POST'
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: newRoleLabel.trim(), categoryIds: newRoleCategoryIds }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Erreur' }))
+        throw new Error(body.error)
+      }
+      toast.success(editingRole ? 'Rôle mis à jour' : 'Rôle créé')
+      setNewRoleLabel('')
+      setNewRoleCategoryIds([])
+      setEditingRole(null)
+      setRoleDialogOpen(false)
+      fetchRoles()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setRoleSaving(false)
+    }
+  }
+
+  const handleDeleteRole = async (roleId: string, label: string) => {
+    try {
+      const res = await fetch(`/api/roles/${roleId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Erreur')
+      toast.success(`Rôle "${label}" supprimé`)
+      fetchRoles()
+    } catch {
+      toast.error('Erreur lors de la suppression')
+    }
+  }
+
+  const openEditRole = (role: Role) => {
+    setEditingRole(role)
+    setNewRoleLabel(role.label)
+    setNewRoleCategoryIds(role.categoryIds)
+    setRoleDialogOpen(true)
+  }
+
+  const openNewRole = () => {
+    setEditingRole(null)
+    setNewRoleLabel('')
+    setNewRoleCategoryIds([])
+    setRoleDialogOpen(true)
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
@@ -142,17 +240,53 @@ export default function RecruitPage() {
                   <Input id="name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" />
                 </div>
                 <div>
-                  <Label htmlFor="role">Poste visé *</Label>
-                  <Input id="role" value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="Développeur Frontend" />
+                  <Label htmlFor="role">Rôle *</Label>
+                  <select
+                    id="role"
+                    value={selectedRoleId}
+                    onChange={e => setSelectedRoleId(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="">— Choisir un rôle —</option>
+                    {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="email">Email (optionnel)</Label>
                   <Input id="email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jean@example.com" />
                 </div>
+                <div>
+                  <Label>CV (optionnel)</Label>
+                  {cvFile ? (
+                    <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm">
+                      <span className="flex-1 truncate">{cvFile.name}</span>
+                      <button onClick={() => setCvFile(null)} className="text-muted-foreground hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed border-muted-foreground/25 px-3 py-4 text-center text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50">
+                      <Upload className="h-5 w-5" />
+                      <span>Glisser un PDF ou <span className="font-medium text-foreground">cliquer</span></span>
+                      <span className="text-xs">PDF uniquement · max 10 Mo</span>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0]
+                          if (f && f.size <= 10 * 1024 * 1024) setCvFile(f)
+                          else if (f) toast.error('Fichier trop volumineux (max 10 Mo)')
+                        }}
+                      />
+                    </label>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">L'IA analysera le CV pour pré-remplir les compétences</p>
+                </div>
               </div>
               <AlertDialogFooter>
                 <AlertDialogCancel>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={handleCreate} disabled={!newName.trim() || !newRole.trim() || creating}>
+                <AlertDialogAction onClick={handleCreate} disabled={!newName.trim() || !selectedRoleId || creating}>
                   {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Créer
                 </AlertDialogAction>
@@ -160,6 +294,75 @@ export default function RecruitPage() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
+
+        {/* Role management */}
+        <div className="mt-6 rounded-lg border bg-muted/30 p-4">
+          <button
+            onClick={() => setShowRoleManager(!showRoleManager)}
+            className="flex w-full items-center gap-2 text-sm font-medium"
+          >
+            <Settings className="h-4 w-4" />
+            Rôles prédéfinis ({roles.length})
+            <span className="ml-auto text-xs text-muted-foreground">{showRoleManager ? '▾' : '▸'}</span>
+          </button>
+          {showRoleManager && (
+            <div className="mt-3 space-y-2">
+              {roles.map(r => (
+                <div key={r.id} className="flex items-center gap-2 rounded-md bg-background px-3 py-2 text-sm">
+                  <span className="flex-1 font-medium">{r.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {r.categoryIds.map(cid => categories.find(c => c.id === cid)?.label).filter(Boolean).join(' · ')}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => openEditRole(r)} className="h-7 px-2 text-xs">Modifier</Button>
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteRole(r.id, r.label)} className="h-7 px-2 text-xs text-destructive">Supprimer</Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={openNewRole} className="mt-2">
+                <Plus className="mr-1 h-3 w-3" /> Ajouter un rôle
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* Role create/edit dialog */}
+        <AlertDialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{editingRole ? 'Modifier le rôle' : 'Nouveau rôle'}</AlertDialogTitle>
+            </AlertDialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Nom du rôle</Label>
+                <Input value={newRoleLabel} onChange={e => setNewRoleLabel(e.target.value)} placeholder="Développeur Full Stack" />
+              </div>
+              <div>
+                <Label>Catégories associées</Label>
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  {categories.map(cat => (
+                    <label key={cat.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted">
+                      <input
+                        type="checkbox"
+                        checked={newRoleCategoryIds.includes(cat.id)}
+                        onChange={e => {
+                          if (e.target.checked) setNewRoleCategoryIds(prev => [...prev, cat.id])
+                          else setNewRoleCategoryIds(prev => prev.filter(id => id !== cat.id))
+                        }}
+                      />
+                      <span>{cat.emoji} {cat.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction onClick={handleSaveRole} disabled={!newRoleLabel.trim() || newRoleCategoryIds.length === 0 || roleSaving}>
+                {roleSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {editingRole ? 'Enregistrer' : 'Créer'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {loading ? (
           <div className="mt-12 flex justify-center">

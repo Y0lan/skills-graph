@@ -1,20 +1,9 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { getDb } from '../lib/db.js'
-import { getSkillCategories } from '../lib/catalog.js'
+import { getDb, getRoleCategories } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
-
-interface CandidateRow {
-  id: string
-  name: string
-  role: string
-  created_by: string
-  expires_at: string
-  ratings: string
-  experience: string
-  skipped_categories: string
-  submitted_at: string | null
-}
+import { validateRatings } from '../lib/validation.js'
+import { safeJsonParse, type CandidateRow } from '../lib/types.js'
 
 export const evaluateRouter = Router()
 
@@ -31,7 +20,7 @@ evaluateRouter.use(publicRateLimit)
 // Shared guard: check candidate exists, not expired, not submitted
 function getCandidateGuard(id: string, res: import('express').Response, opts?: { allowSubmitted?: boolean }) {
   const row = getDb()
-    .prepare('SELECT id, name, role, created_by, expires_at, submitted_at, ratings FROM candidates WHERE id = ?')
+    .prepare('SELECT id, name, role, role_id, created_by, expires_at, submitted_at, ratings, ai_suggestions FROM candidates WHERE id = ?')
     .get(id) as CandidateRow | undefined
 
   if (!row) {
@@ -52,24 +41,7 @@ function getCandidateGuard(id: string, res: import('express').Response, opts?: {
   return row
 }
 
-// Validate ratings: keys must be valid skill IDs, values must be integers 0-5
-function validateRatings(ratings: unknown): string | null {
-  if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
-    return 'ratings doit être un objet'
-  }
-  const validSkillIds = new Set(
-    getSkillCategories().flatMap(c => c.skills.map(s => s.id))
-  )
-  for (const [key, value] of Object.entries(ratings as Record<string, unknown>)) {
-    if (!validSkillIds.has(key)) {
-      return `Compétence inconnue: ${key}`
-    }
-    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 5) {
-      return `Valeur invalide pour ${key}: doit être un entier entre 0 et 5`
-    }
-  }
-  return null
-}
+// validateRatings imported from server/lib/validation.ts
 
 // Get candidate form data (public — no ratings, no report)
 evaluateRouter.get('/:id/form', (req, res) => {
@@ -81,6 +53,8 @@ evaluateRouter.get('/:id/form', (req, res) => {
     name: row.name,
     role: row.role,
     submitted: !!row.submitted_at,
+    aiSuggestions: safeJsonParse(row.ai_suggestions, null),
+    roleCategories: row.role_id ? getRoleCategories(row.role_id) : null,
   })
 })
 
@@ -117,6 +91,15 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   // Accept optional final ratings payload to prevent autosave race
   const { ratings, experience, skippedCategories } = req.body ?? {}
 
+  // Validate ratings if provided (same validation as PUT /ratings)
+  if (ratings) {
+    const ratingsError = validateRatings(ratings)
+    if (ratingsError) {
+      res.status(400).json({ error: ratingsError })
+      return
+    }
+  }
+
   const now = new Date().toISOString()
   const db = getDb()
 
@@ -142,7 +125,7 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   const leadSlug = row.created_by
   if (leadSlug) {
     // Derive lead email from slug (slug format: firstname-lastname → firstname.lastname@sinapse.nc)
-    const leadEmail = leadSlug.replace('-', '.') + '@sinapse.nc'
+    const leadEmail = leadSlug.replaceAll('-', '.') + '@sinapse.nc'
     sendCandidateSubmitted({
       to: leadEmail,
       candidateName: row.name,

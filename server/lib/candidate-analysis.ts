@@ -2,16 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getDb } from './db.js'
 import { computeTeamAggregate } from './aggregates.js'
 import { getSkillCategories } from './catalog.js'
-
-interface CandidateRow {
-  id: string
-  name: string
-  role: string
-  ratings: string
-  experience: string
-  submitted_at: string | null
-  ai_report: string | null
-}
+import type { CandidateRow } from './types.js'
 
 export async function generateCandidateAnalysis(candidateId: string): Promise<string> {
   const db = getDb()

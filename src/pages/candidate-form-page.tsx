@@ -13,6 +13,8 @@ interface CandidateFormData {
   name: string
   role: string
   submitted: boolean
+  aiSuggestions: Record<string, number> | null
+  roleCategories: string[] | null
 }
 
 export default function CandidateFormPage() {
@@ -45,7 +47,8 @@ export default function CandidateFormPage() {
           setSubmitted(true)
           return
         }
-        setExistingRatings({ ratings: {}, experience: {}, skippedCategories: [] })
+        const initialRatings = formInfo.aiSuggestions ?? {}
+        setExistingRatings({ ratings: initialRatings, experience: {}, skippedCategories: [] })
       })
       .catch(() => setError('Impossible de charger le formulaire'))
       .finally(() => setLoading(false))
@@ -204,6 +207,8 @@ export default function CandidateFormPage() {
           submitting={submitting}
           autosaveEndpoint={`/api/evaluate/${id}/ratings`}
           onNavigationChange={setWizardNav}
+          aiSuggestions={formData.aiSuggestions ?? undefined}
+          roleCategories={formData.roleCategories ?? undefined}
         />
       </div>
     </div>

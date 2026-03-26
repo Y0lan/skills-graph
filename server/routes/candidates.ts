@@ -1,9 +1,15 @@
 import { Router } from 'express'
 import crypto from 'crypto'
-import { getDb } from '../lib/db.js'
+import { Readable } from 'stream'
+import busboy from 'busboy'
+import rateLimit from 'express-rate-limit'
+import { getDb, getRole } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
 import { sendCandidateInvite } from '../lib/email.js'
+import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
+import { getSkillCategories } from '../lib/catalog.js'
+import { safeJsonParse, type CandidateRow } from '../lib/types.js'
 
 interface AuthUser {
   id: string
@@ -11,26 +17,55 @@ interface AuthUser {
   [key: string]: unknown
 }
 
-interface CandidateRow {
-  id: string
-  name: string
-  role: string
-  email: string | null
-  created_by: string
-  created_at: string
-  expires_at: string
-  ratings: string
-  experience: string
-  skipped_categories: string
-  submitted_at: string | null
-  ai_report: string | null
-  notes: string | null
+interface ParsedUpload {
+  fields: Record<string, string>
+  file: { buffer: Buffer; mimetype: string } | null
+}
+
+function parsePdfUpload(req: import('express').Request): Promise<ParsedUpload> {
+  return new Promise((resolve, reject) => {
+    const fields: Record<string, string> = {}
+    let file: { buffer: Buffer; mimetype: string } | null = null
+    const bb = busboy({
+      headers: req.headers,
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 }
+    })
+    bb.on('field', (name: string, val: string) => { fields[name] = val })
+    bb.on('file', (_name: string, stream: Readable, info: { mimeType: string }) => {
+      if (info.mimeType !== 'application/pdf') {
+        stream.resume() // drain
+        return
+      }
+      const chunks: Buffer[] = []
+      let truncated = false
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+      stream.on('limit', () => { truncated = true })
+      stream.on('end', () => {
+        if (!truncated) {
+          file = { buffer: Buffer.concat(chunks), mimetype: info.mimeType }
+        }
+      })
+    })
+    bb.on('close', () => { clearTimeout(timer); resolve({ fields, file }) })
+    bb.on('error', (err: Error) => { clearTimeout(timer); reject(err) })
+    const timer = setTimeout(() => { req.unpipe(bb); reject(new Error('Upload timeout')) }, 30000)
+    req.pipe(bb)
+  })
 }
 
 export const candidatesRouter = Router()
 
 // All routes require auth + lead (applied in index.ts middleware chain)
 candidatesRouter.use(requireLead)
+
+// Rate limit candidate creation to prevent Claude API cost abuse (5 per minute per user)
+const createRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de candidats créés. Réessayez dans une minute.' },
+})
 
 // List all candidates
 candidatesRouter.get('/', (_req, res) => {
@@ -52,13 +87,48 @@ candidatesRouter.get('/', (_req, res) => {
 })
 
 // Create candidate
-candidatesRouter.post('/', (req, res) => {
-  const { name, role, email } = req.body
+candidatesRouter.post('/', createRateLimit, async (req, res) => {
+  let name: string | undefined
+  let role: string | undefined
+  let roleId: string | undefined
+  let email: string | undefined
+  let file: { buffer: Buffer; mimetype: string } | null = null
+
+  const contentType = req.headers['content-type'] || ''
+  if (contentType.startsWith('multipart/')) {
+    try {
+      const parsed = await parsePdfUpload(req)
+      name = parsed.fields.name
+      roleId = parsed.fields.roleId
+      email = parsed.fields.email
+      file = parsed.file
+    } catch {
+      res.status(400).json({ error: 'Erreur lors du téléchargement du fichier' })
+      return
+    }
+  } else {
+    name = req.body.name
+    role = req.body.role
+    roleId = req.body.roleId
+    email = req.body.email
+  }
+
   if (!name || typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Le nom est requis' })
     return
   }
-  if (!role || typeof role !== 'string' || !role.trim()) {
+
+  // Resolve role from roleId or free-text
+  let resolvedRoleId: string | null = null
+  if (roleId) {
+    const roleRow = getRole(roleId)
+    if (!roleRow) {
+      res.status(400).json({ error: 'Rôle invalide' })
+      return
+    }
+    role = roleRow.label
+    resolvedRoleId = roleId
+  } else if (!role || typeof role !== 'string' || !role.trim()) {
     res.status(400).json({ error: 'Le poste est requis' })
     return
   }
@@ -67,9 +137,25 @@ candidatesRouter.post('/', (req, res) => {
   const id = crypto.randomUUID()
 
   getDb().prepare(
-    'INSERT INTO candidates (id, name, role, email, created_by) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, name.trim(), role.trim(), email?.trim() || null, user.slug)
+    'INSERT INTO candidates (id, name, role, role_id, email, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, name.trim(), role!.trim(), resolvedRoleId, email?.trim() || null, user.slug)
 
+  // Process CV if uploaded
+  let suggestionsCount = 0
+  if (file) {
+    try {
+      const cvText = await extractCvText(file.buffer)
+      const catalog = getSkillCategories()
+      const suggestions = await extractSkillsFromCv(cvText, catalog)
+      getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
+        .run(cvText, suggestions ? JSON.stringify(suggestions) : null, id)
+      suggestionsCount = suggestions ? Object.keys(suggestions).length : 0
+    } catch (err) {
+      console.error('[CV] Error processing CV for candidate', id, err)
+    }
+  }
+
+  // Re-fetch after CV processing for consistent response
   const candidate = getDb().prepare('SELECT * FROM candidates WHERE id = ?').get(id) as CandidateRow
 
   // Send invite email if candidate has an email address
@@ -80,7 +166,7 @@ candidatesRouter.post('/', (req, res) => {
     sendCandidateInvite({
       to: email.trim(),
       candidateName: name.trim(),
-      role: role.trim(),
+      role: role!.trim(),
       evaluationUrl,
     }).catch(() => {}) // non-blocking
   }
@@ -89,6 +175,7 @@ candidatesRouter.post('/', (req, res) => {
     ...formatCandidate(candidate),
     evaluationLink: `/evaluate/${id}`,
     emailSent: !!email?.trim(),
+    suggestionsCount,
   })
 })
 
@@ -140,15 +227,17 @@ function formatCandidate(row: CandidateRow) {
     id: row.id,
     name: row.name,
     role: row.role,
+    roleId: row.role_id,
     email: row.email,
     createdBy: row.created_by,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
-    ratings: JSON.parse(row.ratings),
-    experience: JSON.parse(row.experience),
-    skippedCategories: JSON.parse(row.skipped_categories),
+    ratings: safeJsonParse(row.ratings, {}),
+    experience: safeJsonParse(row.experience, {}),
+    skippedCategories: safeJsonParse(row.skipped_categories, []),
     submittedAt: row.submitted_at,
     aiReport: row.ai_report,
+    aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     notes: row.notes,
   }
 }
