@@ -274,16 +274,16 @@ export default function RecruitPage() {
                         const f = e.dataTransfer.files[0]
                         if (!f) return
                         if (f.size > 10 * 1024 * 1024) { toast.error('Fichier trop volumineux (max 10 Mo)'); return }
-                        if (!f.name.match(/\.(pdf|docx?)$/i)) { toast.error('Format non supporté — PDF uniquement'); return }
+                        if (!f.name.match(/\.(pdf|docx?)$/i)) { toast.error('Format non supporté — PDF ou DOCX uniquement'); return }
                         setCvFile(f)
                       }}
                     >
                       <Upload className="h-5 w-5" />
-                      <span>Glisser un PDF ou <span className="font-medium text-foreground">cliquer</span></span>
-                      <span className="text-xs">PDF uniquement · max 10 Mo</span>
+                      <span>Glisser un fichier ou <span className="font-medium text-foreground">cliquer</span></span>
+                      <span className="text-xs">PDF ou DOCX · max 10 Mo</span>
                       <input
                         type="file"
-                        accept=".pdf,application/pdf"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]

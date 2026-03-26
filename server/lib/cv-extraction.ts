@@ -1,12 +1,20 @@
 import { extractText } from 'unpdf'
+import mammoth from 'mammoth'
 import Anthropic from '@anthropic-ai/sdk'
 import type { SkillCategory } from '../../src/data/skill-catalog.js'
 import { filterValidRatings } from './validation.js'
 
 /**
- * Extract raw text from a PDF buffer using unpdf.
+ * Extract raw text from a CV file buffer (PDF or DOCX).
+ * Detects format from magic bytes.
  */
 export async function extractCvText(buffer: Buffer): Promise<string> {
+  // DOCX files start with PK (zip) magic bytes
+  if (buffer[0] === 0x50 && buffer[1] === 0x4B) {
+    const result = await mammoth.extractRawText({ buffer })
+    return result.value
+  }
+  // Default: treat as PDF
   const data = new Uint8Array(buffer)
   const result = await extractText(data)
   return Array.isArray(result.text) ? result.text.join('\n') : result.text

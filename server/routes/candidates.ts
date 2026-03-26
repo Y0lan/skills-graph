@@ -32,7 +32,8 @@ function parsePdfUpload(req: import('express').Request): Promise<ParsedUpload> {
     })
     bb.on('field', (name: string, val: string) => { fields[name] = val })
     bb.on('file', (_name: string, stream: Readable, info: { mimeType: string }) => {
-      if (info.mimeType !== 'application/pdf') {
+      const allowedMimes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']
+      if (!allowedMimes.includes(info.mimeType)) {
         stream.resume() // drain
         return
       }
