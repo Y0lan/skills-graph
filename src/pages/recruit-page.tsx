@@ -72,8 +72,12 @@ export default function RecruitPage() {
       }
       const data = await res.json()
       const link = `${window.location.origin}/evaluate/${data.id}`
-      await navigator.clipboard.writeText(link)
-      toast.success('Candidat créé — lien copié !')
+      await navigator.clipboard.writeText(link).catch(() => {})
+      if (data.emailSent) {
+        toast.success('Candidat créé — lien copié + email envoyé !')
+      } else {
+        toast.success('Candidat créé — lien copié !')
+      }
       setNewName('')
       setNewRole('')
       setNewEmail('')

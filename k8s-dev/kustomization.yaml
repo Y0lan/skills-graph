@@ -11,7 +11,7 @@ resources:
 - service.yaml
 - gateway.yaml
 - configmap.yaml
-- secret.yaml
+# secret.yaml is managed manually via kubectl (gitignored for security)
 
 images:
 - name: skill-radar
