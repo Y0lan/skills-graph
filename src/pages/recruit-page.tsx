@@ -265,13 +265,25 @@ export default function RecruitPage() {
                       </button>
                     </div>
                   ) : (
-                    <label className="flex cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed border-muted-foreground/25 px-3 py-4 text-center text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50">
+                    <label
+                      className="flex cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed border-muted-foreground/25 px-3 py-4 text-center text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50"
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const f = e.dataTransfer.files[0]
+                        if (!f) return
+                        if (f.size > 10 * 1024 * 1024) { toast.error('Fichier trop volumineux (max 10 Mo)'); return }
+                        if (!f.name.match(/\.(pdf|docx?)$/i)) { toast.error('Format non supporté — PDF uniquement'); return }
+                        setCvFile(f)
+                      }}
+                    >
                       <Upload className="h-5 w-5" />
                       <span>Glisser un PDF ou <span className="font-medium text-foreground">cliquer</span></span>
                       <span className="text-xs">PDF uniquement · max 10 Mo</span>
                       <input
                         type="file"
-                        accept="application/pdf"
+                        accept=".pdf,application/pdf"
                         className="hidden"
                         onChange={e => {
                           const f = e.target.files?.[0]
