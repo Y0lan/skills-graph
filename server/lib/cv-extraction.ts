@@ -8,8 +8,8 @@ import { filterValidRatings } from './validation.js'
  */
 export async function extractCvText(buffer: Buffer): Promise<string> {
   const data = new Uint8Array(buffer)
-  const { text } = await extractText(data)
-  return text
+  const result = await extractText(data)
+  return Array.isArray(result.text) ? result.text.join('\n') : result.text
 }
 
 /**
