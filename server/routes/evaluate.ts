@@ -2,11 +2,13 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../lib/db.js'
 import { getSkillCategories } from '../lib/catalog.js'
+import { sendCandidateSubmitted } from '../lib/email.js'
 
 interface CandidateRow {
   id: string
   name: string
   role: string
+  created_by: string
   expires_at: string
   ratings: string
   experience: string
@@ -29,7 +31,7 @@ evaluateRouter.use(publicRateLimit)
 // Shared guard: check candidate exists, not expired, not submitted
 function getCandidateGuard(id: string, res: import('express').Response, opts?: { allowSubmitted?: boolean }) {
   const row = getDb()
-    .prepare('SELECT id, name, role, expires_at, submitted_at, ratings FROM candidates WHERE id = ?')
+    .prepare('SELECT id, name, role, created_by, expires_at, submitted_at, ratings FROM candidates WHERE id = ?')
     .get(id) as CandidateRow | undefined
 
   if (!row) {
@@ -134,6 +136,20 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   })
 
   submitTransaction()
+
+  // Notify the lead who created this candidate (non-blocking)
+  const baseUrl = process.env.BETTER_AUTH_URL || 'https://radar.sinapse.nc'
+  const leadSlug = row.created_by
+  if (leadSlug) {
+    // Derive lead email from slug (slug format: firstname-lastname → firstname.lastname@sinapse.nc)
+    const leadEmail = leadSlug.replace('-', '.') + '@sinapse.nc'
+    sendCandidateSubmitted({
+      to: leadEmail,
+      candidateName: row.name,
+      role: row.role,
+      detailUrl: `${baseUrl}/recruit/${req.params.id}`,
+    }).catch(() => {})
+  }
 
   res.json({ ok: true, submittedAt: now })
 })

@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
+import { sendCandidateInvite } from '../lib/email.js'
 
 interface AuthUser {
   id: string
@@ -71,9 +72,23 @@ candidatesRouter.post('/', (req, res) => {
 
   const candidate = getDb().prepare('SELECT * FROM candidates WHERE id = ?').get(id) as CandidateRow
 
+  // Send invite email if candidate has an email address
+  const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
+  const evaluationUrl = `${baseUrl}/evaluate/${id}`
+
+  if (email?.trim()) {
+    sendCandidateInvite({
+      to: email.trim(),
+      candidateName: name.trim(),
+      role: role.trim(),
+      evaluationUrl,
+    }).catch(() => {}) // non-blocking
+  }
+
   res.status(201).json({
     ...formatCandidate(candidate),
     evaluationLink: `/evaluate/${id}`,
+    emailSent: !!email?.trim(),
   })
 })
 
