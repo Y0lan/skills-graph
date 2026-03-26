@@ -1,5 +1,6 @@
 import { createAuthClient } from 'better-auth/react'
 import { inferAdditionalFields } from 'better-auth/client/plugins'
+import { magicLinkClient } from 'better-auth/client/plugins'
 
 export const authClient = createAuthClient({
   basePath: '/api/auth',
@@ -10,5 +11,6 @@ export const authClient = createAuthClient({
         pinCustomized: { type: 'boolean', required: false },
       },
     }),
+    magicLinkClient(),
   ],
 })
