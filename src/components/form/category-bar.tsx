@@ -16,7 +16,7 @@ interface CategoryBarProps {
   onPrev: () => void
   onNext: () => void
   onBackToReview: () => void
-  skipButtonProps: {
+  skipButtonProps?: {
     categoryLabel: string
     isSkipped: boolean
     onSkip: () => void
@@ -106,7 +106,7 @@ export default function CategoryBar({
               <div />
             )}
           </div>
-          <SkipCategoryButton {...skipButtonProps} />
+          {skipButtonProps && <SkipCategoryButton {...skipButtonProps} />}
           <div className="flex items-center">
             {!editingFromReview && (
               <span

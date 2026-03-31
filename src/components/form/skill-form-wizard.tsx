@@ -249,7 +249,7 @@ export default function SkillFormWizard({
               onPrev={handlePrev}
               onNext={handleNext}
               onBackToReview={handleBackToReview}
-              skipButtonProps={{
+              skipButtonProps={roleCategories && isRoleCategory(category.id) ? undefined : {
                 categoryLabel: category.label,
                 isSkipped: isSkipped(category.id),
                 onSkip: () => toggleSkipCategory(category.id),
