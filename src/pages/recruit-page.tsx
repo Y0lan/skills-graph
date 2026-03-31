@@ -67,7 +67,7 @@ export default function RecruitPage() {
   const [editingRole, setEditingRole] = useState<Role | null>(null)
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [roleSaving, setRoleSaving] = useState(false)
-  const [creationResult, setCreationResult] = useState<{ id: string; name: string; suggestionsCount: number; link: string } | null>(null)
+  const [creationResult, setCreationResult] = useState<{ id: string; name: string; suggestionsCount: number; suggestions: Record<string, number> | null; link: string } | null>(null)
 
   const fetchCandidates = useCallback(async () => {
     try {
@@ -86,12 +86,22 @@ export default function RecruitPage() {
     } catch { /* ignore */ }
   }, [])
 
+  const [skillLabels, setSkillLabels] = useState<Record<string, string>>({})
+
   const fetchCategories = useCallback(async () => {
     try {
       const res = await fetch('/api/catalog')
       if (res.ok) {
         const data = await res.json()
-        setCategories(data.categories ?? data)
+        const cats = data.categories ?? data
+        setCategories(cats)
+        const labels: Record<string, string> = {}
+        for (const cat of cats) {
+          for (const skill of (cat.skills ?? [])) {
+            labels[skill.id] = skill.label
+          }
+        }
+        setSkillLabels(labels)
       }
     } catch { /* ignore */ }
   }, [])
@@ -120,7 +130,7 @@ export default function RecruitPage() {
       await navigator.clipboard.writeText(link).catch(() => {})
       fetchCandidates()
       // Show result screen with detected skills
-      setCreationResult({ id: data.id, name: newName.trim(), suggestionsCount: data.suggestionsCount ?? 0, link })
+      setCreationResult({ id: data.id, name: newName.trim(), suggestionsCount: data.suggestionsCount ?? 0, suggestions: data.aiSuggestions ?? null, link })
       setCreating(false)
       return // don't close dialog — show result
     } catch (err) {
@@ -231,22 +241,34 @@ export default function RecruitPage() {
                       Candidat créé
                     </AlertDialogTitle>
                   </AlertDialogHeader>
-                  <div className="space-y-4 py-2">
-                    <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                  <div className="space-y-3 py-2 overflow-hidden">
+                    <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
                       <p className="font-medium">{creationResult.name}</p>
-                      {creationResult.suggestionsCount > 0 ? (
-                        <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
-                          ✨ {creationResult.suggestionsCount} compétences détectées depuis le CV et pré-remplies dans le formulaire.
-                        </div>
+                      {creationResult.suggestionsCount > 0 && creationResult.suggestions ? (
+                        <>
+                          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+                            ✨ {creationResult.suggestionsCount} compétences détectées et pré-remplies
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.entries(creationResult.suggestions).map(([skillId, level]) => {
+                              const skillLabel = skillLabels[skillId] ?? skillId
+                              return (
+                                <span key={skillId} className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300">
+                                  {skillLabel} <span className="font-bold">L{level}</span>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </>
                       ) : (
                         <p className="text-sm text-muted-foreground">
                           Aucune compétence détectée — le candidat remplira le formulaire manuellement.
                         </p>
                       )}
                     </div>
-                    <div className="rounded-md bg-muted/30 px-3 py-2">
-                      <p className="text-xs text-muted-foreground mb-1">Lien d'évaluation (copié dans le presse-papiers)</p>
-                      <p className="text-sm font-mono truncate">{creationResult.link}</p>
+                    <div className="rounded-md bg-muted/30 px-3 py-2 overflow-hidden">
+                      <p className="text-xs text-muted-foreground mb-1">Lien d'évaluation (copié)</p>
+                      <p className="text-xs font-mono truncate">{creationResult.link}</p>
                     </div>
                   </div>
                   <AlertDialogFooter>
