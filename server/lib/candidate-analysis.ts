@@ -72,7 +72,7 @@ Génère un rapport structuré :
 
   const client = new Anthropic()
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-5-20250514',
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   })

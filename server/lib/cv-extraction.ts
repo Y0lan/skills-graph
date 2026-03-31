@@ -79,7 +79,7 @@ Utilise l'outil submit_skill_ratings pour soumettre tes suggestions de ratings.`
   try {
     const client = new Anthropic()
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250514',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 4096,
       tools,
       tool_choice: { type: 'tool', name: 'submit_skill_ratings' },
