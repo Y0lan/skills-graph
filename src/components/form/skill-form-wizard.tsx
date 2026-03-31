@@ -124,7 +124,7 @@ export default function SkillFormWizard({
         totalCount: cat.skills.length,
         isSkipped: isSkipped(cat.id),
         aiCount,
-        isRoleCategory: isRoleCategory(cat.id),
+        isRoleCategory: roleCategories ? isRoleCategory(cat.id) : undefined,
       }
     }),
     {

@@ -81,7 +81,7 @@ export default function ProgressBar({
             >
               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
               <span className="max-w-[5rem] truncate">{shortLabel}</span>
-              {stepInfo.isRoleCategory && !isActive && (
+              {stepInfo.isRoleCategory === true && !isActive && (
                 <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400">req</span>
               )}
               {isLocked ? (
