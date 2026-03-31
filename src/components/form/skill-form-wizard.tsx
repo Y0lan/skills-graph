@@ -245,6 +245,7 @@ export default function SkillFormWizard({
               allRated={category.skills.every((s) => ratings[s.id] !== undefined)}
               isFirstStep={step === 0}
               editingFromReview={editingFromReview}
+              isRoleCategory={roleCategories ? isRoleCategory(category.id) : undefined}
               onPrev={handlePrev}
               onNext={handleNext}
               onBackToReview={handleBackToReview}
