@@ -270,7 +270,7 @@ export default function RecruitPage() {
                       Un lien d'évaluation sera généré et copié dans votre presse-papiers.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
-                  <div className="space-y-4 py-2">
+                  <div className="space-y-4 py-2 overflow-hidden">
                     <div>
                       <Label htmlFor="name">Nom *</Label>
                       <Input id="name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" />
@@ -294,8 +294,8 @@ export default function RecruitPage() {
                     <div>
                       <Label>CV (optionnel)</Label>
                       {cvFile ? (
-                        <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm min-w-0 overflow-hidden">
-                          <span className="flex-1 truncate min-w-0">{cvFile.name}</span>
+                        <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm overflow-hidden max-w-full">
+                          <span className="truncate">{cvFile.name}</span>
                           <button onClick={() => setCvFile(null)} className="shrink-0 text-muted-foreground hover:text-foreground">
                             <X className="h-4 w-4" />
                           </button>
