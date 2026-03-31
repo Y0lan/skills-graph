@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X } from 'lucide-react'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -67,6 +67,7 @@ export default function RecruitPage() {
   const [editingRole, setEditingRole] = useState<Role | null>(null)
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [roleSaving, setRoleSaving] = useState(false)
+  const [creationResult, setCreationResult] = useState<{ id: string; name: string; suggestionsCount: number; link: string } | null>(null)
 
   const fetchCandidates = useCallback(async () => {
     try {
@@ -117,17 +118,11 @@ export default function RecruitPage() {
       const data = await res.json()
       const link = `${window.location.origin}/evaluate/${data.id}`
       await navigator.clipboard.writeText(link).catch(() => {})
-      toast.success(
-        data.suggestionsCount > 0
-          ? `Candidat créé — ${data.suggestionsCount} compétences détectées depuis le CV !`
-          : 'Candidat créé — lien copié !'
-      )
-      setNewName('')
-      setNewEmail('')
-      setSelectedRoleId('')
-      setCvFile(null)
-      setDialogOpen(false)
       fetchCandidates()
+      // Show result screen with detected skills
+      setCreationResult({ id: data.id, name: newName.trim(), suggestionsCount: data.suggestionsCount ?? 0, link })
+      setCreating(false)
+      return // don't close dialog — show result
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur')
     } finally {
@@ -223,86 +218,129 @@ export default function RecruitPage() {
               Évaluez les candidats sur les mêmes compétences que l'équipe
             </p>
           </div>
-          <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreationResult(null) }}>
             <AlertDialogTrigger>
               <Button><Plus className="mr-2 h-4 w-4" /> Nouveau candidat</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Ajouter un candidat</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Un lien d'évaluation sera généré et copié dans votre presse-papiers.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <div className="space-y-4 py-2">
-                <div>
-                  <Label htmlFor="name">Nom *</Label>
-                  <Input id="name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" />
-                </div>
-                <div>
-                  <Label htmlFor="role">Rôle *</Label>
-                  <select
-                    id="role"
-                    value={selectedRoleId}
-                    onChange={e => setSelectedRoleId(e.target.value)}
-                    className="flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">— Choisir un rôle —</option>
-                    {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label htmlFor="email">Email (optionnel)</Label>
-                  <Input id="email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jean@example.com" />
-                </div>
-                <div>
-                  <Label>CV (optionnel)</Label>
-                  {cvFile ? (
-                    <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm min-w-0 overflow-hidden">
-                      <span className="flex-1 truncate min-w-0">{cvFile.name}</span>
-                      <button onClick={() => setCvFile(null)} className="text-muted-foreground hover:text-foreground">
-                        <X className="h-4 w-4" />
-                      </button>
+              {creationResult ? (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      Candidat créé
+                    </AlertDialogTitle>
+                  </AlertDialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="rounded-lg border bg-muted/50 p-4 space-y-2">
+                      <p className="font-medium">{creationResult.name}</p>
+                      {creationResult.suggestionsCount > 0 ? (
+                        <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+                          ✨ {creationResult.suggestionsCount} compétences détectées depuis le CV et pré-remplies dans le formulaire.
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Aucune compétence détectée — le candidat remplira le formulaire manuellement.
+                        </p>
+                      )}
                     </div>
-                  ) : (
-                    <label
-                      className="flex cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed border-muted-foreground/25 px-3 py-4 text-center text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50"
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
-                      onDrop={e => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        const f = e.dataTransfer.files[0]
-                        if (!f) return
-                        if (f.size > 10 * 1024 * 1024) { toast.error('Fichier trop volumineux (max 10 Mo)'); return }
-                        if (!f.name.match(/\.(pdf|docx?)$/i)) { toast.error('Format non supporté — PDF ou DOCX uniquement'); return }
-                        setCvFile(f)
-                      }}
-                    >
-                      <Upload className="h-5 w-5" />
-                      <span>Glisser un fichier ou <span className="font-medium text-foreground">cliquer</span></span>
-                      <span className="text-xs">PDF ou DOCX · max 10 Mo</span>
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        className="hidden"
-                        onChange={e => {
-                          const f = e.target.files?.[0]
-                          if (f && f.size <= 10 * 1024 * 1024) setCvFile(f)
-                          else if (f) toast.error('Fichier trop volumineux (max 10 Mo)')
-                        }}
-                      />
-                    </label>
-                  )}
-                  <p className="mt-1 text-xs text-muted-foreground">L'IA analysera le CV pour pré-remplir les compétences</p>
-                </div>
-              </div>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={handleCreate} disabled={!newName.trim() || !selectedRoleId || creating}>
-                  {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Créer
-                </AlertDialogAction>
-              </AlertDialogFooter>
+                    <div className="rounded-md bg-muted/30 px-3 py-2">
+                      <p className="text-xs text-muted-foreground mb-1">Lien d'évaluation (copié dans le presse-papiers)</p>
+                      <p className="text-sm font-mono truncate">{creationResult.link}</p>
+                    </div>
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogAction onClick={() => {
+                      setCreationResult(null)
+                      setNewName('')
+                      setNewEmail('')
+                      setSelectedRoleId('')
+                      setCvFile(null)
+                      setDialogOpen(false)
+                    }}>
+                      Fermer
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              ) : (
+                <>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Ajouter un candidat</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Un lien d'évaluation sera généré et copié dans votre presse-papiers.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div>
+                      <Label htmlFor="name">Nom *</Label>
+                      <Input id="name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Jean Dupont" />
+                    </div>
+                    <div>
+                      <Label htmlFor="role">Rôle *</Label>
+                      <select
+                        id="role"
+                        value={selectedRoleId}
+                        onChange={e => setSelectedRoleId(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <option value="">— Choisir un rôle —</option>
+                        {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="email">Email (optionnel)</Label>
+                      <Input id="email" type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="jean@example.com" />
+                    </div>
+                    <div>
+                      <Label>CV (optionnel)</Label>
+                      {cvFile ? (
+                        <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm min-w-0 overflow-hidden">
+                          <span className="flex-1 truncate min-w-0">{cvFile.name}</span>
+                          <button onClick={() => setCvFile(null)} className="shrink-0 text-muted-foreground hover:text-foreground">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          className="flex cursor-pointer flex-col items-center gap-1 rounded-md border-2 border-dashed border-muted-foreground/25 px-3 py-4 text-center text-sm text-muted-foreground transition-colors hover:border-muted-foreground/50"
+                          onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            const f = e.dataTransfer.files[0]
+                            if (!f) return
+                            if (f.size > 10 * 1024 * 1024) { toast.error('Fichier trop volumineux (max 10 Mo)'); return }
+                            if (!f.name.match(/\.(pdf|docx?)$/i)) { toast.error('Format non supporté — PDF ou DOCX uniquement'); return }
+                            setCvFile(f)
+                          }}
+                        >
+                          <Upload className="h-5 w-5" />
+                          <span>Glisser un fichier ou <span className="font-medium text-foreground">cliquer</span></span>
+                          <span className="text-xs">PDF ou DOCX · max 10 Mo</span>
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            className="hidden"
+                            onChange={e => {
+                              const f = e.target.files?.[0]
+                              if (f && f.size <= 10 * 1024 * 1024) setCvFile(f)
+                              else if (f) toast.error('Fichier trop volumineux (max 10 Mo)')
+                            }}
+                          />
+                        </label>
+                      )}
+                      <p className="mt-1 text-xs text-muted-foreground">L'IA analysera le CV pour pré-remplir les compétences</p>
+                    </div>
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Annuler</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleCreate} disabled={!newName.trim() || !selectedRoleId || creating}>
+                      {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {creating && cvFile ? 'Analyse du CV...' : creating ? 'Création...' : 'Créer'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </>
+              )}
             </AlertDialogContent>
           </AlertDialog>
         </div>
