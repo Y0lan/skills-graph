@@ -258,8 +258,8 @@ export default function RecruitPage() {
                 <div>
                   <Label>CV (optionnel)</Label>
                   {cvFile ? (
-                    <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm">
-                      <span className="flex-1 truncate">{cvFile.name}</span>
+                    <div className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm min-w-0 overflow-hidden">
+                      <span className="flex-1 truncate min-w-0">{cvFile.name}</span>
                       <button onClick={() => setCvFile(null)} className="text-muted-foreground hover:text-foreground">
                         <X className="h-4 w-4" />
                       </button>
