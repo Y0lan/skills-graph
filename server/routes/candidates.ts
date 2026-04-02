@@ -147,9 +147,13 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     try {
       const cvText = await extractCvText(file.buffer)
       const catalog = getSkillCategories()
-      const suggestions = await extractSkillsFromCv(cvText, catalog)
+      const result = await extractSkillsFromCv(cvText, catalog)
+      const suggestions = result?.ratings ?? null
       getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
         .run(cvText, suggestions ? JSON.stringify(suggestions) : null, id)
+      if (result?.failedCategories.length) {
+        console.warn(`[Candidate ${id}] CV extraction partial: ${result.failedCategories.length} categories failed`)
+      }
       suggestionsCount = suggestions ? Object.keys(suggestions).length : 0
     } catch (err) {
       console.error('[CV] Error processing CV for candidate', id, err)
