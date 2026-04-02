@@ -4,6 +4,7 @@ import { getDb, getRoleCategories } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, type CandidateRow } from '../lib/types.js'
+import { calculatePosteCompatibility, calculateEquipeCompatibility } from '../lib/compatibility.js'
 
 export const evaluateRouter = Router()
 
@@ -120,11 +121,40 @@ evaluateRouter.post('/:id/submit', (req, res) => {
 
   submitTransaction()
 
+  // Recalculate compatibility for any linked candidatures
+  const candidateRatings = ratings ?? safeJsonParse<Record<string, number>>(row.ratings, {})
+  const aiSuggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions, {})
+  const effectiveRatings = { ...aiSuggestions, ...candidateRatings }
+
+  const linkedCandidatures = db.prepare(`
+    SELECT c.id, c.poste_id, p.role_id
+    FROM candidatures c JOIN postes p ON p.id = c.poste_id
+    WHERE c.candidate_id = ?
+  `).all(req.params.id) as { id: string; poste_id: string; role_id: string }[]
+
+  for (const cand of linkedCandidatures) {
+    const tauxPoste = calculatePosteCompatibility(effectiveRatings, cand.role_id)
+    const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, cand.role_id)
+    db.prepare(
+      'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, updated_at = datetime(\'now\') WHERE id = ?'
+    ).run(tauxPoste, tauxEquipe, cand.id)
+
+    // Auto-advance to skill_radar_complete if currently at skill_radar_envoye
+    const currentStatut = db.prepare('SELECT statut FROM candidatures WHERE id = ?').get(cand.id) as { statut: string } | undefined
+    if (currentStatut?.statut === 'skill_radar_envoye') {
+      db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run('skill_radar_complete', cand.id)
+      db.prepare(`
+        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
+        VALUES (?, 'status_change', 'skill_radar_envoye', 'skill_radar_complete', 'Auto: évaluation soumise par le candidat', 'system')
+      `).run(cand.id)
+    }
+  }
+
   // Notify the lead who created this candidate (non-blocking)
   const baseUrl = process.env.BETTER_AUTH_URL || 'https://radar.sinapse.nc'
   const leadSlug = row.created_by
   if (leadSlug) {
-    // Derive lead email from slug (slug format: firstname-lastname → firstname.lastname@sinapse.nc)
     const leadEmail = leadSlug.replaceAll('-', '.') + '@sinapse.nc'
     sendCandidateSubmitted({
       to: leadEmail,

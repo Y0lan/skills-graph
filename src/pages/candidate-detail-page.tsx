@@ -126,6 +126,7 @@ export default function CandidateDetailPage() {
   const [transitionNotes, setTransitionNotes] = useState('')
   const [transitionSkipReason, setTransitionSkipReason] = useState('')
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
+  const [transitionSendEmail, setTransitionSendEmail] = useState(true)
   const [allowedTransitions, setAllowedTransitions] = useState<{
     allowedTransitions: string[]
     skipTransitions: { statut: string; skipped: string[] }[]
@@ -171,6 +172,7 @@ export default function CandidateDetailPage() {
     setTransitionNotes('')
     setTransitionSkipReason('')
     setTransitionFile(null)
+    setTransitionSendEmail(true)
   }, [allowedTransitions])
 
   const confirmTransition = useCallback(async () => {
@@ -208,6 +210,7 @@ export default function CandidateDetailPage() {
           statut: targetStatut,
           notes: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
+          sendEmail: targetStatut === 'skill_radar_envoye' ? transitionSendEmail : undefined,
         }),
       })
 
@@ -553,6 +556,19 @@ export default function CandidateDetailPage() {
                     rows={2}
                   />
                 </div>
+              )}
+
+              {/* Email checkbox for skill_radar_envoye */}
+              {transitionDialog?.targetStatut === 'skill_radar_envoye' && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={transitionSendEmail}
+                    onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                    className="rounded border-input"
+                  />
+                  <span className="text-sm">Envoyer le lien d'évaluation par email au candidat</span>
+                </label>
               )}
 
               {/* Aboro file upload */}

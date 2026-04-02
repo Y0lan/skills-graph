@@ -7,7 +7,7 @@ import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
-// import { sendCandidateInvite } from '../lib/email.js'
+import { sendCandidateInvite } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis } from '../lib/compatibility.js'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
@@ -431,7 +431,7 @@ protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
 
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', (req, res) => {
-  const { statut, notes, skipReason } = req.body
+  const { statut, notes, skipReason, sendEmail } = req.body
 
   if (!statut || typeof statut !== 'string') {
     res.status(400).json({ error: 'Statut requis' })
@@ -484,7 +484,36 @@ protectedRouter.patch('/candidatures/:id/status', (req, res) => {
     `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
   })()
 
-  res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip })
+  // Send evaluation email if transitioning to skill_radar_envoye and sendEmail is true
+  let emailSent = false
+  if (statut === 'skill_radar_envoye' && sendEmail) {
+    const candidateInfo = getDb().prepare(`
+      SELECT cand.name, cand.email, cand.role, cand.id as candidate_id
+      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.id = ?
+    `).get(req.params.id) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
+
+    if (candidateInfo?.email) {
+      const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
+      sendCandidateInvite({
+        to: candidateInfo.email,
+        candidateName: candidateInfo.name,
+        role: candidateInfo.role,
+        evaluationUrl: `${baseUrl}/evaluate/${candidateInfo.candidate_id}`,
+      }).then(() => {
+        // Log email event
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'email', ?, ?)
+        `).run(req.params.id, `Lien d'évaluation envoyé à ${candidateInfo.email}`, user.slug || 'unknown')
+      }).catch((err) => {
+        console.error('[Email] Failed to send evaluation link:', err)
+      })
+      emailSent = true
+    }
+  }
+
+  res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip, emailSent })
 })
 
 // Add note to candidature
