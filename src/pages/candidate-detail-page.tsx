@@ -9,7 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch } from 'lucide-react'
 
 interface CandidateDetail {
   id: string
@@ -36,6 +43,62 @@ interface CategoryInfo {
   skills: { id: string; label: string }[]
 }
 
+interface CandidatureInfo {
+  id: string
+  candidateId: string
+  posteId: string
+  posteTitre: string
+  postePole: string
+  statut: string
+  canal: string
+  tauxPoste: number | null
+  tauxEquipe: number | null
+  notesDirecteur: string | null
+  createdAt: string
+}
+
+interface CandidatureEvent {
+  id: number
+  type: string
+  statutFrom: string | null
+  statutTo: string | null
+  notes: string | null
+  createdBy: string
+  createdAt: string
+}
+
+const STATUT_LABELS: Record<string, string> = {
+  postule: 'Postulé',
+  preselectionne: 'Présélectionné',
+  skill_radar_envoye: 'Skill Radar envoyé',
+  skill_radar_complete: 'Skill Radar complété',
+  entretien_1: 'Entretien 1',
+  aboro: 'Test Âboro',
+  entretien_2: 'Entretien 2',
+  proposition: 'Proposition',
+  embauche: 'Embauché',
+  refuse: 'Refusé',
+}
+
+const STATUT_COLORS: Record<string, string> = {
+  postule: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  preselectionne: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
+  skill_radar_envoye: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300',
+  skill_radar_complete: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  entretien_1: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+  aboro: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+  entretien_2: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+  proposition: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+  embauche: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  refuse: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+}
+
+function formatDateShort(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
+  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+}
+
 export default function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [candidate, setCandidate] = useState<CandidateDetail | null>(null)
@@ -45,6 +108,9 @@ export default function CandidateDetailPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [notes, setNotes] = useState('')
   const [savingNotes, setSavingNotes] = useState(false)
+  const [candidatures, setCandidatures] = useState<CandidatureInfo[]>([])
+  const [events, setEvents] = useState<CandidatureEvent[]>([])
+  const [changingStatus, setChangingStatus] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -58,7 +124,48 @@ export default function CandidateDetailPage() {
       setCategories(catalog?.categories ?? [])
       setNotes(cand?.notes ?? '')
     }).finally(() => setLoading(false))
+
+    // Fetch candidatures for this candidate
+    fetch('/api/recruitment/candidatures', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((all: CandidatureInfo[]) => {
+        const mine = all.filter((c: CandidatureInfo) => c.candidateId === id)
+        setCandidatures(mine)
+        // Fetch events for the first candidature
+        if (mine.length > 0) {
+          fetch(`/api/recruitment/candidatures/${mine[0].id}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .then(detail => {
+              if (detail?.events) setEvents(detail.events)
+            })
+        }
+      })
+      .catch(() => {})
   }, [id])
+
+  const changeStatus = useCallback(async (candidatureId: string, newStatut: string) => {
+    setChangingStatus(true)
+    try {
+      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ statut: newStatut }),
+      })
+      if (!res.ok) throw new Error('Erreur')
+      setCandidatures(prev => prev.map(c =>
+        c.id === candidatureId ? { ...c, statut: newStatut } : c
+      ))
+      // Refresh events
+      const detail = await fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json())
+      if (detail?.events) setEvents(detail.events)
+      toast.success(`Statut changé : ${STATUT_LABELS[newStatut] ?? newStatut}`)
+    } catch {
+      toast.error('Erreur lors du changement de statut')
+    } finally {
+      setChangingStatus(false)
+    }
+  }, [])
 
   const generateAnalysis = useCallback(async () => {
     if (!id) return
@@ -178,6 +285,79 @@ export default function CandidateDetailPage() {
             <Badge variant="default" className="ml-auto bg-blue-600">Soumis</Badge>
           )}
         </div>
+
+        {/* Pipeline candidature(s) */}
+        {candidatures.length > 0 && (
+          <div className="mt-6 space-y-3">
+            {candidatures.map(c => (
+              <Card key={c.id}>
+                <CardContent className="py-4 px-5">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium">{c.posteTitre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.canal === 'cabinet_seyos' ? 'SEYOS' : c.canal === 'cabinet_altaide' ? 'Altaïde' : c.canal === 'site' ? 'sinapse.nc' : c.canal}
+                          {' · '}Candidature du {formatDateShort(c.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {c.tauxPoste != null && (
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Poste</p>
+                          <p className="text-sm font-bold">{c.tauxPoste}%</p>
+                        </div>
+                      )}
+                      {c.tauxEquipe != null && (
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Équipe</p>
+                          <p className="text-sm font-bold">{c.tauxEquipe}%</p>
+                        </div>
+                      )}
+
+                      <Select
+                        value={c.statut}
+                        onValueChange={(val) => changeStatus(c.id, val)}
+                        disabled={changingStatus}
+                      >
+                        <SelectTrigger className="w-44">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(STATUT_LABELS).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Timeline */}
+                  {events.length > 0 && (
+                    <div className="mt-3 pt-3 border-t">
+                      <div className="flex flex-wrap gap-2">
+                        {events.map(e => (
+                          <div key={e.id} className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <span>{formatDateShort(e.createdAt)}</span>
+                            {e.statutTo && (
+                              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
+                                {STATUT_LABELS[e.statutTo] ?? e.statutTo}
+                              </Badge>
+                            )}
+                            {e.notes && <span className="max-w-32 truncate">— {e.notes}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {isPending ? (
           <Card className="mt-8">

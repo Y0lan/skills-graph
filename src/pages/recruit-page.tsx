@@ -42,6 +42,7 @@ interface Role {
   id: string
   label: string
   categoryIds: string[]
+  createdBy: string
 }
 
 interface CatalogCategory {
@@ -310,7 +311,16 @@ export default function RecruitPage() {
                         className="flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
                         <option value="">— Choisir un rôle —</option>
-                        {roles.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                        {roles.filter(r => r.createdBy === 'system').length > 0 && (
+                          <optgroup label="Postes recrutement">
+                            {roles.filter(r => r.createdBy === 'system').map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                          </optgroup>
+                        )}
+                        {roles.filter(r => r.createdBy !== 'system').length > 0 && (
+                          <optgroup label="Rôles personnalisés">
+                            {roles.filter(r => r.createdBy !== 'system').map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </div>
                     <div>
@@ -378,12 +388,12 @@ export default function RecruitPage() {
             className="flex w-full items-center gap-2 text-sm font-medium"
           >
             <Settings className="h-4 w-4" />
-            Rôles prédéfinis ({roles.length})
+            Rôles personnalisés ({roles.filter(r => r.createdBy !== 'system').length})
             <span className="ml-auto text-xs text-muted-foreground">{showRoleManager ? '▾' : '▸'}</span>
           </button>
           {showRoleManager && (
             <div className="mt-3 space-y-2">
-              {roles.map(r => (
+              {roles.filter(r => r.createdBy !== 'system').map(r => (
                 <div key={r.id} className="flex items-center gap-2 rounded-md bg-background px-3 py-2 text-sm">
                   <span className="flex-1 font-medium">{r.label}</span>
                   <span className="text-xs text-muted-foreground">

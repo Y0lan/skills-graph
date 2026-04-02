@@ -179,7 +179,7 @@ export default function RecruitPipelinePage() {
   return (
     <div className="min-h-screen">
       <AppHeader />
-      <main className="container mx-auto max-w-6xl px-4 py-6">
+      <main className="container mx-auto max-w-6xl px-4 pt-16 pb-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
