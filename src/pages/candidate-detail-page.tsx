@@ -28,6 +28,12 @@ interface CandidateDetail {
   role: string
   roleId: string | null
   email: string | null
+  telephone: string | null
+  pays: string | null
+  linkedinUrl: string | null
+  githubUrl: string | null
+  hasCv: boolean
+  canal: string | null
   createdAt: string
   expiresAt: string
   ratings: Record<string, number>
@@ -360,34 +366,34 @@ export default function CandidateDetailPage() {
         </div>
 
         {/* Contact info */}
-        {(candidate.email || (candidate as Record<string, unknown>).telephone || (candidate as Record<string, unknown>).pays) && (
+        {(candidate.email || candidate.telephone || candidate.pays) && (
           <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
             {candidate.email && (
               <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground">
                 <Mail className="h-3.5 w-3.5" /> {candidate.email}
               </a>
             )}
-            {(candidate as Record<string, unknown>).telephone && (
+            {candidate.telephone && (
               <span className="flex items-center gap-1">
-                <Phone className="h-3.5 w-3.5" /> {(candidate as Record<string, unknown>).telephone as string}
+                <Phone className="h-3.5 w-3.5" /> {candidate.telephone}
               </span>
             )}
-            {(candidate as Record<string, unknown>).pays && (
+            {candidate.pays && (
               <span className="flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" /> {(candidate as Record<string, unknown>).pays as string}
+                <MapPin className="h-3.5 w-3.5" /> {candidate.pays}
               </span>
             )}
-            {(candidate as Record<string, unknown>).linkedinUrl && (
-              <a href={(candidate as Record<string, unknown>).linkedinUrl as string} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+            {candidate.linkedinUrl && (
+              <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
                 <Globe className="h-3.5 w-3.5" /> LinkedIn
               </a>
             )}
-            {(candidate as Record<string, unknown>).githubUrl && (
-              <a href={(candidate as Record<string, unknown>).githubUrl as string} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+            {candidate.githubUrl && (
+              <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
                 <Globe className="h-3.5 w-3.5" /> GitHub
               </a>
             )}
-            {(candidate as Record<string, unknown>).hasCv && (
+            {candidate.hasCv && (
               <Badge variant="outline" className="text-xs">CV uploadé</Badge>
             )}
           </div>
