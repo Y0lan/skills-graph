@@ -10,6 +10,7 @@ import { getSkillCategories } from '../lib/catalog.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis } from '../lib/compatibility.js'
 import { extractAboroText, extractAboroProfile } from '../lib/aboro-extraction.js'
+import archiver from 'archiver'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
 interface AuthUser {
@@ -703,6 +704,91 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`)
   res.setHeader('Content-Type', 'application/pdf')
   fs.createReadStream(doc.path).pipe(res)
+})
+
+// Download all documents as ZIP for a candidature
+protectedRouter.get('/candidatures/:id/documents/zip', async (req, res) => {
+  const candidature = getDb().prepare(`
+    SELECT c.id, c.statut, c.canal, c.taux_compatibilite_poste, c.taux_compatibilite_equipe,
+      cand.name, cand.email, cand.telephone, cand.pays,
+      p.titre AS poste_titre, p.pole AS poste_pole
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(req.params.id) as Record<string, unknown> | undefined
+
+  if (!candidature) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  const docs = getDb().prepare(
+    'SELECT id, type, filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
+  ).all(req.params.id) as { id: string; type: string; filename: string; path: string }[]
+
+  const events = getDb().prepare(
+    'SELECT type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events WHERE candidature_id = ? ORDER BY created_at ASC'
+  ).all(req.params.id) as { type: string; statut_from: string | null; statut_to: string | null; notes: string | null; created_by: string; created_at: string }[]
+
+  const fs = await import('fs')
+  const candidateName = (candidature.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_')
+
+  res.setHeader('Content-Type', 'application/zip')
+  res.setHeader('Content-Disposition', `attachment; filename="Dossier_${candidateName}.zip"`)
+
+  const archive = archiver('zip', { zlib: { level: 6 } })
+  archive.pipe(res)
+
+  // Add documents with numbered prefixes
+  let idx = 1
+  for (const doc of docs) {
+    if (fs.existsSync(doc.path)) {
+      const ext = doc.filename.split('.').pop() ?? 'pdf'
+      const prefix = String(idx).padStart(2, '0')
+      const typeName = doc.type === 'other' ? 'Document' : doc.type.charAt(0).toUpperCase() + doc.type.slice(1)
+      archive.file(doc.path, { name: `${prefix}_${typeName}_${candidateName}.${ext}` })
+      idx++
+    }
+  }
+
+  // Add resume.txt
+  const statusLabels: Record<string, string> = {
+    postule: 'Postulé', preselectionne: 'Présélectionné', skill_radar_envoye: 'Skill Radar envoyé',
+    skill_radar_complete: 'Skill Radar complété', entretien_1: 'Entretien 1', aboro: 'Test Âboro',
+    entretien_2: 'Entretien 2', proposition: 'Proposition', embauche: 'Embauché', refuse: 'Refusé',
+  }
+
+  let resume = `DOSSIER CANDIDAT — ${candidature.name}\n`
+  resume += `${'='.repeat(50)}\n\n`
+  resume += `Poste : ${candidature.poste_titre}\n`
+  resume += `Pôle : ${candidature.poste_pole}\n`
+  resume += `Statut : ${statusLabels[candidature.statut as string] ?? candidature.statut}\n`
+  resume += `Canal : ${candidature.canal}\n`
+  resume += `Email : ${candidature.email ?? '—'}\n`
+  resume += `Téléphone : ${candidature.telephone ?? '—'}\n`
+  resume += `Pays : ${candidature.pays ?? '—'}\n`
+  resume += `\nCompatibilité poste : ${candidature.taux_compatibilite_poste ?? '—'}%\n`
+  resume += `Compatibilité équipe : ${candidature.taux_compatibilite_equipe ?? '—'}%\n`
+  resume += `\nHISTORIQUE\n${'-'.repeat(30)}\n`
+  for (const e of events) {
+    const date = e.created_at.substring(0, 10)
+    if (e.statut_to) {
+      resume += `${date} | ${statusLabels[e.statut_to] ?? e.statut_to}`
+      if (e.notes) resume += ` — ${e.notes}`
+      resume += `\n`
+    } else if (e.notes) {
+      resume += `${date} | ${e.type} — ${e.notes}\n`
+    }
+  }
+  resume += `\nDOCUMENTS (${docs.length})\n${'-'.repeat(30)}\n`
+  for (const doc of docs) {
+    resume += `• ${doc.type}: ${doc.filename}\n`
+  }
+  resume += `\n---\nGénéré par Skill Radar — GIE SINAPSE\n`
+
+  archive.append(resume, { name: `_resume.txt` })
+  await archive.finalize()
 })
 
 // Dashboard summary stats
