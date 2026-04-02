@@ -248,6 +248,18 @@ export function initDatabase(): void {
     )
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS aboro_profiles (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      profile_json TEXT NOT NULL,
+      source_document_id TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_aboro_profiles_candidate ON aboro_profiles(candidate_id)')
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')

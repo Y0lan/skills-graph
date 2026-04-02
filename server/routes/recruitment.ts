@@ -9,6 +9,7 @@ import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis } from '../lib/compatibility.js'
+import { extractAboroText, extractAboroProfile } from '../lib/aboro-extraction.js'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
 interface AuthUser {
@@ -616,11 +617,61 @@ protectedRouter.post('/candidatures/:id/documents', async (req, res) => {
       VALUES (?, 'document', ?, ?)
     `).run(req.params.id, `Document uploadé: ${file.filename} (${docType})`, user.slug || 'unknown')
 
-    res.status(201).json({ id: docId, filename: file.filename, type: docType })
+    // Auto-extract Aboro profile if document type is 'aboro'
+    let aboroProfile = null
+    if (docType === 'aboro') {
+      try {
+        const pdfText = await extractAboroText(file.buffer)
+        const profile = await extractAboroProfile(pdfText)
+
+        // Find the candidate_id from the candidature
+        const candidature = getDb().prepare(
+          'SELECT candidate_id FROM candidatures WHERE id = ?'
+        ).get(req.params.id) as { candidate_id: string } | undefined
+
+        if (candidature) {
+          const profileId = crypto.randomUUID()
+          getDb().prepare(`
+            INSERT OR REPLACE INTO aboro_profiles (id, candidate_id, profile_json, source_document_id, created_by)
+            VALUES (?, ?, ?, ?, ?)
+          `).run(profileId, candidature.candidate_id, JSON.stringify(profile), docId, user.slug || 'unknown')
+
+          getDb().prepare(`
+            INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+            VALUES (?, 'document', ?, ?)
+          `).run(req.params.id, `Profil Âboro extrait : 20 traits, ${Object.keys(profile.talent_cloud).length} talents`, user.slug || 'unknown')
+
+          aboroProfile = profile
+        }
+      } catch (err) {
+        console.error('[Aboro extraction] Error:', err)
+        // Non-blocking: document is saved even if extraction fails
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'document', ?, ?)
+        `).run(req.params.id, `Extraction Âboro échouée : ${(err as Error).message}. Saisie manuelle possible.`, user.slug || 'unknown')
+      }
+    }
+
+    res.status(201).json({ id: docId, filename: file.filename, type: docType, aboroProfile })
   } catch (err) {
     console.error('[Document upload] Error:', err)
     res.status(500).json({ error: 'Erreur upload' })
   }
+})
+
+// Get Aboro profile for a candidate
+protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
+  const profile = getDb().prepare(
+    'SELECT profile_json, created_at FROM aboro_profiles WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).get(req.params.candidateId) as { profile_json: string; created_at: string } | undefined
+
+  if (!profile) {
+    res.json({ profile: null })
+    return
+  }
+
+  res.json({ profile: JSON.parse(profile.profile_json), createdAt: profile.created_at })
 })
 
 // List documents for a candidature
