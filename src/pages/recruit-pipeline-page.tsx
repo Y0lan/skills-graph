@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Users, Building2, ChevronRight } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertCircle } from 'lucide-react'
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
@@ -51,6 +51,7 @@ interface Candidature {
   notesDirecteur: string | null
   createdAt: string
   updatedAt: string
+  lastEventAt: string | null
 }
 
 interface DashboardStats {
@@ -373,6 +374,15 @@ export default function RecruitPipelinePage() {
                           <span>{formatDate(c.createdAt)}</span>
                           {c.hasCv && <Badge variant="outline" className="text-[10px] px-1 py-0">CV</Badge>}
                           {c.evaluationSubmitted && <Badge variant="outline" className="text-[10px] px-1 py-0">Évalué</Badge>}
+                          {c.lastEventAt && (() => {
+                            const daysSince = Math.floor((Date.now() - new Date(c.lastEventAt.includes('T') ? c.lastEventAt : c.lastEventAt.replace(' ', 'T') + 'Z').getTime()) / (1000 * 60 * 60 * 24))
+                            return daysSince >= 7 && !['embauche', 'refuse'].includes(c.statut) ? (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-500 text-amber-600 dark:text-amber-400">
+                                <AlertCircle className="h-2.5 w-2.5 mr-0.5" />
+                                {daysSince}j
+                              </Badge>
+                            ) : null
+                          })()}
                         </div>
                       </div>
 

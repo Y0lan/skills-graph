@@ -10,13 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin } from 'lucide-react'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Input } from '@/components/ui/input'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle } from 'lucide-react'
 
 interface CandidateDetail {
   id: string
@@ -112,6 +116,21 @@ export default function CandidateDetailPage() {
   const [candidatures, setCandidatures] = useState<CandidatureInfo[]>([])
   const [events, setEvents] = useState<CandidatureEvent[]>([])
   const [changingStatus, setChangingStatus] = useState(false)
+  const [transitionDialog, setTransitionDialog] = useState<{
+    candidatureId: string
+    targetStatut: string
+    isSkip: boolean
+    skipped: string[]
+    notesRequired: boolean
+  } | null>(null)
+  const [transitionNotes, setTransitionNotes] = useState('')
+  const [transitionSkipReason, setTransitionSkipReason] = useState('')
+  const [transitionFile, setTransitionFile] = useState<File | null>(null)
+  const [allowedTransitions, setAllowedTransitions] = useState<{
+    allowedTransitions: string[]
+    skipTransitions: { statut: string; skipped: string[] }[]
+    notesRequired: string[]
+  } | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -132,41 +151,91 @@ export default function CandidateDetailPage() {
       .then((all: CandidatureInfo[]) => {
         const mine = all.filter((c: CandidatureInfo) => c.candidateId === id)
         setCandidatures(mine)
-        // Fetch events for the first candidature
         if (mine.length > 0) {
-          fetch(`/api/recruitment/candidatures/${mine[0].id}`, { credentials: 'include' })
-            .then(r => r.ok ? r.json() : null)
-            .then(detail => {
-              if (detail?.events) setEvents(detail.events)
-            })
+          // Fetch events + allowed transitions for the first candidature
+          Promise.all([
+            fetch(`/api/recruitment/candidatures/${mine[0].id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+            fetch(`/api/recruitment/candidatures/${mine[0].id}/transitions`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+          ]).then(([detail, transitions]) => {
+            if (detail?.events) setEvents(detail.events)
+            if (transitions) setAllowedTransitions(transitions)
+          })
         }
       })
       .catch(() => {})
   }, [id])
 
-  const changeStatus = useCallback(async (candidatureId: string, newStatut: string) => {
+  const openTransitionDialog = useCallback((candidatureId: string, targetStatut: string, isSkip = false, skipped: string[] = []) => {
+    const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
+    setTransitionDialog({ candidatureId, targetStatut, isSkip, skipped, notesRequired })
+    setTransitionNotes('')
+    setTransitionSkipReason('')
+    setTransitionFile(null)
+  }, [allowedTransitions])
+
+  const confirmTransition = useCallback(async () => {
+    if (!transitionDialog) return
+    const { candidatureId, targetStatut, isSkip, notesRequired } = transitionDialog
+
+    if (notesRequired && !transitionNotes.trim()) {
+      toast.error('Les notes sont obligatoires pour cette transition')
+      return
+    }
+    if (isSkip && !transitionSkipReason.trim()) {
+      toast.error('Raison requise pour sauter une étape')
+      return
+    }
+
     setChangingStatus(true)
     try {
+      // Upload Aboro document if transitioning to aboro with a file
+      if (targetStatut === 'aboro' && transitionFile) {
+        const formData = new FormData()
+        formData.append('file', transitionFile)
+        formData.append('type', 'aboro')
+        await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        })
+      }
+
       const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ statut: newStatut }),
+        body: JSON.stringify({
+          statut: targetStatut,
+          notes: transitionNotes.trim() || undefined,
+          skipReason: isSkip ? transitionSkipReason.trim() : undefined,
+        }),
       })
-      if (!res.ok) throw new Error('Erreur')
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Erreur')
+      }
+
       setCandidatures(prev => prev.map(c =>
-        c.id === candidatureId ? { ...c, statut: newStatut } : c
+        c.id === candidatureId ? { ...c, statut: targetStatut } : c
       ))
-      // Refresh events
-      const detail = await fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json())
+
+      // Refresh events + transitions
+      const [detail, transitions] = await Promise.all([
+        fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json()),
+        fetch(`/api/recruitment/candidatures/${candidatureId}/transitions`, { credentials: 'include' }).then(r => r.json()),
+      ])
       if (detail?.events) setEvents(detail.events)
-      toast.success(`Statut changé : ${STATUT_LABELS[newStatut] ?? newStatut}`)
-    } catch {
-      toast.error('Erreur lors du changement de statut')
+      if (transitions) setAllowedTransitions(transitions)
+
+      toast.success(`Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
+      setTransitionDialog(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')
     } finally {
       setChangingStatus(false)
     }
-  }, [])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile])
 
   const generateAnalysis = useCallback(async () => {
     if (!id) return
@@ -327,6 +396,7 @@ export default function CandidateDetailPage() {
             {candidatures.map(c => (
               <Card key={c.id}>
                 <CardContent className="py-4 px-5">
+                  {/* Header: poste + current status + scores */}
                   <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div className="flex items-center gap-3">
                       <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -352,37 +422,72 @@ export default function CandidateDetailPage() {
                           <p className="text-sm font-bold">{c.tauxEquipe}%</p>
                         </div>
                       )}
-
-                      <Select
-                        value={c.statut}
-                        onValueChange={(val) => changeStatus(c.id, val)}
-                        disabled={changingStatus}
-                      >
-                        <SelectTrigger className="w-44">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(STATUT_LABELS).map(([k, v]) => (
-                            <SelectItem key={k} value={k}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Badge className={`text-sm px-3 py-1 ${STATUT_COLORS[c.statut] ?? ''}`}>
+                        {STATUT_LABELS[c.statut] ?? c.statut}
+                      </Badge>
                     </div>
                   </div>
 
-                  {/* Timeline */}
+                  {/* Transition actions */}
+                  {allowedTransitions && (allowedTransitions.allowedTransitions.length > 0 || allowedTransitions.skipTransitions.length > 0) && (
+                    <div className="mt-4 pt-3 border-t">
+                      <p className="text-xs text-muted-foreground mb-2">Actions suivantes :</p>
+                      <div className="flex flex-wrap gap-2">
+                        {allowedTransitions.allowedTransitions.filter(s => s !== 'refuse').map(s => (
+                          <Button
+                            key={s}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openTransitionDialog(c.id, s)}
+                            disabled={changingStatus}
+                          >
+                            <ChevronRight className="h-3 w-3 mr-1" />
+                            {STATUT_LABELS[s] ?? s}
+                          </Button>
+                        ))}
+                        {allowedTransitions.skipTransitions.map(st => (
+                          <Button
+                            key={st.statut}
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground"
+                            onClick={() => openTransitionDialog(c.id, st.statut, true, st.skipped)}
+                            disabled={changingStatus}
+                          >
+                            {STATUT_LABELS[st.statut] ?? st.statut}
+                            <span className="text-[10px] ml-1">(sauter {st.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')})</span>
+                          </Button>
+                        ))}
+                        {allowedTransitions.allowedTransitions.includes('refuse') && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="ml-auto"
+                            onClick={() => openTransitionDialog(c.id, 'refuse')}
+                            disabled={changingStatus}
+                          >
+                            Refuser
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Event timeline */}
                   {events.length > 0 && (
                     <div className="mt-3 pt-3 border-t">
-                      <div className="flex flex-wrap gap-2">
+                      <p className="text-xs text-muted-foreground mb-2">Historique :</p>
+                      <div className="space-y-1.5">
                         {events.map(e => (
-                          <div key={e.id} className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <span>{formatDateShort(e.createdAt)}</span>
+                          <div key={e.id} className="flex items-start gap-2 text-xs">
+                            <span className="text-muted-foreground shrink-0 w-12">{formatDateShort(e.createdAt)}</span>
                             {e.statutTo && (
-                              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
+                              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
                                 {STATUT_LABELS[e.statutTo] ?? e.statutTo}
                               </Badge>
                             )}
-                            {e.notes && <span className="max-w-32 truncate">— {e.notes}</span>}
+                            {e.type === 'document' && <Upload className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />}
+                            {e.notes && <span className="text-muted-foreground">{e.notes}</span>}
                           </div>
                         ))}
                       </div>
@@ -393,6 +498,95 @@ export default function CandidateDetailPage() {
             ))}
           </div>
         )}
+
+        {/* Transition confirmation dialog */}
+        <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) setTransitionDialog(null) }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {transitionDialog?.targetStatut === 'refuse'
+                  ? 'Refuser cette candidature ?'
+                  : transitionDialog?.targetStatut === 'embauche'
+                    ? 'Confirmer l\'embauche ?'
+                    : `Passer à : ${STATUT_LABELS[transitionDialog?.targetStatut ?? ''] ?? transitionDialog?.targetStatut}`
+                }
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {transitionDialog?.isSkip && (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 mb-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Vous sautez : {transitionDialog.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')}
+                  </span>
+                )}
+                {transitionDialog?.targetStatut === 'embauche' && (
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Cette action est définitive.</span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <div className="space-y-3 py-2">
+              {/* Notes */}
+              <div>
+                <label className="text-sm font-medium">
+                  Notes {transitionDialog?.notesRequired ? '(obligatoire)' : '(optionnel)'}
+                </label>
+                <Textarea
+                  value={transitionNotes}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionNotes(e.target.value)}
+                  placeholder={
+                    transitionDialog?.targetStatut === 'refuse' ? 'Raison du refus...' :
+                    transitionDialog?.targetStatut === 'embauche' ? 'Notes sur l\'embauche...' :
+                    'Notes sur cette étape...'
+                  }
+                  rows={3}
+                />
+              </div>
+
+              {/* Skip reason */}
+              {transitionDialog?.isSkip && (
+                <div>
+                  <label className="text-sm font-medium">Raison du saut (obligatoire)</label>
+                  <Textarea
+                    value={transitionSkipReason}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipReason(e.target.value)}
+                    placeholder="Pourquoi sauter cette étape ?"
+                    rows={2}
+                  />
+                </div>
+              )}
+
+              {/* Aboro file upload */}
+              {transitionDialog?.targetStatut === 'aboro' && (
+                <div>
+                  <label className="text-sm font-medium">Rapport Âboro (PDF)</label>
+                  <Input
+                    type="file"
+                    accept=".pdf"
+                    onChange={(e) => setTransitionFile(e.target.files?.[0] ?? null)}
+                    className="mt-1"
+                  />
+                  {!transitionFile && (
+                    <p className="text-xs text-muted-foreground mt-1">Optionnel. Vous pourrez l'ajouter plus tard.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={changingStatus}>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmTransition}
+                disabled={changingStatus}
+                className={transitionDialog?.targetStatut === 'refuse' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''}
+              >
+                {changingStatus ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {transitionDialog?.targetStatut === 'refuse' ? 'Refuser' :
+                 transitionDialog?.targetStatut === 'embauche' ? 'Confirmer l\'embauche' :
+                 'Confirmer'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {isPending ? (
           <Card className="mt-8">

@@ -220,7 +220,8 @@ protectedRouter.get('/candidatures', (req, res) => {
   let sql = `
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
       cand.ai_suggestions, cand.submitted_at as evaluation_submitted,
-      p.titre as poste_titre, p.pole as poste_pole
+      p.titre as poste_titre, p.pole as poste_pole,
+      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at
     FROM candidatures c
     JOIN candidates cand ON cand.id = c.candidate_id
     JOIN postes p ON p.id = c.poste_id
@@ -266,6 +267,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     notesDirecteur: r.notes_directeur,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    lastEventAt: (r as Record<string, unknown>).last_event_at as string | null,
   })))
 })
 
@@ -343,12 +345,96 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
   })
 })
 
-// Change candidature status
+// ─── State machine ──────────────────────────────────────────────────
+const TRANSITION_MAP: Record<string, string[]> = {
+  postule: ['preselectionne', 'refuse'],
+  preselectionne: ['skill_radar_envoye', 'entretien_1', 'refuse'],
+  skill_radar_envoye: ['skill_radar_complete', 'refuse'],
+  skill_radar_complete: ['entretien_1', 'refuse'],
+  entretien_1: ['aboro', 'entretien_2', 'refuse'],
+  aboro: ['entretien_2', 'refuse'],
+  entretien_2: ['proposition', 'refuse'],
+  proposition: ['embauche', 'refuse'],
+  embauche: [],
+  refuse: [],
+}
+
+// Steps that can be skipped (with a logged reason)
+const SKIPPABLE_STEPS = new Set(['aboro', 'entretien_2', 'skill_radar_envoye'])
+
+// Notes required for these transitions
+const NOTES_REQUIRED = new Set(['refuse', 'embauche'])
+
+function getAllowedTransitions(currentStatut: string): string[] {
+  return TRANSITION_MAP[currentStatut] ?? []
+}
+
+function isSkipTransition(from: string, to: string): boolean {
+  const directAllowed = TRANSITION_MAP[from] ?? []
+  if (directAllowed.includes(to)) return false
+  // Check if we're skipping intermediate steps
+  const allStatuts = Object.keys(TRANSITION_MAP)
+  const fromIdx = allStatuts.indexOf(from)
+  const toIdx = allStatuts.indexOf(to)
+  if (toIdx <= fromIdx || to === 'refuse') return false
+  // Find skipped steps between from and to
+  for (let i = fromIdx + 1; i < toIdx; i++) {
+    if (!SKIPPABLE_STEPS.has(allStatuts[i])) return false
+  }
+  return true
+}
+
+function getSkippedSteps(from: string, to: string): string[] {
+  const allStatuts = Object.keys(TRANSITION_MAP)
+  const fromIdx = allStatuts.indexOf(from)
+  const toIdx = allStatuts.indexOf(to)
+  const skipped: string[] = []
+  for (let i = fromIdx + 1; i < toIdx; i++) {
+    skipped.push(allStatuts[i])
+  }
+  return skipped
+}
+
+// Get allowed transitions for a candidature (includes skip targets)
+protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
+  const current = getDb().prepare('SELECT statut FROM candidatures WHERE id = ?').get(req.params.id) as { statut: string } | undefined
+  if (!current) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  const direct = getAllowedTransitions(current.statut)
+
+  // Find skip targets: look ahead past skippable steps
+  const allStatuts = Object.keys(TRANSITION_MAP)
+  const currentIdx = allStatuts.indexOf(current.statut)
+  const skipTargets: { statut: string; skipped: string[] }[] = []
+
+  if (currentIdx >= 0) {
+    for (let i = currentIdx + 2; i < allStatuts.length; i++) {
+      const target = allStatuts[i]
+      if (target === 'refuse') continue
+      if (direct.includes(target)) continue
+      if (isSkipTransition(current.statut, target)) {
+        skipTargets.push({ statut: target, skipped: getSkippedSteps(current.statut, target) })
+      }
+    }
+  }
+
+  res.json({
+    currentStatut: current.statut,
+    allowedTransitions: direct,
+    skipTransitions: skipTargets,
+    notesRequired: direct.filter(s => NOTES_REQUIRED.has(s)),
+  })
+})
+
+// Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', (req, res) => {
-  const { statut, notes } = req.body
-  const validStatuts = ['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition', 'embauche', 'refuse']
-  if (!statut || !validStatuts.includes(statut)) {
-    res.status(400).json({ error: `Statut invalide. Valeurs acceptées: ${validStatuts.join(', ')}` })
+  const { statut, notes, skipReason } = req.body
+
+  if (!statut || typeof statut !== 'string') {
+    res.status(400).json({ error: 'Statut requis' })
     return
   }
 
@@ -358,16 +444,47 @@ protectedRouter.patch('/candidatures/:id/status', (req, res) => {
     return
   }
 
+  const allowed = getAllowedTransitions(current.statut)
+  const isSkip = isSkipTransition(current.statut, statut)
+
+  if (!allowed.includes(statut) && !isSkip) {
+    res.status(400).json({
+      error: `Transition ${current.statut} → ${statut} non autorisée`,
+      allowedTransitions: allowed,
+      currentStatut: current.statut,
+    })
+    return
+  }
+
+  // Validate required notes
+  if (NOTES_REQUIRED.has(statut) && (!notes || !notes.trim())) {
+    res.status(400).json({ error: `Les notes sont obligatoires pour le statut "${statut}"` })
+    return
+  }
+
+  // Validate skip reason
+  if (isSkip && (!skipReason || !skipReason.trim())) {
+    const skipped = getSkippedSteps(current.statut, statut)
+    res.status(400).json({ error: `Raison requise pour sauter : ${skipped.join(', ')}` })
+    return
+  }
+
   const user = getUser(req)
-  getDb().prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ?').run(statut, req.params.id)
 
-  // Log event
-  getDb().prepare(`
-    INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
-    VALUES (?, 'status_change', ?, ?, ?, ?)
-  `).run(req.params.id, current.statut, statut, notes || null, user.slug || 'unknown')
+  getDb().transaction(() => {
+    getDb().prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ?').run(statut, req.params.id)
 
-  res.json({ ok: true, previousStatut: current.statut, newStatut: statut })
+    const eventNotes = isSkip
+      ? `[Saut: ${getSkippedSteps(current.statut, statut).join(' → ')}] ${skipReason?.trim() ?? ''}\n${notes?.trim() ?? ''}`.trim()
+      : notes?.trim() || null
+
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
+      VALUES (?, 'status_change', ?, ?, ?, ?)
+    `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
+  })()
+
+  res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip })
 })
 
 // Add note to candidature
@@ -424,6 +541,66 @@ protectedRouter.post('/candidatures/:id/recalculate', (req, res) => {
   ).run(tauxPoste, tauxEquipe, req.params.id)
 
   res.json({ tauxPoste, tauxEquipe })
+})
+
+// Upload document for a candidature (Aboro PDF, etc.)
+protectedRouter.post('/candidatures/:id/documents', async (req, res) => {
+  const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!exists) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  try {
+    const parsed = await parseMultipartIntake(req)
+    const file = parsed.files.get('file')
+    if (!file) {
+      res.status(400).json({ error: 'Fichier requis' })
+      return
+    }
+
+    const docType = parsed.fields.type || 'other'
+    const dataDir = process.env.DATA_DIR || 'server/data'
+    const docDir = `${dataDir}/documents/${req.params.id}`
+
+    // Create directory
+    const fs = await import('fs')
+    const path = await import('path')
+    fs.mkdirSync(docDir, { recursive: true })
+
+    // Save file
+    const safeFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const filePath = path.join(docDir, safeFilename)
+    fs.writeFileSync(filePath, file.buffer)
+
+    // Save metadata
+    const docId = crypto.randomUUID()
+    const user = getUser(req)
+    getDb().prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(docId, req.params.id, docType, file.filename, filePath, user.slug || 'unknown')
+
+    // Log event
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+      VALUES (?, 'document', ?, ?)
+    `).run(req.params.id, `Document uploadé: ${file.filename} (${docType})`, user.slug || 'unknown')
+
+    res.status(201).json({ id: docId, filename: file.filename, type: docType })
+  } catch (err) {
+    console.error('[Document upload] Error:', err)
+    res.status(500).json({ error: 'Erreur upload' })
+  }
+})
+
+// List documents for a candidature
+protectedRouter.get('/candidatures/:id/documents', (req, res) => {
+  const docs = getDb().prepare(
+    'SELECT id, type, filename, uploaded_by, created_at FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC'
+  ).all(req.params.id) as { id: string; type: string; filename: string; uploaded_by: string; created_at: string }[]
+
+  res.json(docs)
 })
 
 // Dashboard summary stats

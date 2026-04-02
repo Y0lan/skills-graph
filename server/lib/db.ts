@@ -235,9 +235,23 @@ export function initDatabase(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidature_documents (
+      id TEXT PRIMARY KEY,
+      candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+      type TEXT NOT NULL DEFAULT 'other'
+        CHECK(type IN ('aboro', 'cv', 'lettre', 'other')),
+      filename TEXT NOT NULL,
+      path TEXT NOT NULL,
+      uploaded_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_documents ON candidature_documents(candidature_id)')
 
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
