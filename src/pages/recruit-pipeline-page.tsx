@@ -100,13 +100,16 @@ const STATUT_COLORS: Record<string, string> = {
 }
 
 const CANAL_LABELS: Record<string, string> = {
-  cabinet_seyos: 'SEYOS',
-  cabinet_altaide: 'Altaïde',
+  cabinet: 'Cabinet',
   site: 'sinapse.nc',
-  local_nc: 'NC direct',
+  candidature_directe: 'Candidature directe',
   reseau: 'Réseau',
-  direct: 'Direct',
 }
+
+// const ORIGINE_LABELS: Record<string, string> = {
+//   france: 'France',
+//   nc: 'Nouvelle-Calédonie',
+// }
 
 function CompatibilityBar({ value, label }: { value: number | null; label: string }) {
   if (value == null) return <span className="text-xs text-muted-foreground">—</span>

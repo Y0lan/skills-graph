@@ -104,6 +104,13 @@ const STATUT_COLORS: Record<string, string> = {
   refuse: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
 }
 
+const CANAL_LABELS: Record<string, string> = {
+  cabinet: 'Cabinet',
+  site: 'sinapse.nc',
+  candidature_directe: 'Candidature directe',
+  reseau: 'Réseau',
+}
+
 function formatDateShort(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
@@ -412,7 +419,7 @@ export default function CandidateDetailPage() {
                       <div>
                         <p className="text-sm font-medium">{c.posteTitre}</p>
                         <p className="text-xs text-muted-foreground">
-                          {c.canal === 'cabinet_seyos' ? 'SEYOS' : c.canal === 'cabinet_altaide' ? 'Altaïde' : c.canal === 'site' ? 'sinapse.nc' : c.canal}
+                          {CANAL_LABELS[c.canal] ?? c.canal}
                           {' · '}Candidature du {formatDateShort(c.createdAt)}
                         </p>
                       </div>

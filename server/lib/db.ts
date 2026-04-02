@@ -185,8 +185,8 @@ export function initDatabase(): void {
   }
 
   // Add telephone and pays columns to candidates (for Drupal intake)
-  // Candidate contact fields for Drupal intake (lettre_text deferred to Phase 2)
-  for (const col of ['telephone TEXT', 'pays TEXT', 'linkedin_url TEXT', 'github_url TEXT', 'canal TEXT']) {
+  // Candidate contact fields for Drupal intake
+  for (const col of ['telephone TEXT', 'pays TEXT', 'linkedin_url TEXT', 'github_url TEXT', 'canal TEXT', 'origine TEXT']) {
     try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
   }
 
@@ -214,7 +214,7 @@ export function initDatabase(): void {
       statut TEXT NOT NULL DEFAULT 'postule'
         CHECK(statut IN ('postule','preselectionne','skill_radar_envoye','skill_radar_complete','entretien_1','aboro','entretien_2','proposition','embauche','refuse')),
       canal TEXT NOT NULL DEFAULT 'site'
-        CHECK(canal IN ('cabinet_seyos','cabinet_altaide','site','local_nc','reseau','direct')),
+        CHECK(canal IN ('cabinet','site','candidature_directe','reseau')),
       notes_directeur TEXT,
       taux_compatibilite_poste REAL,
       taux_compatibilite_equipe REAL,
