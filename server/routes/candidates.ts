@@ -228,6 +228,7 @@ candidatesRouter.delete('/:id', (req, res) => {
 })
 
 function formatCandidate(row: CandidateRow) {
+  const r = row as Record<string, unknown>
   return {
     id: row.id,
     name: row.name,
@@ -244,5 +245,11 @@ function formatCandidate(row: CandidateRow) {
     aiReport: row.ai_report,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     notes: row.notes,
+    telephone: r.telephone as string | null ?? null,
+    pays: r.pays as string | null ?? null,
+    linkedinUrl: r.linkedin_url as string | null ?? null,
+    githubUrl: r.github_url as string | null ?? null,
+    canal: r.canal as string | null ?? null,
+    hasCv: !!row.cv_text,
   }
 }

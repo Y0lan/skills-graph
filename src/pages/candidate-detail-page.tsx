@@ -16,12 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch } from 'lucide-react'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin } from 'lucide-react'
 
 interface CandidateDetail {
   id: string
   name: string
   role: string
+  roleId: string | null
   email: string | null
   createdAt: string
   expiresAt: string
@@ -285,6 +286,40 @@ export default function CandidateDetailPage() {
             <Badge variant="default" className="ml-auto bg-blue-600">Soumis</Badge>
           )}
         </div>
+
+        {/* Contact info */}
+        {(candidate.email || (candidate as Record<string, unknown>).telephone || (candidate as Record<string, unknown>).pays) && (
+          <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
+            {candidate.email && (
+              <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground">
+                <Mail className="h-3.5 w-3.5" /> {candidate.email}
+              </a>
+            )}
+            {(candidate as Record<string, unknown>).telephone && (
+              <span className="flex items-center gap-1">
+                <Phone className="h-3.5 w-3.5" /> {(candidate as Record<string, unknown>).telephone as string}
+              </span>
+            )}
+            {(candidate as Record<string, unknown>).pays && (
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" /> {(candidate as Record<string, unknown>).pays as string}
+              </span>
+            )}
+            {(candidate as Record<string, unknown>).linkedinUrl && (
+              <a href={(candidate as Record<string, unknown>).linkedinUrl as string} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                <Globe className="h-3.5 w-3.5" /> LinkedIn
+              </a>
+            )}
+            {(candidate as Record<string, unknown>).githubUrl && (
+              <a href={(candidate as Record<string, unknown>).githubUrl as string} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                <Globe className="h-3.5 w-3.5" /> GitHub
+              </a>
+            )}
+            {(candidate as Record<string, unknown>).hasCv && (
+              <Badge variant="outline" className="text-xs">CV uploadé</Badge>
+            )}
+          </div>
+        )}
 
         {/* Pipeline candidature(s) */}
         {candidatures.length > 0 && (
