@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
 import type { WizardNavigation } from '@/components/form/skill-form-wizard'
@@ -211,6 +211,16 @@ export default function CandidateFormPage() {
           roleCategories={formData.roleCategories ?? undefined}
         />
       </div>
+      <footer className="border-t bg-muted/30 mt-12">
+        <div className="container mx-auto max-w-3xl px-4 py-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>GIE SINAPSE — Skill Radar</span>
+          <div className="flex items-center gap-3">
+            <Link to="/mentions-legales" className="hover:text-foreground">Mentions légales</Link>
+            <Link to="/confidentialite" className="hover:text-foreground">Confidentialité</Link>
+            <a href="https://sinapse.nc" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">sinapse.nc</a>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
