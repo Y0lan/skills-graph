@@ -632,6 +632,28 @@ protectedRouter.get('/candidatures/:id/documents', (req, res) => {
   res.json(docs)
 })
 
+// Download a document
+protectedRouter.get('/documents/:docId/download', async (req, res) => {
+  const doc = getDb().prepare(
+    'SELECT filename, path FROM candidature_documents WHERE id = ?'
+  ).get(req.params.docId) as { filename: string; path: string } | undefined
+
+  if (!doc) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  const fs = await import('fs')
+  if (!fs.existsSync(doc.path)) {
+    res.status(404).json({ error: 'Fichier introuvable sur le disque' })
+    return
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`)
+  res.setHeader('Content-Type', 'application/pdf')
+  fs.createReadStream(doc.path).pipe(res)
+})
+
 // Dashboard summary stats
 protectedRouter.get('/dashboard', (_req, res) => {
   const poles = getDb().prepare(`
