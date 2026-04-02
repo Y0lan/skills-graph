@@ -11,6 +11,9 @@ import { Toaster } from '@/components/ui/sonner'
 const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
 const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
+const RecruitPage = lazy(() => import('@/pages/recruit-page'))
+const CandidateDetailPage = lazy(() => import('@/pages/candidate-detail-page'))
+const CandidateFormPage = lazy(() => import('@/pages/candidate-form-page'))
 
 function App() {
   return (
@@ -32,6 +35,9 @@ function App() {
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
                 <Route path="/dashboard/:slug?" element={<ProtectedRoute checkOwnership={false}><DashboardPage /></ProtectedRoute>} />
+                <Route path="/recruit" element={<ProtectedRoute checkOwnership={false}><RecruitPage /></ProtectedRoute>} />
+                <Route path="/recruit/:id" element={<ProtectedRoute checkOwnership={false}><CandidateDetailPage /></ProtectedRoute>} />
+                <Route path="/evaluate/:id" element={<CandidateFormPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>

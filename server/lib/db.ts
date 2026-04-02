@@ -140,16 +140,84 @@ export function initDatabase(): void {
     }
   }
 
+  // Predefined roles for recruitment
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS role_categories (
+      role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+      category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      PRIMARY KEY (role_id, category_id)
+    );
+  `)
+
+  // Candidates table (recruitment feature)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT '',
+      role_id TEXT REFERENCES roles(id),
+      email TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT DEFAULT (datetime('now', '+30 days')),
+      ratings TEXT NOT NULL DEFAULT '{}',
+      experience TEXT NOT NULL DEFAULT '{}',
+      skipped_categories TEXT NOT NULL DEFAULT '[]',
+      submitted_at TEXT,
+      ai_report TEXT,
+      notes TEXT,
+      cv_text TEXT,
+      ai_suggestions TEXT
+    )
+  `)
+
+  // Idempotent column additions for existing candidates tables
+  for (const col of ['role_id TEXT', 'cv_text TEXT', 'ai_suggestions TEXT']) {
+    try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
+  }
+
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty or catalog version changed
+  // NOTE: This MUST run BEFORE role seeding (roles reference categories via FK)
   db.exec('CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT)')
-  const CATALOG_VERSION = '2.1.0'
+  const CATALOG_VERSION = '4.0.0'
   const currentVersion = (db.prepare("SELECT value FROM catalog_meta WHERE key = 'version'").get() as { value: string } | undefined)?.value
   const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
   if (count === 0 || currentVersion !== CATALOG_VERSION) {
     seedCatalog(db)
     db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', ?)").run(CATALOG_VERSION)
+  }
+
+  // Seed default roles if roles table is empty (AFTER catalog seed — FK dependency)
+  const roleCount = (db.prepare('SELECT COUNT(*) as c FROM roles').get() as { c: number }).c
+  if (roleCount === 0) {
+    const seedRoles: { id: string; label: string; categories: string[] }[] = [
+      { id: 'dev-full-stack', label: 'Développeur Full Stack', categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'soft-skills-delivery'] },
+      { id: 'devops', label: 'Ingénieur DevOps', categories: ['core-engineering', 'platform-engineering', 'observability-reliability', 'security-compliance'] },
+      { id: 'qa-engineer', label: 'QA Engineer', categories: ['qa-test-engineering', 'core-engineering', 'observability-reliability'] },
+      { id: 'analyste-fonctionnel', label: 'Analyste Fonctionnel', categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training'] },
+    ]
+    const insertRole = db.prepare('INSERT INTO roles (id, label, created_by) VALUES (?, ?, ?)')
+    const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
+    const seedTransaction = db.transaction(() => {
+      for (const role of seedRoles) {
+        insertRole.run(role.id, role.label, 'system')
+        for (const catId of role.categories) {
+          insertCat.run(role.id, catId)
+        }
+      }
+    })
+    seedTransaction()
+    console.log(`[DB] Seeded ${seedRoles.length} default roles`)
   }
 
   // One-time migration from ratings.json
@@ -261,4 +329,83 @@ export function submitEvaluation(slug: string): MemberEvaluation | null {
 
 export function deleteEvaluation(slug: string): void {
   db.prepare('DELETE FROM evaluations WHERE slug = ?').run(slug)
+}
+
+// ─── Roles ────────────────────────────────────────────────────
+
+import type { RoleRow, RoleCategoryRow } from './types.js'
+
+export interface RoleWithCategories {
+  id: string
+  label: string
+  createdBy: string
+  createdAt: string
+  categoryIds: string[]
+}
+
+export function getRoles(): RoleWithCategories[] {
+  const roles = db.prepare('SELECT * FROM roles WHERE deleted_at IS NULL ORDER BY label').all() as RoleRow[]
+  const allCats = db.prepare('SELECT * FROM role_categories').all() as RoleCategoryRow[]
+  const catsByRole = new Map<string, string[]>()
+  for (const rc of allCats) {
+    const list = catsByRole.get(rc.role_id) ?? []
+    list.push(rc.category_id)
+    catsByRole.set(rc.role_id, list)
+  }
+  return roles.map(r => ({
+    id: r.id,
+    label: r.label,
+    createdBy: r.created_by,
+    createdAt: r.created_at,
+    categoryIds: catsByRole.get(r.id) ?? [],
+  }))
+}
+
+export function getRole(id: string): RoleWithCategories | null {
+  const role = db.prepare('SELECT * FROM roles WHERE id = ? AND deleted_at IS NULL').get(id) as RoleRow | undefined
+  if (!role) return null
+  const cats = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(id) as { category_id: string }[]
+  return {
+    id: role.id,
+    label: role.label,
+    createdBy: role.created_by,
+    createdAt: role.created_at,
+    categoryIds: cats.map(c => c.category_id),
+  }
+}
+
+export function createRole(id: string, label: string, categoryIds: string[], createdBy: string): RoleWithCategories {
+  const insertRole = db.prepare('INSERT INTO roles (id, label, created_by) VALUES (?, ?, ?)')
+  const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
+  db.transaction(() => {
+    insertRole.run(id, label, createdBy)
+    for (const catId of categoryIds) {
+      insertCat.run(id, catId)
+    }
+  })()
+  return getRole(id)!
+}
+
+export function updateRole(id: string, label: string, categoryIds: string[]): RoleWithCategories | null {
+  const existing = db.prepare('SELECT id FROM roles WHERE id = ? AND deleted_at IS NULL').get(id) as { id: string } | undefined
+  if (!existing) return null
+  db.transaction(() => {
+    db.prepare('UPDATE roles SET label = ? WHERE id = ?').run(label, id)
+    db.prepare('DELETE FROM role_categories WHERE role_id = ?').run(id)
+    const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
+    for (const catId of categoryIds) {
+      insertCat.run(id, catId)
+    }
+  })()
+  return getRole(id)
+}
+
+export function softDeleteRole(id: string): boolean {
+  const result = db.prepare('UPDATE roles SET deleted_at = datetime(\'now\') WHERE id = ? AND deleted_at IS NULL').run(id)
+  return result.changes > 0
+}
+
+export function getRoleCategories(roleId: string): string[] {
+  const rows = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(roleId) as { category_id: string }[]
+  return rows.map(r => r.category_id)
 }

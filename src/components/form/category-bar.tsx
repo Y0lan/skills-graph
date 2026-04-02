@@ -12,10 +12,11 @@ interface CategoryBarProps {
   allRated: boolean
   isFirstStep: boolean
   editingFromReview: boolean
+  isRoleCategory?: boolean
   onPrev: () => void
   onNext: () => void
   onBackToReview: () => void
-  skipButtonProps: {
+  skipButtonProps?: {
     categoryLabel: string
     isSkipped: boolean
     onSkip: () => void
@@ -33,6 +34,7 @@ export default function CategoryBar({
   allRated,
   isFirstStep,
   editingFromReview,
+  isRoleCategory,
   onPrev,
   onNext,
   onBackToReview,
@@ -67,6 +69,11 @@ export default function CategoryBar({
             {stepNumber}
           </span>
           {categoryLabel}
+          {isRoleCategory !== undefined && (
+            isRoleCategory
+              ? <span className="ml-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">Requis</span>
+              : <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Optionnel</span>
+          )}
           {!isSkipped && (
             <span className="text-sm font-normal text-muted-foreground">
               ({ratedCount}/{totalCount})
@@ -99,7 +106,7 @@ export default function CategoryBar({
               <div />
             )}
           </div>
-          <SkipCategoryButton {...skipButtonProps} />
+          {skipButtonProps && <SkipCategoryButton {...skipButtonProps} />}
           <div className="flex items-center">
             {!editingFromReview && (
               <span

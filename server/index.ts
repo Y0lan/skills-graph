@@ -10,6 +10,9 @@ import { aggregatesRouter } from './routes/aggregates.js'
 import { catalogRouter } from './routes/catalog.js'
 import { chatRouter } from './routes/chat.js'
 import { historyRouter } from './routes/history.js'
+import { candidatesRouter } from './routes/candidates.js'
+import { evaluateRouter } from './routes/evaluate.js'
+import { rolesRouter } from './routes/roles.js'
 import { initDatabase, getDb } from './lib/db.js'
 import { createAuth } from './lib/auth.js'
 import { requireAuth } from './middleware/require-auth.js'
@@ -26,6 +29,7 @@ await ctx.runMigrations()
 console.log('[AUTH] Better Auth migrations complete')
 
 const app = express()
+app.set('trust proxy', true) // Behind GKE Gateway — trust X-Forwarded-For
 
 app.use(cors({
   origin: CORS_ORIGIN,
@@ -68,6 +72,7 @@ app.post('/api/auth/customize-pin', express.json(), async (req, res) => {
 
 // Better Auth handler for all auth routes — BEFORE express.json()
 const authHandler = toNodeHandler(auth)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.all('/api/auth/{*splat}', async (req, res, _next) => {
   try {
     await authHandler(req, res)
@@ -93,8 +98,8 @@ app.get('/health/backup', (_req, res) => {
     const row = db.prepare('SELECT COUNT(*) as c FROM evaluations').get() as { c: number }
     const dbOk = row.c >= 0
 
-    // Litestream is configured if the R2 env vars are set
-    const litestreamConfigured = !!(process.env.LITESTREAM_R2_ENDPOINT && process.env.LITESTREAM_R2_BUCKET)
+    // In production (GCP Cloud Run), Litestream is always running with ambient GCS credentials
+    const litestreamConfigured = process.env.NODE_ENV === 'production'
 
     res.json({
       status: dbOk ? 'ok' : 'error',
@@ -113,6 +118,7 @@ app.get('/health/backup', (_req, res) => {
 app.use('/api', (req, res, next) => {
   if (req.path.startsWith('/auth/')) return next()
   if (req.path === '/catalog' || req.path === '/catalog/') return next()
+  if (req.path.startsWith('/evaluate/')) return next()
   return requireAuth(req, res, next)
 })
 
@@ -124,6 +130,9 @@ app.use('/api/aggregates', aggregatesRouter)
 app.use('/api/catalog', catalogRouter)
 app.use('/api/chat', chatRouter)
 app.use('/api/history', historyRouter)
+app.use('/api/candidates', candidatesRouter)
+app.use('/api/evaluate', evaluateRouter)
+app.use('/api/roles', rolesRouter)
 
 // Serve static files in production
 const distPath = path.join(process.cwd(), 'dist')

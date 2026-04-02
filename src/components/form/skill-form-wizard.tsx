@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillForm } from '@/hooks/use-skill-form'
-import { useAutosave } from '@/hooks/use-autosave'
+import { useAutosave, type SaveStatus } from '@/hooks/use-autosave'
 import type { SkillFormValues } from '@/lib/schemas'
 import RatingLegend from './rating-legend'
 import ProgressBar from './progress-bar'
@@ -16,6 +16,7 @@ export interface WizardNavigation {
   isReview: boolean
   editingFromReview: boolean
   submitting: boolean
+  saveStatus: SaveStatus
   onPrev: () => void
   onNext: () => void
   onBackToReview: () => void
@@ -28,6 +29,9 @@ interface SkillFormWizardProps {
   onSubmit: (data: SkillFormValues) => Promise<void>
   submitting: boolean
   onNavigationChange?: (nav: WizardNavigation) => void
+  autosaveEndpoint?: string
+  aiSuggestions?: Record<string, number>
+  roleCategories?: string[]
 }
 
 export default function SkillFormWizard({
@@ -36,16 +40,31 @@ export default function SkillFormWizard({
   onSubmit,
   submitting,
   onNavigationChange,
+  autosaveEndpoint,
+  aiSuggestions,
+  roleCategories,
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
-  const TOTAL_CATEGORY_STEPS = skillCategories.length
+  const orderedCategories = useMemo(() => {
+    if (!roleCategories || roleCategories.length === 0) return skillCategories
+    const roleSet = new Set(roleCategories)
+    const primary = skillCategories.filter(c => roleSet.has(c.id))
+    const secondary = skillCategories.filter(c => !roleSet.has(c.id))
+    return [...primary, ...secondary]
+  }, [skillCategories, roleCategories])
+
+  const isRoleCategory = useCallback((categoryId: string) => {
+    return roleCategories?.includes(categoryId) ?? true
+  }, [roleCategories])
+
+  const TOTAL_CATEGORY_STEPS = orderedCategories.length
   const REVIEW_STEP = TOTAL_CATEGORY_STEPS
 
   const { form, ratings, skippedCategories, setRating, toggleSkipCategory, isSkipped } =
     useSkillForm({ defaultValues: initialData })
 
-  useAutosave({ control: form.control, slug })
+  const { saveStatus } = useAutosave({ control: form.control, slug, endpoint: autosaveEndpoint })
 
   const [editingFromReview, setEditingFromReview] = useState(false)
   const [unratedSkillIds, setUnratedSkillIds] = useState<string[]>([])
@@ -54,7 +73,7 @@ export default function SkillFormWizard({
   const [step, setStep] = useState(() => {
     // Resume at first incomplete step
     for (let i = 0; i < TOTAL_CATEGORY_STEPS; i++) {
-      const cat = skillCategories[i]
+      const cat = orderedCategories[i]
       if (skippedCategories.includes(cat.id)) continue
       const allRated = cat.skills.every(
         (s) => initialData.ratings[s.id] !== undefined && initialData.ratings[s.id] >= 0,
@@ -65,7 +84,7 @@ export default function SkillFormWizard({
   })
 
   const isReviewStep = step === REVIEW_STEP
-  const category = !isReviewStep ? skillCategories[step] : null
+  const category = !isReviewStep ? orderedCategories[step] : null
 
   // Clear validation errors when ratings change or step changes
   useEffect(() => {
@@ -81,26 +100,31 @@ export default function SkillFormWizard({
   // Compute highest reachable step for locking
   const highestReachableStep = useMemo(() => {
     for (let i = 0; i < TOTAL_CATEGORY_STEPS; i++) {
-      const cat = skillCategories[i]
+      const cat = orderedCategories[i]
       if (isSkipped(cat.id)) continue
       const allRated = cat.skills.every((s) => ratings[s.id] !== undefined)
       if (!allRated) return i
     }
     return REVIEW_STEP
-  }, [ratings, skillCategories, isSkipped, TOTAL_CATEGORY_STEPS, REVIEW_STEP])
+  }, [ratings, orderedCategories, isSkipped, TOTAL_CATEGORY_STEPS, REVIEW_STEP])
 
   // Build step info for progress bar
   const progressSteps: StepInfo[] = [
-    ...skillCategories.map((cat) => {
+    ...orderedCategories.map((cat) => {
       const ratedCount = cat.skills.filter(
         (s) => ratings[s.id] !== undefined && ratings[s.id] >= 0,
       ).length
+      const aiCount = aiSuggestions
+        ? cat.skills.filter(s => aiSuggestions[s.id] !== undefined).length
+        : 0
       return {
         label: cat.label,
         emoji: cat.emoji,
         ratedCount,
         totalCount: cat.skills.length,
         isSkipped: isSkipped(cat.id),
+        aiCount,
+        isRoleCategory: roleCategories ? isRoleCategory(cat.id) : undefined,
       }
     }),
     {
@@ -115,7 +139,7 @@ export default function SkillFormWizard({
   // Validate current step before advancing
   const validateCurrentStep = useCallback((): boolean => {
     if (isReviewStep) return true
-    const cat = skillCategories[step]
+    const cat = orderedCategories[step]
     if (!cat || isSkipped(cat.id)) return true
 
     const unrated = cat.skills.filter((s) => ratings[s.id] === undefined)
@@ -134,7 +158,7 @@ export default function SkillFormWizard({
     setUnratedSkillIds([])
     setValidationMessage(undefined)
     return true
-  }, [step, ratings, isSkipped, isReviewStep, skillCategories])
+  }, [step, ratings, isSkipped, isReviewStep, orderedCategories])
 
   const handleNext = () => {
     if (!validateCurrentStep()) return
@@ -174,16 +198,23 @@ export default function SkillFormWizard({
       isReview: isReviewStep,
       editingFromReview,
       submitting,
+      saveStatus,
       onPrev: handlePrev,
       onNext: handleNext,
       onBackToReview: handleBackToReview,
       onSubmit: handleSubmit,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, isReviewStep, editingFromReview, submitting, ratings, skippedCategories])
+  }, [step, isReviewStep, editingFromReview, submitting, saveStatus, ratings, skippedCategories])
 
   return (
     <div className="space-y-6">
+      {aiSuggestions && Object.keys(aiSuggestions).length > 0 && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+          ✨ {Object.keys(aiSuggestions).length} compétences pré-remplies depuis votre CV. <strong>Vérifiez et ajustez</strong> les niveaux suggérés.
+        </div>
+      )}
+
       <ProgressBar
         currentStep={step}
         steps={progressSteps}
@@ -198,7 +229,7 @@ export default function SkillFormWizard({
           ratings={ratings}
           experience={form.getValues('experience')}
           skippedCategories={form.getValues('skippedCategories')}
-          categories={skillCategories}
+          categories={orderedCategories}
           ratingScale={ratingScale}
           onGoToStep={handleGoToStep}
         />
@@ -214,10 +245,11 @@ export default function SkillFormWizard({
               allRated={category.skills.every((s) => ratings[s.id] !== undefined)}
               isFirstStep={step === 0}
               editingFromReview={editingFromReview}
+              isRoleCategory={roleCategories ? isRoleCategory(category.id) : undefined}
               onPrev={handlePrev}
               onNext={handleNext}
               onBackToReview={handleBackToReview}
-              skipButtonProps={{
+              skipButtonProps={roleCategories && isRoleCategory(category.id) ? undefined : {
                 categoryLabel: category.label,
                 isSkipped: isSkipped(category.id),
                 onSkip: () => toggleSkipCategory(category.id),

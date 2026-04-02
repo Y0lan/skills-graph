@@ -1,10 +1,6 @@
 dbs:
   - path: /data/ratings.db
     replicas:
-      - type: s3
-        endpoint: $LITESTREAM_R2_ENDPOINT
-        bucket: $LITESTREAM_R2_BUCKET
+      - type: gcs
+        bucket: skill-radar-litestream-backup
         path: ratings
-        access-key-id: $LITESTREAM_ACCESS_KEY_ID
-        secret-access-key: $LITESTREAM_SECRET_ACCESS_KEY
-        force-path-style: true

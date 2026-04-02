@@ -14,6 +14,7 @@ export default function CalibrationPrompt({
   categoryLabel: _categoryLabel,
   tools,
 }: CalibrationPromptProps) {
+  void _categoryEmoji; void _categoryLabel
   return (
     <div className="relative flex min-h-[50vh] flex-col items-center justify-center px-4 pb-16">
       {/* Subtle radial gradient background */}

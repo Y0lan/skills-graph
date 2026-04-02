@@ -1,0 +1,17 @@
+{
+  "anchorSkills": {
+    "gitlab-ci": 3,
+    "docker-podman": 2,
+    "kubernetes": 2,
+    "prometheus": 2,
+    "grafana": 2,
+    "linux-administration": 2,
+    "bash-shell": 2,
+    "terraform-opentofu": 2
+  },
+  "otherExpected": {
+    "vmware-virtualization": 2,
+    "backup-disaster-recovery": 2,
+    "network-switching-routing": 1
+  }
+}

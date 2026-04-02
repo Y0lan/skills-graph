@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skill-radar
+  namespace: skill-radar
+  labels:
+    app: skill-radar
+spec:
+  replicas: 1  # SQLite is single-writer — do not scale beyond 1
+  strategy:
+    type: Recreate  # Ensures old pod releases the PVC before new pod starts
+  selector:
+    matchLabels:
+      app: skill-radar
+  template:
+    metadata:
+      labels:
+        app: skill-radar
+    spec:
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: skill-radar
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: skill-radar
+          image: skill-radar:latest  # Overridden by kustomize or CI
+          ports:
+            - containerPort: 8080
+              name: http
+          envFrom:
+            - configMapRef:
+                name: skill-radar-config
+            - secretRef:
+                name: skill-radar-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: skill-radar-data

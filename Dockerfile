@@ -8,6 +8,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 RUN useradd -r -u 999 -s /bin/sh appuser && chown -R appuser:appuser /app
+RUN mkdir -p /data && chown appuser:appuser /data
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY litestream.yml /app/litestream.yml
 COPY entrypoint.sh /entrypoint.sh

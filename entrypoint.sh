@@ -3,9 +3,6 @@ DATA_DIR="${DATA_DIR:-/data}"
 DB_FILE="$DATA_DIR/ratings.db"
 BACKUP_DIR="$DATA_DIR/backups"
 
-# Fix /data ownership (may be owned by root from earlier deploys)
-chown -R appuser:appuser "$DATA_DIR" 2>/dev/null || true
-
 # --- Local backup before server start (if DB exists) ---
 if [ -f "$DB_FILE" ]; then
   mkdir -p "$BACKUP_DIR"
@@ -23,15 +20,15 @@ if [ -f "$DB_FILE" ]; then
   cd /app
 fi
 
-# --- Restore from R2 if no local DB ---
+# --- Restore from GCS if no local DB ---
 if [ ! -f "$DB_FILE" ]; then
-  echo "[LITESTREAM] Restoring from R2..."
-  litestream restore -config /app/litestream.yml "$DB_FILE" 2>/dev/null \
-    || echo "[LITESTREAM] No replica found (first deploy?)"
+  echo "[LITESTREAM] Restoring from GCS..."
+  if litestream restore -config /app/litestream.yml "$DB_FILE"; then
+    echo "[LITESTREAM] Restore successful"
+  else
+    echo "[LITESTREAM] No replica found or restore failed (first deploy?)"
+  fi
 fi
 
-# Fix ownership again (after restore/backup may have created files as root)
-chown -R appuser:appuser "$DATA_DIR" 2>/dev/null || true
-
 # --- Start server with continuous Litestream replication ---
-exec litestream replicate -exec "su -s /bin/sh appuser -c 'node --env-file-if-exists=.env dist-server/server/index.js'" -config /app/litestream.yml
+exec litestream replicate -exec "node --env-file-if-exists=.env dist-server/server/index.js" -config /app/litestream.yml
