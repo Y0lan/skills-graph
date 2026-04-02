@@ -184,6 +184,61 @@ export function initDatabase(): void {
     try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
   }
 
+  // Add telephone and pays columns to candidates (for Drupal intake)
+  // Candidate contact fields for Drupal intake (lettre_text deferred to Phase 2)
+  for (const col of ['telephone TEXT', 'pays TEXT', 'linkedin_url TEXT', 'github_url TEXT', 'canal TEXT']) {
+    try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
+  }
+
+  // ─── Recruitment postes ──────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS postes (
+      id TEXT PRIMARY KEY,
+      role_id TEXT NOT NULL REFERENCES roles(id),
+      titre TEXT NOT NULL,
+      pole TEXT NOT NULL CHECK(pole IN ('legacy', 'java_modernisation', 'fonctionnel')),
+      headcount INTEGER NOT NULL DEFAULT 1,
+      headcount_flexible INTEGER NOT NULL DEFAULT 0,
+      experience_min INTEGER NOT NULL DEFAULT 0,
+      cigref TEXT NOT NULL DEFAULT '',
+      contrat TEXT NOT NULL DEFAULT 'CDIC',
+      statut TEXT NOT NULL DEFAULT 'ouvert' CHECK(statut IN ('ouvert', 'pourvu', 'ferme')),
+      date_publication TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS candidatures (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      poste_id TEXT NOT NULL REFERENCES postes(id),
+      statut TEXT NOT NULL DEFAULT 'postule'
+        CHECK(statut IN ('postule','preselectionne','skill_radar_envoye','skill_radar_complete','entretien_1','aboro','entretien_2','proposition','embauche','refuse')),
+      canal TEXT NOT NULL DEFAULT 'site'
+        CHECK(canal IN ('cabinet_seyos','cabinet_altaide','site','local_nc','reseau','direct')),
+      notes_directeur TEXT,
+      taux_compatibilite_poste REAL,
+      taux_compatibilite_equipe REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(candidate_id, poste_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS candidature_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+      type TEXT NOT NULL DEFAULT 'status_change'
+        CHECK(type IN ('status_change','note','entretien','document','email')),
+      statut_from TEXT,
+      statut_to TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+
   // Better Auth tables are created by auth.runMigrations() in index.ts
 
   // Auto-seed if categories table is empty or catalog version changed
@@ -218,6 +273,79 @@ export function initDatabase(): void {
     })
     seedTransaction()
     console.log(`[DB] Seeded ${seedRoles.length} default roles`)
+  }
+
+  // Seed recruitment postes if postes table is empty
+  const posteCount = (db.prepare('SELECT COUNT(*) as c FROM postes').get() as { c: number }).c
+  if (posteCount === 0) {
+    const recruitmentRoles: { id: string; label: string; categories: string[] }[] = [
+      {
+        id: 'tech-lead-adelia',
+        label: 'Tech Lead Adélia (RPG)',
+        categories: ['domain-knowledge', 'backend-integration', 'soft-skills-delivery', 'core-engineering'],
+      },
+      {
+        id: 'dev-senior-adelia',
+        label: 'Dev Senior Adélia (RPG)',
+        categories: ['domain-knowledge', 'backend-integration', 'core-engineering'],
+      },
+      {
+        id: 'tech-lead-java',
+        label: 'Tech Lead Java / JBoss',
+        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance', 'soft-skills-delivery'],
+      },
+      {
+        id: 'dev-java-fullstack',
+        label: 'Dev Java Senior Full Stack',
+        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance'],
+      },
+      {
+        id: 'dev-jboss-senior',
+        label: 'Dev JBoss Senior',
+        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering'],
+      },
+      {
+        id: 'architecte-si',
+        label: 'Architecte SI Logiciel',
+        categories: ['architecture-governance', 'core-engineering', 'backend-integration', 'platform-engineering', 'frontend-ui', 'soft-skills-delivery'],
+      },
+      {
+        id: 'business-analyst',
+        label: 'Business Analyst',
+        categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training', 'soft-skills-delivery', 'design-ux'],
+      },
+    ]
+
+    const insertRole = db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)')
+    const insertCat = db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)')
+    const insertPoste = db.prepare(`
+      INSERT INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const postes: { id: string; roleId: string; titre: string; pole: string; headcount: number; flexible: boolean; expMin: number; cigref: string }[] = [
+      { id: 'poste-1-tech-lead-adelia', roleId: 'tech-lead-adelia', titre: 'Tech Lead Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 10, cigref: '3.4' },
+      { id: 'poste-2-dev-senior-adelia', roleId: 'dev-senior-adelia', titre: 'Dev Senior Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 7, cigref: '3.4' },
+      { id: 'poste-3-tech-lead-java', roleId: 'tech-lead-java', titre: 'Tech Lead Java / JBoss', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '3.4' },
+      { id: 'poste-4-dev-java-fullstack', roleId: 'dev-java-fullstack', titre: 'Dev Java Senior Full Stack', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
+      { id: 'poste-5-dev-jboss-senior', roleId: 'dev-jboss-senior', titre: 'Dev JBoss Senior', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
+      { id: 'poste-6-architecte-si', roleId: 'architecte-si', titre: 'Architecte SI Logiciel', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '4.9' },
+      { id: 'poste-7-business-analyst', roleId: 'business-analyst', titre: 'Business Analyst', pole: 'fonctionnel', headcount: 1, flexible: false, expMin: 7, cigref: '2.2' },
+    ]
+
+    const seedPostes = db.transaction(() => {
+      for (const role of recruitmentRoles) {
+        insertRole.run(role.id, role.label, 'system')
+        for (const catId of role.categories) {
+          insertCat.run(role.id, catId)
+        }
+      }
+      for (const p of postes) {
+        insertPoste.run(p.id, p.roleId, p.titre, p.pole, p.headcount, p.flexible ? 1 : 0, p.expMin, p.cigref, 'CDIC')
+      }
+    })
+    seedPostes()
+    console.log(`[DB] Seeded ${postes.length} recruitment postes with roles`)
   }
 
   // One-time migration from ratings.json

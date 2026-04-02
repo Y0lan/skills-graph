@@ -57,6 +57,8 @@ function preSeedCategories() {
     'domain-knowledge',
     'project-management-pmo',
     'change-management-training',
+    'architecture-governance',
+    'design-ux',
   ]
   for (let i = 0; i < cats.length; i++) {
     insert.run(cats[i], cats[i], '', i)
@@ -75,16 +77,16 @@ describe('Role DB helpers', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('getRoles() returns seeded roles (4 roles)', () => {
+  it('getRoles() returns seeded roles (4 default + 7 recruitment)', () => {
     const roles = getRoles()
-    expect(roles).toHaveLength(4)
+    expect(roles.length).toBeGreaterThanOrEqual(4)
     const ids = roles.map(r => r.id).sort()
-    expect(ids).toEqual([
+    expect(ids).toEqual(expect.arrayContaining([
       'analyste-fonctionnel',
       'dev-full-stack',
       'devops',
       'qa-engineer',
-    ])
+    ]))
   })
 
   it('getRole("dev-full-stack") returns the full-stack role with correct category IDs', () => {

@@ -13,6 +13,7 @@ import { historyRouter } from './routes/history.js'
 import { candidatesRouter } from './routes/candidates.js'
 import { evaluateRouter } from './routes/evaluate.js'
 import { rolesRouter } from './routes/roles.js'
+import { recruitmentRouter } from './routes/recruitment.js'
 import { initDatabase, getDb } from './lib/db.js'
 import { createAuth } from './lib/auth.js'
 import { requireAuth } from './middleware/require-auth.js'
@@ -119,6 +120,7 @@ app.use('/api', (req, res, next) => {
   if (req.path.startsWith('/auth/')) return next()
   if (req.path === '/catalog' || req.path === '/catalog/') return next()
   if (req.path.startsWith('/evaluate/')) return next()
+  if (req.path === '/recruitment/intake' || req.path === '/recruitment/intake/') return next()
   return requireAuth(req, res, next)
 })
 
@@ -133,6 +135,7 @@ app.use('/api/history', historyRouter)
 app.use('/api/candidates', candidatesRouter)
 app.use('/api/evaluate', evaluateRouter)
 app.use('/api/roles', rolesRouter)
+app.use('/api/recruitment', recruitmentRouter)
 
 // Serve static files in production
 const distPath = path.join(process.cwd(), 'dist')
