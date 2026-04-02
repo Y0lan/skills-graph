@@ -24,7 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle } from 'lucide-react'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2 } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -228,6 +228,10 @@ export default function RecruitPage() {
               Évaluez les candidats sur les mêmes compétences que l'équipe
             </p>
           </div>
+          <div className="flex gap-2">
+            <Link to="/recruit/pipeline">
+              <Button variant="outline"><Building2 className="mr-2 h-4 w-4" /> Pipeline</Button>
+            </Link>
           <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreationResult(null) }}>
             <AlertDialogTrigger>
               <Button><Plus className="mr-2 h-4 w-4" /> Nouveau candidat</Button>
@@ -435,6 +439,7 @@ export default function RecruitPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+          </div>
 
         {loading ? (
           <div className="mt-12 flex justify-center">

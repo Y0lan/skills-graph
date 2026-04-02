@@ -14,6 +14,7 @@ const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
 const RecruitPage = lazy(() => import('@/pages/recruit-page'))
 const CandidateDetailPage = lazy(() => import('@/pages/candidate-detail-page'))
 const CandidateFormPage = lazy(() => import('@/pages/candidate-form-page'))
+const RecruitPipelinePage = lazy(() => import('@/pages/recruit-pipeline-page'))
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
                 <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
                 <Route path="/dashboard/:slug?" element={<ProtectedRoute checkOwnership={false}><DashboardPage /></ProtectedRoute>} />
                 <Route path="/recruit" element={<ProtectedRoute checkOwnership={false}><RecruitPage /></ProtectedRoute>} />
+                <Route path="/recruit/pipeline" element={<ProtectedRoute checkOwnership={false}><RecruitPipelinePage /></ProtectedRoute>} />
                 <Route path="/recruit/:id" element={<ProtectedRoute checkOwnership={false}><CandidateDetailPage /></ProtectedRoute>} />
                 <Route path="/evaluate/:id" element={<CandidateFormPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
