@@ -288,7 +288,7 @@ export default function RecruitPipelinePage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <Select value={filterPole} onValueChange={v => { setFilterPole(v); setFilterPoste('all') }}>
+          <Select value={filterPole} onValueChange={(v) => { setFilterPole(v ?? 'all'); setFilterPoste('all') }}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Tous les pôles" />
             </SelectTrigger>
@@ -300,7 +300,7 @@ export default function RecruitPipelinePage() {
             </SelectContent>
           </Select>
 
-          <Select value={filterPoste} onValueChange={setFilterPoste}>
+          <Select value={filterPoste} onValueChange={(v) => setFilterPoste(v ?? 'all')}>
             <SelectTrigger className="w-56">
               <SelectValue placeholder="Tous les postes" />
             </SelectTrigger>
@@ -314,7 +314,7 @@ export default function RecruitPipelinePage() {
             </SelectContent>
           </Select>
 
-          <Select value={filterStatut} onValueChange={setFilterStatut}>
+          <Select value={filterStatut} onValueChange={(v) => setFilterStatut(v ?? 'all')}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Tous les statuts" />
             </SelectTrigger>

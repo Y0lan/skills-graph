@@ -228,7 +228,7 @@ candidatesRouter.delete('/:id', (req, res) => {
 })
 
 function formatCandidate(row: CandidateRow) {
-  const r = row as Record<string, unknown>
+  const r = row as unknown as Record<string, unknown>
   return {
     id: row.id,
     name: row.name,

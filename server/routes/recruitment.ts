@@ -268,7 +268,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     notesDirecteur: r.notes_directeur,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    lastEventAt: (r as Record<string, unknown>).last_event_at as string | null,
+    lastEventAt: (r as unknown as Record<string, unknown>).last_event_at as string | null,
   })))
 })
 
