@@ -1,0 +1,19 @@
+{
+  "anchorSkills": {
+    "functional-specifications": 4,
+    "requirements-elicitation": 3,
+    "process-modeling": 3,
+    "gap-analysis-legacy": 3,
+    "functional-testing": 3,
+    "regulatory-interpretation": 3,
+    "reglementation-sociale": 3,
+    "processus-recouvrement": 3,
+    "planning-scheduling": 2,
+    "governance-reporting": 2
+  },
+  "otherExpected": {
+    "change-communication": 2,
+    "training-delivery": 2,
+    "stakeholder-communication": 3
+  }
+}

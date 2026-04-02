@@ -1,0 +1,38 @@
+SOPHIE MARTIN
+Analyste Fonctionnelle Senior — 6 ans d'expérience
+Nouméa, Nouvelle-Calédonie
+sophie.martin@email.nc
+
+EXPÉRIENCE PROFESSIONNELLE
+
+Analyste Fonctionnelle Senior — CAFAT (2020 – présent)
+- Analyse des exigences pour la refonte du système de recouvrement social
+- Rédaction de spécifications fonctionnelles détaillées (SFD) pour 3 projets majeurs
+- Modélisation des processus métier en BPMN avec Bizagi
+- Coordination avec les équipes techniques et les représentants métier
+- Recette fonctionnelle : rédaction de plans de tests, exécution et suivi des anomalies
+- Analyse d'écart entre le SI legacy et la cible, cartographie des flux de données
+- Interprétation de la réglementation sociale pour la traduction en règles de gestion
+
+Analyste Fonctionnelle — Société de Conseil IT (2018 – 2020)
+- Recueil des besoins auprès des utilisateurs finaux (ateliers, interviews)
+- Rédaction de cahiers des charges et spécifications fonctionnelles
+- Modélisation UML (diagrammes de cas d'utilisation, séquence)
+- Suivi de projet : planification, reporting, comités de pilotage
+
+Chargée d'études — Administration Publique NC (2017 – 2018)
+- Analyse des processus administratifs
+- Rédaction de notes de cadrage
+- Support au déploiement d'une GED
+
+FORMATION
+- Master Management des Systèmes d'Information, Université de Montpellier (2017)
+- Certification IREB Requirements Engineering (CPRE Foundation)
+
+COMPÉTENCES
+- Analyse : recueil des besoins, spécifications fonctionnelles, analyse d'écart
+- Modélisation : BPMN (Bizagi), UML, cartographie des processus
+- Outils : Jira, Confluence, Excel avancé, Bizagi Modeler
+- Méthodologies : cycle en V, Agile/Scrum (participation)
+- Domaine métier : protection sociale, recouvrement, réglementation NC
+- Conduite du changement : formation utilisateurs, documentation

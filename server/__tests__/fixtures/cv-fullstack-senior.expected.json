@@ -1,0 +1,25 @@
+{
+  "anchorSkills": {
+    "java": 4,
+    "typescript": 3,
+    "spring-boot": 4,
+    "angular": 3,
+    "sql": 3,
+    "git-branching": 3,
+    "api-design": 4,
+    "jpa-hibernate": 3,
+    "gitlab-ci": 3,
+    "docker-podman": 3,
+    "kubernetes": 3,
+    "agile-scrum": 4,
+    "mentoring": 3
+  },
+  "otherExpected": {
+    "python": 2,
+    "bash-shell": 3,
+    "testing-strategy": 3,
+    "postgresql": 3,
+    "html-css-scss": 3,
+    "code-review": 3
+  }
+}

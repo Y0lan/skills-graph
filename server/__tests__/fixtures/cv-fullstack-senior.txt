@@ -1,0 +1,37 @@
+JEAN-MARC DUPONT
+Développeur Full Stack Senior — 8 ans d'expérience
+Nouméa, Nouvelle-Calédonie
+jean-marc.dupont@email.nc | +687 12 34 56
+
+EXPÉRIENCE PROFESSIONNELLE
+
+Tech Lead Full Stack — SINAPSE GIE (2021 – présent)
+- Lead technique d'une équipe de 5 développeurs sur le projet de modernisation du SI
+- Architecture microservices avec Spring Boot 3 et Angular 16
+- Mise en place du pipeline CI/CD GitLab avec déploiement Kubernetes
+- API REST design-first avec OpenAPI 3.0, revues de code systématiques
+- Tests automatisés : JUnit 5, Cypress, couverture > 80%
+- Mentorat de 2 développeurs juniors, animation des tech talks hebdomadaires
+
+Développeur Full Stack — Société Informatique NC (2018 – 2021)
+- Développement Java 17 / Spring Boot / Angular 12
+- Intégration PostgreSQL, requêtes SQL complexes avec JPA/Hibernate
+- Scripts Bash pour l'automatisation des déploiements
+- Gestion de projet Scrum, participation aux rituels agiles
+
+Développeur Junior — Start-up WebNC (2016 – 2018)
+- Applications web TypeScript / React
+- API REST Node.js
+- Tests unitaires avec Jest
+
+FORMATION
+- Master Informatique, Université de Nouvelle-Calédonie (2016)
+- Certification Scrum Master (PSM I)
+
+COMPÉTENCES TECHNIQUES
+- Langages : Java 17+, TypeScript, SQL, Python (scripts), Bash
+- Backend : Spring Boot, JPA/Hibernate, API REST, PostgreSQL
+- Frontend : Angular, React, HTML/CSS/SCSS
+- DevOps : GitLab CI, Docker, Kubernetes, Git Flow
+- Tests : JUnit 5, Cypress, Jest
+- Méthodologies : Scrum, DDD, Clean Architecture

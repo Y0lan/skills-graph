@@ -1,0 +1,31 @@
+MARIE LEFEVRE
+Ingénieure DevOps Junior — 2 ans d'expérience
+Nouméa, Nouvelle-Calédonie
+marie.lefevre@email.nc
+
+EXPÉRIENCE PROFESSIONNELLE
+
+Ingénieure DevOps — SINAPSE GIE (2024 – présent)
+- Administration des pipelines GitLab CI/CD pour 4 projets
+- Gestion des conteneurs Docker et déploiement sur Kubernetes (environnement de dev)
+- Supervision avec Prometheus et Grafana, configuration des alertes basiques
+- Scripts Terraform pour le provisioning de VMs sur VMware vSphere
+
+Stagiaire Système & Réseau — OPT Nouvelle-Calédonie (2023)
+- Administration Linux (Ubuntu Server), gestion des utilisateurs et des permissions
+- Configuration réseau de base (VLAN, pare-feu pfSense)
+- Sauvegarde et restauration avec Veeam Backup
+- Documentation technique des procédures
+
+FORMATION
+- Licence Pro Administration Système et Réseau, IUT de Nouméa (2023)
+- Certification Docker Certified Associate (en cours)
+
+COMPÉTENCES TECHNIQUES
+- CI/CD : GitLab CI (pipelines, runners)
+- Conteneurisation : Docker, bases de Kubernetes
+- IaC : Terraform (débutant)
+- Supervision : Prometheus, Grafana (configuration de base)
+- Système : Linux (Ubuntu, CentOS), VMware vSphere
+- Réseau : notions VLAN, pare-feu
+- Scripting : Bash
