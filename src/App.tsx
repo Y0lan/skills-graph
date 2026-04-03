@@ -26,7 +26,7 @@ function App() {
         <TooltipProvider>
           <ScrollToTop />
           <FullRosterLoader />
-          <ErrorBoundary>
+          <ErrorBoundaryWrapper>
             <Suspense
               fallback={
                 <div className="flex min-h-screen items-center justify-center">
@@ -47,7 +47,7 @@ function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
-          </ErrorBoundary>
+          </ErrorBoundaryWrapper>
         </TooltipProvider>
         <Toaster position="bottom-left" />
         </CatalogProvider>
@@ -64,6 +64,11 @@ function ScrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [pathname])
   return null
+}
+
+function ErrorBoundaryWrapper({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation()
+  return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
 }
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

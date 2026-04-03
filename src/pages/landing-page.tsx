@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { authClient } from '@/lib/auth-client'
 import { LoginDialog } from '@/components/auth/login-dialog'
@@ -8,6 +8,7 @@ import { RadarBackground } from '@/components/ui/radar-background'
 export default function LandingPage() {
   const { data: session, isPending } = authClient.useSession()
   const navigate = useNavigate()
+  const [timedOut, setTimedOut] = useState(false)
 
   useEffect(() => {
     if (!isPending && session?.user) {
@@ -15,7 +16,14 @@ export default function LandingPage() {
     }
   }, [isPending, session, navigate])
 
-  if (isPending) {
+  // Don't block the landing page forever if session check stalls
+  useEffect(() => {
+    if (!isPending) return
+    const timer = setTimeout(() => setTimedOut(true), 3000)
+    return () => clearTimeout(timer)
+  }, [isPending])
+
+  if (isPending && !timedOut) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground">Chargement...</p>

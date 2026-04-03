@@ -48,19 +48,16 @@ export function calculatePosteCompatibility(
     if (catSkills.length === 0) continue
 
     // Calculate candidate's average in this category
+    // Count ALL skills (unrated = 0) to prevent sparse-profile inflation
     let candidateSum = 0
-    let candidateCount = 0
     for (const skillId of catSkills) {
       const level = candidateRatings[skillId]
       if (level != null && level > 0) {
         candidateSum += level
-        candidateCount++
       }
     }
 
-    if (candidateCount === 0) continue
-
-    const candidateAvg = candidateSum / candidateCount
+    const candidateAvg = candidateSum / catSkills.length
     // Normalize to 0-100 scale (max level is 5)
     const categoryScore = (candidateAvg / 5) * 100
     totalScore += categoryScore
@@ -135,18 +132,16 @@ export function calculateEquipeCompatibility(
     const teamAvg = teamCount > 0 ? teamSum / teamCount : 0
 
     // Calculate candidate's average in this category
+    // Count ALL skills (unrated = 0) to prevent sparse-profile inflation
     let candidateSum = 0
-    let candidateCount = 0
     for (const skillId of catSkills) {
       const level = candidateRatings[skillId]
       if (level != null && level > 0) {
         candidateSum += level
-        candidateCount++
       }
     }
 
-    if (candidateCount === 0) continue
-    const candidateAvg = candidateSum / candidateCount
+    const candidateAvg = candidateSum / catSkills.length
 
     // Score: how much does the candidate fill gaps?
     // If candidate > team avg: high gap-filling value
@@ -220,17 +215,15 @@ export function getGapAnalysis(
     }
     const teamAvg = teamCount > 0 ? Math.round((teamSum / teamCount) * 10) / 10 : 0
 
-    // Candidate average
+    // Candidate average (unrated = 0 to prevent sparse-profile inflation)
     let candSum = 0
-    let candCount = 0
     for (const skillId of catSkills) {
       const level = candidateRatings[skillId]
       if (level != null && level > 0) {
         candSum += level
-        candCount++
       }
     }
-    const candidateAvg = candCount > 0 ? Math.round((candSum / candCount) * 10) / 10 : 0
+    const candidateAvg = Math.round((candSum / catSkills.length) * 10) / 10
 
     gaps.push({
       categoryId: catId,

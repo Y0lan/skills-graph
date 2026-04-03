@@ -701,8 +701,19 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     return
   }
 
+  const mimeTypes: Record<string, string> = {
+    pdf: 'application/pdf',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    doc: 'application/msword',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+  }
+  const ext = doc.filename.split('.').pop()?.toLowerCase() ?? ''
+  const contentType = mimeTypes[ext] ?? 'application/octet-stream'
+
   res.setHeader('Content-Disposition', `attachment; filename="${doc.filename}"`)
-  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Type', contentType)
   fs.createReadStream(doc.path).pipe(res)
 })
 
@@ -732,12 +743,21 @@ protectedRouter.get('/candidatures/:id/documents/zip', async (req, res) => {
   ).all(req.params.id) as { type: string; statut_from: string | null; statut_to: string | null; notes: string | null; created_by: string; created_at: string }[]
 
   const fs = await import('fs')
-  const candidateName = (candidature.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_')
+  const sanitized = (candidature.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_')
+  const candidateName = sanitized || 'Candidat'
 
   res.setHeader('Content-Type', 'application/zip')
   res.setHeader('Content-Disposition', `attachment; filename="Dossier_${candidateName}.zip"`)
 
   const archive = archiver('zip', { zlib: { level: 6 } })
+  archive.on('error', (err) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erreur lors de la création du ZIP' })
+    } else {
+      res.end()
+    }
+    console.error('[ZIP] Archive error:', err)
+  })
   archive.pipe(res)
 
   // Add documents with numbered prefixes

@@ -26,8 +26,11 @@ export function RadarBackground({
     const container = containerRef.current
     if (!container) return
 
-    // Check for reduced motion preference
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Skip WebGL on small viewports or when user prefers reduced motion
+    if (
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
+      window.innerWidth < 768
+    ) {
       setFallback(true)
       return
     }
