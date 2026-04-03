@@ -5,6 +5,7 @@ import AppHeader from '@/components/app-header'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
 import FitReport from '@/components/recruit/fit-report'
+import MultiPosteCard from '@/components/recruit/multi-poste-card'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +22,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle, FileText, Download, FolderArchive } from 'lucide-react'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle, FileText, Download, FolderArchive, PenLine } from 'lucide-react'
+import AboroManualForm from '@/components/recruit/aboro-manual-form'
 
 interface CandidateDetail {
   id: string
@@ -65,6 +67,9 @@ interface CandidatureInfo {
   canal: string
   tauxPoste: number | null
   tauxEquipe: number | null
+  tauxSoft: number | null
+  softSkillAlerts: { trait: string; value: number; threshold: number; message: string }[] | null
+  tauxGlobal: number | null
   notesDirecteur: string | null
   createdAt: string
 }
@@ -164,6 +169,7 @@ export default function CandidateDetailPage() {
     talent_cloud: Record<string, string>
     talents: string[]
     axes_developpement: string[]
+    matrices?: { dimension: string; naturel: string; mobilisable: string }[]
   } | null>(null)
   const [allowedTransitions, setAllowedTransitions] = useState<{
     allowedTransitions: string[]
@@ -173,6 +179,9 @@ export default function CandidateDetailPage() {
   const [documents, setDocuments] = useState<CandidatureDocument[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadType, setUploadType] = useState('other')
+  const [multiPosteCompatibility, setMultiPosteCompatibility] = useState<{ posteId: string; posteTitre: string; tauxPoste: number }[]>([])
+  const [bonusSkills, setBonusSkills] = useState<{ skillId: string; skillLabel: string; categoryLabel: string; score: number }[]>([])
+  const [showAboroForm, setShowAboroForm] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -207,6 +216,8 @@ export default function CandidateDetailPage() {
             fetch(`/api/recruitment/candidatures/${mine[0].id}/documents`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
           ]).then(([detail, transitions, docs]) => {
             if (detail?.events) setEvents(detail.events)
+            if (detail?.multiPosteCompatibility) setMultiPosteCompatibility(detail.multiPosteCompatibility)
+            if (detail?.bonusSkills) setBonusSkills(detail.bonusSkills)
             if (transitions) setAllowedTransitions(transitions)
             setDocuments(docs ?? [])
           })
@@ -503,11 +514,28 @@ export default function CandidateDetailPage() {
                           <p className="text-sm font-bold">{c.tauxEquipe}%</p>
                         </div>
                       )}
+                      {c.tauxSoft != null && (
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Soft</p>
+                          <p className="text-sm font-bold">{c.tauxSoft}%</p>
+                        </div>
+                      )}
                       <Badge className={`text-sm px-3 py-1 ${STATUT_COLORS[c.statut] ?? ''}`}>
                         {STATUT_LABELS[c.statut] ?? c.statut}
                       </Badge>
                     </div>
                   </div>
+
+                  {/* Soft skill alerts */}
+                  {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {c.softSkillAlerts.map((a, i) => (
+                        <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600">
+                          {'\u26A0'} {a.message}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Transition actions */}
                   {allowedTransitions && (allowedTransitions.allowedTransitions.length > 0 || allowedTransitions.skipTransitions.length > 0) && (
@@ -748,8 +776,12 @@ export default function CandidateDetailPage() {
             {/* Behavioral profile (Aboro) */}
             {aboroProfile && (
               <Card className="lg:col-span-2">
-                <CardHeader>
+                <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-base">Profil comportemental (Âboro / SWIPE)</CardTitle>
+                  <Button size="sm" variant="outline" onClick={() => setShowAboroForm(prev => !prev)}>
+                    <PenLine className="h-3.5 w-3.5 mr-1" />
+                    {showAboroForm ? 'Fermer' : 'Corriger'}
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-6 md:grid-cols-2">
@@ -844,8 +876,67 @@ export default function CandidateDetailPage() {
                           </ul>
                         </div>
                       )}
+
+                      {/* Matrices comportementales */}
+                      {aboroProfile.matrices && aboroProfile.matrices.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Matrices comportementales</p>
+                          <div className="grid gap-1.5">
+                            {aboroProfile.matrices.map((m, i) => (
+                              <div key={i} className="flex items-center gap-2 text-xs">
+                                <span className="w-32 text-muted-foreground truncate">{m.dimension}</span>
+                                <Badge variant="secondary" className="text-[10px]">Naturel: {m.naturel}</Badge>
+                                <Badge variant="outline" className="text-[10px]">Mobilisable: {m.mobilisable}</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
+                  {showAboroForm && (
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-xs font-medium text-muted-foreground mb-3">Correction manuelle des scores</p>
+                      <AboroManualForm
+                        candidateId={candidate.id}
+                        initialProfile={aboroProfile}
+                        onSaved={(profile) => {
+                          setAboroProfile(profile)
+                          setShowAboroForm(false)
+                          toast.success('Profil Aboro mis a jour')
+                        }}
+                      />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Manual Aboro entry when no profile exists */}
+            {!aboroProfile && candidatures.length > 0 && (
+              <Card className="lg:col-span-2">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">Profil comportemental (Aboro / SWIPE)</CardTitle>
+                  <Button size="sm" variant="outline" onClick={() => setShowAboroForm(prev => !prev)}>
+                    <PenLine className="h-3.5 w-3.5 mr-1" />
+                    {showAboroForm ? 'Fermer' : 'Saisie manuelle Aboro'}
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {showAboroForm ? (
+                    <AboroManualForm
+                      candidateId={candidate.id}
+                      onSaved={(profile) => {
+                        setAboroProfile(profile)
+                        setShowAboroForm(false)
+                        toast.success('Profil Aboro enregistre')
+                      }}
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Aucun profil Aboro disponible. Uploadez un PDF Aboro dans les documents ou utilisez la saisie manuelle.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -936,6 +1027,41 @@ export default function CandidateDetailPage() {
                   )}
                 </CardContent>
               </Card>
+            )}
+
+            {/* Multi-poste compatibility */}
+            {multiPosteCompatibility.length > 0 && (
+              <div className="lg:col-span-2">
+                <MultiPosteCard entries={multiPosteCompatibility} />
+                {bonusSkills && bonusSkills.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Compétences bonus (hors poste)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {bonusSkills.map((s) => (
+                        <Badge key={s.skillId} variant="outline" className="text-[10px]">
+                          + {s.skillLabel} {s.score}/5
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bonus skills (standalone, when no multi-poste data) */}
+            {multiPosteCompatibility.length === 0 && bonusSkills && bonusSkills.length > 0 && (
+              <div className="lg:col-span-2">
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Compétences bonus (hors poste)</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {bonusSkills.map((s) => (
+                      <Badge key={s.skillId} variant="outline" className="text-[10px]">
+                        + {s.skillLabel} {s.score}/5
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* AI Report */}

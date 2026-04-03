@@ -260,6 +260,47 @@ export function initDatabase(): void {
   `)
   db.exec('CREATE INDEX IF NOT EXISTS idx_aboro_profiles_candidate ON aboro_profiles(candidate_id)')
 
+  // Idempotent: widen candidature_documents CHECK constraint
+  // SQLite can't ALTER CHECK, so recreate table without restrictive CHECK
+  const hasRestrictiveCheck = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_documents'").get() as { sql: string } | undefined
+    return tableInfo?.sql?.includes("CHECK(type IN ('aboro', 'cv', 'lettre', 'other'))") ?? false
+  })()
+
+  if (hasRestrictiveCheck) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS candidature_documents_new (
+        id TEXT PRIMARY KEY,
+        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'other',
+        filename TEXT NOT NULL,
+        path TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT OR IGNORE INTO candidature_documents_new SELECT * FROM candidature_documents;
+      DROP TABLE candidature_documents;
+      ALTER TABLE candidature_documents_new RENAME TO candidature_documents;
+    `)
+  }
+
+  // Idempotent column additions for soft skill scoring + global score
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN soft_skill_alerts TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_global REAL') } catch { /* already exists */ }
+
+  // Scoring weights table (configurable global score formula)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scoring_weights (
+      id TEXT PRIMARY KEY,
+      weight_poste REAL NOT NULL DEFAULT 0.5,
+      weight_equipe REAL NOT NULL DEFAULT 0.2,
+      weight_soft REAL NOT NULL DEFAULT 0.3,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec("INSERT OR IGNORE INTO scoring_weights (id) VALUES ('default')")
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')

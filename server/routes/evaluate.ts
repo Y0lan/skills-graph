@@ -4,7 +4,7 @@ import { getDb, getRoleCategories } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, type CandidateRow } from '../lib/types.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility } from '../lib/compatibility.js'
+import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from '../lib/compatibility.js'
 
 export const evaluateRouter = Router()
 
@@ -135,9 +135,16 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   for (const cand of linkedCandidatures) {
     const tauxPoste = calculatePosteCompatibility(effectiveRatings, cand.role_id)
     const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, cand.role_id)
+
+    // Read existing soft skill score (from Aboro, if available)
+    const currentSoft = db.prepare(
+      'SELECT taux_soft_skills FROM candidatures WHERE id = ?'
+    ).get(cand.id) as { taux_soft_skills: number | null } | undefined
+    const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, currentSoft?.taux_soft_skills ?? null)
+
     db.prepare(
-      'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, updated_at = datetime(\'now\') WHERE id = ?'
-    ).run(tauxPoste, tauxEquipe, cand.id)
+      'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+    ).run(tauxPoste, tauxEquipe, tauxGlobal, cand.id)
 
     // Auto-advance to skill_radar_complete if currently at skill_radar_envoye
     const currentStatut = db.prepare('SELECT statut FROM candidatures WHERE id = ?').get(cand.id) as { statut: string } | undefined

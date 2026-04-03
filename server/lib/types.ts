@@ -66,6 +66,9 @@ export interface CandidatureRow {
   notes_directeur: string | null
   taux_compatibilite_poste: number | null
   taux_compatibilite_equipe: number | null
+  taux_soft_skills: number | null
+  soft_skill_alerts: string | null
+  taux_global: number | null
   created_at: string
   updated_at: string
 }

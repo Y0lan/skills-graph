@@ -1,6 +1,12 @@
 import { extractText } from 'unpdf'
 import Anthropic from '@anthropic-ai/sdk'
 
+export interface AboroMatrix {
+  dimension: string      // e.g. "Interactions", "Management", "Persuasion"
+  naturel: string        // e.g. "Sociable", "Participatif"
+  mobilisable: string    // e.g. "Amical", "Supporteur"
+}
+
 export interface AboroProfile {
   traits: {
     leadership: { ascendant: number; conviction: number; sociabilite: number; diplomatie: number }
@@ -12,6 +18,7 @@ export interface AboroProfile {
   talent_cloud: Record<string, string>
   talents: string[]
   axes_developpement: string[]
+  matrices?: AboroMatrix[]  // optional for backward compat with stored profiles
 }
 
 /**
@@ -48,6 +55,7 @@ Le rapport contient :
 
 3. **Talents** : liste de points forts qualitatifs
 4. **Axes de développement** : liste de points à améliorer
+5. **Matrices comportementales** : les matrices 2x2 positionnant le candidat (naturel vs mobilisable). Ex: Interactions, Management, Persuasion, Collaboration, etc.
 
 Extrais TOUTES les données présentes. Si un score n'est pas trouvé, utilise 5 (valeur médiane).`,
     messages: [{
@@ -138,6 +146,19 @@ Extrais le profil comportemental structuré.`,
             description: 'List of development areas from the profile synthesis',
             items: { type: 'string' as const },
           },
+          matrices: {
+            type: 'array' as const,
+            description: 'Behavioral matrices (2x2) positioning the candidate on each dimension with naturel (natural) and mobilisable (activated under effort) styles. Extract all matrices found in the report.',
+            items: {
+              type: 'object' as const,
+              properties: {
+                dimension: { type: 'string' as const, description: 'Matrix dimension name (e.g. Interactions, Management, Persuasion, Collaboration)' },
+                naturel: { type: 'string' as const, description: 'Natural style label (e.g. Sociable, Participatif)' },
+                mobilisable: { type: 'string' as const, description: 'Mobilisable style label (e.g. Amical, Supporteur)' },
+              },
+              required: ['dimension', 'naturel', 'mobilisable'],
+            },
+          },
         },
         required: ['traits', 'talent_cloud', 'talents', 'axes_developpement'],
       },
@@ -151,7 +172,14 @@ Extrais le profil comportemental structuré.`,
     throw new Error('Claude did not return a tool_use response for Aboro extraction')
   }
 
-  const profile = toolUse.input as AboroProfile
+  const raw = toolUse.input as Record<string, unknown>
+  const profile: AboroProfile = {
+    traits: raw.traits as AboroProfile['traits'],
+    talent_cloud: (raw.talent_cloud ?? {}) as Record<string, string>,
+    talents: (raw.talents ?? []) as string[],
+    axes_developpement: (raw.axes_developpement ?? []) as string[],
+    matrices: Array.isArray(raw.matrices) ? raw.matrices as AboroMatrix[] : [],
+  }
 
   // Validate: all trait scores should be 1-10
   for (const axis of Object.values(profile.traits)) {

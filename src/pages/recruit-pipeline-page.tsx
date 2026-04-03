@@ -11,7 +11,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2, Users, Building2, ChevronRight, AlertCircle } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { Input } from '@/components/ui/input'
+import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3 } from 'lucide-react'
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
@@ -48,6 +59,9 @@ interface Candidature {
   evaluationSubmitted: boolean
   tauxPoste: number | null
   tauxEquipe: number | null
+  tauxSoft: number | null
+  softSkillAlerts: { trait: string; value: number; threshold: number; message: string }[] | null
+  tauxGlobal: number | null
   notesDirecteur: string | null
   createdAt: string
   updatedAt: string
@@ -133,6 +147,11 @@ export default function RecruitPipelinePage() {
   const [filterPole, setFilterPole] = useState<string>('all')
   const [filterPoste, setFilterPoste] = useState<string>('all')
   const [filterStatut, setFilterStatut] = useState<string>('all')
+  const [weightsOpen, setWeightsOpen] = useState(false)
+  const [weightPoste, setWeightPoste] = useState(50)
+  const [weightEquipe, setWeightEquipe] = useState(20)
+  const [weightSoft, setWeightSoft] = useState(30)
+  const [savingWeights, setSavingWeights] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -152,6 +171,42 @@ export default function RecruitPipelinePage() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const openWeightsDialog = useCallback(async () => {
+    try {
+      const res = await fetch('/api/recruitment/scoring-weights', { credentials: 'include' })
+      if (res.ok) {
+        const data = await res.json()
+        setWeightPoste(Math.round(data.weight_poste * 100))
+        setWeightEquipe(Math.round(data.weight_equipe * 100))
+        setWeightSoft(Math.round(data.weight_soft * 100))
+      }
+    } catch { /* use defaults */ }
+    setWeightsOpen(true)
+  }, [])
+
+  const saveWeights = useCallback(async () => {
+    const total = weightPoste + weightEquipe + weightSoft
+    if (Math.abs(total - 100) > 1) return
+    setSavingWeights(true)
+    try {
+      const res = await fetch('/api/recruitment/scoring-weights', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          weightPoste: weightPoste / 100,
+          weightEquipe: weightEquipe / 100,
+          weightSoft: weightSoft / 100,
+        }),
+      })
+      if (res.ok) {
+        setWeightsOpen(false)
+        fetchData() // refresh candidatures with new scores
+      }
+    } catch { /* silent */ }
+    finally { setSavingWeights(false) }
+  }, [weightPoste, weightEquipe, weightSoft, fetchData])
 
   if (loading) {
     return (
@@ -191,6 +246,16 @@ export default function RecruitPipelinePage() {
             <p className="text-sm text-muted-foreground">Campagne Avril 2026 — 7 postes</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={openWeightsDialog}>
+              <Settings className="h-4 w-4 mr-1" />
+              Ponderation
+            </Button>
+            <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm">
+                <FileText className="h-4 w-4 mr-1" />
+                Exporter PDF
+              </Button>
+            </a>
             <Link to="/recruit">
               <Button variant="outline" size="sm">
                 <Users className="h-4 w-4 mr-1" />
@@ -275,6 +340,16 @@ export default function RecruitPipelinePage() {
                               {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
                             </Badge>
                           )}
+                          <a
+                            href={`/recruit/reports/comparison/${p.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Comparer les candidats"
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </a>
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </div>
                       </button>
@@ -377,6 +452,12 @@ export default function RecruitPipelinePage() {
                           <span>{formatDate(c.createdAt)}</span>
                           {c.hasCv && <Badge variant="outline" className="text-[10px] px-1 py-0">CV</Badge>}
                           {c.evaluationSubmitted && <Badge variant="outline" className="text-[10px] px-1 py-0">Évalué</Badge>}
+                          {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
+                            <Badge variant="outline" className="text-[10px] border-red-500 text-red-600 dark:border-red-400 dark:text-red-400">
+                              <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+                              Soft skills
+                            </Badge>
+                          )}
                           {c.lastEventAt && (() => {
                             const daysSince = Math.floor((Date.now() - new Date(c.lastEventAt.includes('T') ? c.lastEventAt : c.lastEventAt.replace(' ', 'T') + 'Z').getTime()) / (1000 * 60 * 60 * 24))
                             return daysSince >= 7 && !['embauche', 'refuse'].includes(c.statut) ? (
@@ -393,6 +474,7 @@ export default function RecruitPipelinePage() {
                       <div className="hidden sm:flex flex-col gap-1 w-44">
                         <CompatibilityBar value={c.tauxPoste} label="Poste" />
                         <CompatibilityBar value={c.tauxEquipe} label="Équipe" />
+                        <CompatibilityBar value={c.tauxGlobal} label="Global" />
                       </div>
 
                       <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -404,6 +486,64 @@ export default function RecruitPipelinePage() {
           </div>
         )}
       </main>
+
+      {/* Scoring weights settings dialog */}
+      <AlertDialog open={weightsOpen} onOpenChange={setWeightsOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ponderation du score global</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ajustez les poids utilises pour calculer le score global de compatibilite. Les trois valeurs doivent totaliser 100%.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-3">
+              <label className="text-sm w-28">Poste (%)</label>
+              <Input
+                type="number" min={0} max={100}
+                value={weightPoste}
+                onChange={e => setWeightPoste(parseInt(e.target.value) || 0)}
+                className="w-20"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm w-28">Equipe (%)</label>
+              <Input
+                type="number" min={0} max={100}
+                value={weightEquipe}
+                onChange={e => setWeightEquipe(parseInt(e.target.value) || 0)}
+                className="w-20"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm w-28">Soft skills (%)</label>
+              <Input
+                type="number" min={0} max={100}
+                value={weightSoft}
+                onChange={e => setWeightSoft(parseInt(e.target.value) || 0)}
+                className="w-20"
+              />
+            </div>
+            {Math.abs(weightPoste + weightEquipe + weightSoft - 100) > 1 && (
+              <p className="text-xs text-red-500">
+                Total : {weightPoste + weightEquipe + weightSoft}% (doit etre 100%)
+              </p>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingWeights}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={saveWeights}
+              disabled={savingWeights || Math.abs(weightPoste + weightEquipe + weightSoft - 100) > 1}
+            >
+              {savingWeights ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Enregistrer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

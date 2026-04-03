@@ -8,8 +8,9 @@ import { requireLead } from '../middleware/require-lead.js'
 import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { sendCandidateInvite } from '../lib/email.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis } from '../lib/compatibility.js'
+import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { extractAboroText, extractAboroProfile } from '../lib/aboro-extraction.js'
+import { calculateSoftSkillScore } from '../lib/soft-skill-scoring.js'
 import archiver from 'archiver'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
@@ -166,9 +167,10 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
         if (suggestions && Object.keys(suggestions).length > 0) {
           const tauxPoste = calculatePosteCompatibility(suggestions, poste.role_id)
           const tauxEquipe = calculateEquipeCompatibility(suggestions, poste.role_id)
+          const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
           getDb().prepare(
-            'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, updated_at = datetime(\'now\') WHERE id = ?'
-          ).run(tauxPoste, tauxEquipe, candidatureId)
+            'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+          ).run(tauxPoste, tauxEquipe, tauxGlobal, candidatureId)
         }
       } catch (err) {
         console.error('[Intake] CV processing error:', err)
@@ -249,7 +251,8 @@ protectedRouter.get('/candidatures', (req, res) => {
   const rows = getDb().prepare(sql).all(...params) as (CandidatureRow & {
     name: string; email: string | null; has_cv: number;
     ai_suggestions: string | null; evaluation_submitted: string | null;
-    poste_titre: string; poste_pole: string
+    poste_titre: string; poste_pole: string;
+    taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null
   })[]
 
   res.json(rows.map(r => ({
@@ -266,6 +269,9 @@ protectedRouter.get('/candidatures', (req, res) => {
     evaluationSubmitted: !!r.evaluation_submitted,
     tauxPoste: r.taux_compatibilite_poste,
     tauxEquipe: r.taux_compatibilite_equipe,
+    tauxSoft: r.taux_soft_skills,
+    softSkillAlerts: safeJsonParse<{ trait: string; value: number; threshold: number; message: string }[]>(r.soft_skill_alerts, []),
+    tauxGlobal: r.taux_global,
     notesDirecteur: r.notes_directeur,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -279,7 +285,8 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
     SELECT
       c.id AS candidature_id, c.candidate_id, c.poste_id, c.statut AS candidature_statut,
       c.canal AS candidature_canal, c.notes_directeur, c.taux_compatibilite_poste,
-      c.taux_compatibilite_equipe, c.created_at AS candidature_created_at,
+      c.taux_compatibilite_equipe, c.taux_soft_skills, c.soft_skill_alerts, c.taux_global,
+      c.created_at AS candidature_created_at,
       cand.name, cand.email, cand.telephone, cand.pays, cand.linkedin_url, cand.github_url,
       cand.ratings, cand.ai_suggestions, cand.submitted_at, cand.ai_report, cand.cv_text,
       p.titre AS poste_titre, p.pole AS poste_pole, p.role_id AS poste_role_id
@@ -307,6 +314,14 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
     ? getGapAnalysis(effectiveRatings, row.poste_role_id as string)
     : []
 
+  // Multi-poste compatibility + bonus skills (Task 3)
+  const multiPosteCompatibility = Object.keys(effectiveRatings).length > 0
+    ? calculateMultiPosteCompatibility(effectiveRatings, row.poste_id as string)
+    : []
+  const bonusSkills = Object.keys(effectiveRatings).length > 0
+    ? getBonusSkills(effectiveRatings, row.poste_role_id as string)
+    : []
+
   res.json({
     candidature: {
       id: row.candidature_id,
@@ -317,6 +332,9 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
       canal: row.candidature_canal,
       tauxPoste: row.taux_compatibilite_poste,
       tauxEquipe: row.taux_compatibilite_equipe,
+      tauxSoft: row.taux_soft_skills,
+      softSkillAlerts: safeJsonParse<{ trait: string; value: number; threshold: number; message: string }[]>(row.soft_skill_alerts as string, []),
+      tauxGlobal: row.taux_global,
       notesDirecteur: row.notes_directeur,
       createdAt: row.candidature_created_at,
     },
@@ -344,6 +362,8 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
       createdAt: e.created_at,
     })),
     gaps,
+    multiPosteCompatibility,
+    bonusSkills,
   })
 })
 
@@ -567,11 +587,18 @@ protectedRouter.post('/candidatures/:id/recalculate', (req, res) => {
   const tauxPoste = calculatePosteCompatibility(effectiveRatings, row.role_id)
   const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, row.role_id)
 
-  getDb().prepare(
-    'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, updated_at = datetime(\'now\') WHERE id = ?'
-  ).run(tauxPoste, tauxEquipe, req.params.id)
+  // Read current soft skill score (from Aboro, if available)
+  const currentSoft = getDb().prepare(
+    'SELECT taux_soft_skills FROM candidatures WHERE id = ?'
+  ).get(req.params.id) as { taux_soft_skills: number | null } | undefined
 
-  res.json({ tauxPoste, tauxEquipe })
+  const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, currentSoft?.taux_soft_skills ?? null)
+
+  getDb().prepare(
+    'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+  ).run(tauxPoste, tauxEquipe, tauxGlobal, req.params.id)
+
+  res.json({ tauxPoste, tauxEquipe, tauxGlobal })
 })
 
 // Upload document for a candidature (Aboro PDF, etc.)
@@ -643,6 +670,24 @@ protectedRouter.post('/candidatures/:id/documents', async (req, res) => {
           `).run(req.params.id, `Profil Âboro extrait : 20 traits, ${Object.keys(profile.talent_cloud).length} talents`, user.slug || 'unknown')
 
           aboroProfile = profile
+
+          // Calculate soft skill score from Aboro profile
+          const softResult = calculateSoftSkillScore(profile)
+
+          // Read current compatibility scores from the candidature
+          const currentScores = getDb().prepare(
+            'SELECT taux_compatibilite_poste, taux_compatibilite_equipe FROM candidatures WHERE id = ?'
+          ).get(req.params.id) as { taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null } | undefined
+
+          const tauxGlobal = calculateGlobalScore(
+            currentScores?.taux_compatibilite_poste ?? null,
+            currentScores?.taux_compatibilite_equipe ?? null,
+            softResult.score,
+          )
+
+          getDb().prepare(
+            'UPDATE candidatures SET taux_soft_skills = ?, soft_skill_alerts = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+          ).run(softResult.score, JSON.stringify(softResult.alerts), tauxGlobal, req.params.id)
         }
       } catch (err) {
         console.error('[Aboro extraction] Error:', err)
@@ -838,6 +883,109 @@ protectedRouter.get('/dashboard', (_req, res) => {
     totalActive,
     statusBreakdown: Object.fromEntries(statusCounts.map(s => [s.statut, s.count])),
   })
+})
+
+// ─── Scoring weights ─────────────────────────────────────────────────
+protectedRouter.get('/scoring-weights', (_req, res) => {
+  const weights = getDb().prepare('SELECT * FROM scoring_weights WHERE id = ?').get('default') as {
+    id: string; weight_poste: number; weight_equipe: number; weight_soft: number; updated_at: string
+  } | undefined
+
+  res.json(weights ?? { id: 'default', weight_poste: 0.5, weight_equipe: 0.2, weight_soft: 0.3 })
+})
+
+protectedRouter.put('/scoring-weights', async (req, res) => {
+  const { weightPoste, weightEquipe, weightSoft } = req.body
+  if (typeof weightPoste !== 'number' || typeof weightEquipe !== 'number' || typeof weightSoft !== 'number') {
+    res.status(400).json({ error: 'weightPoste, weightEquipe, weightSoft sont requis (nombres)' })
+    return
+  }
+  if (Math.abs(weightPoste + weightEquipe + weightSoft - 1.0) > 0.01) {
+    res.status(400).json({ error: 'Les poids doivent totaliser 1.0' })
+    return
+  }
+
+  getDb().prepare(
+    'UPDATE scoring_weights SET weight_poste = ?, weight_equipe = ?, weight_soft = ?, updated_at = datetime(\'now\') WHERE id = ?'
+  ).run(weightPoste, weightEquipe, weightSoft, 'default')
+
+  // Recalculate taux_global for all candidatures
+  const allCandidatures = getDb().prepare(
+    'SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe, taux_soft_skills FROM candidatures'
+  ).all() as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null; taux_soft_skills: number | null }[]
+
+  const updateStmt = getDb().prepare('UPDATE candidatures SET taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?')
+  const recalc = getDb().transaction(() => {
+    for (const c of allCandidatures) {
+      const tauxGlobal = calculateGlobalScore(c.taux_compatibilite_poste, c.taux_compatibilite_equipe, c.taux_soft_skills)
+      updateStmt.run(tauxGlobal, c.id)
+    }
+  })
+  recalc()
+
+  res.json({ ok: true, recalculated: allCandidatures.length })
+})
+
+protectedRouter.post('/recalculate-all', (_req, res) => {
+  const allCandidatures = getDb().prepare(
+    'SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe, taux_soft_skills FROM candidatures'
+  ).all() as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null; taux_soft_skills: number | null }[]
+
+  const updateStmt = getDb().prepare('UPDATE candidatures SET taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?')
+  const recalc = getDb().transaction(() => {
+    for (const c of allCandidatures) {
+      const tauxGlobal = calculateGlobalScore(c.taux_compatibilite_poste, c.taux_compatibilite_equipe, c.taux_soft_skills)
+      updateStmt.run(tauxGlobal, c.id)
+    }
+  })
+  recalc()
+
+  res.json({ ok: true, recalculated: allCandidatures.length })
+})
+
+// Manual Aboro profile entry
+protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) => {
+  try {
+    const db = getDb()
+    const { traits, talent_cloud, talents, axes_developpement } = req.body
+
+    // Validate 20 traits are present and 1-10
+    if (!traits) {
+      res.status(400).json({ error: 'Traits requis' })
+      return
+    }
+    for (const axis of Object.values(traits)) {
+      for (const [key, val] of Object.entries(axis as Record<string, number>)) {
+        if (typeof val !== 'number' || val < 1 || val > 10) {
+          res.status(400).json({ error: `Trait ${key} invalide: doit être entre 1 et 10` })
+          return
+        }
+      }
+    }
+
+    const profile = { traits, talent_cloud: talent_cloud ?? {}, talents: talents ?? [], axes_developpement: axes_developpement ?? [], matrices: [] }
+    const profileId = crypto.randomUUID()
+
+    db.prepare('INSERT OR REPLACE INTO aboro_profiles (id, candidate_id, profile_json, source_document_id, created_by) VALUES (?, ?, ?, ?, ?)')
+      .run(profileId, req.params.candidateId, JSON.stringify(profile), null, getUser(req).slug || 'unknown')
+
+    // Calculate soft skill score and update ALL candidatures for this candidate
+    const softResult = calculateSoftSkillScore(profile)
+
+    const candidatureRows = db.prepare('SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe FROM candidatures WHERE candidate_id = ?')
+      .all(req.params.candidateId) as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null }[]
+
+    for (const c of candidatureRows) {
+      const tauxGlobal = calculateGlobalScore(c.taux_compatibilite_poste, c.taux_compatibilite_equipe, softResult.score)
+      db.prepare('UPDATE candidatures SET taux_soft_skills = ?, soft_skill_alerts = ?, taux_global = ? WHERE id = ?')
+        .run(softResult.score, JSON.stringify(softResult.alerts), tauxGlobal, c.id)
+    }
+
+    res.json({ profile, softSkillScore: softResult.score, alerts: softResult.alerts })
+  } catch (err) {
+    console.error('[Manual Aboro] Error:', err)
+    res.status(500).json({ error: 'Erreur sauvegarde' })
+  }
 })
 
 // Mount protected routes

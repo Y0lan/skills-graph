@@ -236,3 +236,95 @@ export function getGapAnalysis(
 
   return gaps.sort((a, b) => b.gap - a.gap)
 }
+
+/**
+ * Calculate the global weighted score combining poste, equipe, and soft skills.
+ * Reads configurable weights from scoring_weights table.
+ */
+export function calculateGlobalScore(
+  tauxPoste: number | null,
+  tauxEquipe: number | null,
+  tauxSoft: number | null,
+): number | null {
+  const db = getDb()
+  const weights = db.prepare('SELECT weight_poste, weight_equipe, weight_soft FROM scoring_weights WHERE id = ?')
+    .get('default') as { weight_poste: number; weight_equipe: number; weight_soft: number } | undefined
+
+  const wp = weights?.weight_poste ?? 0.7
+  const we = weights?.weight_equipe ?? 0.3
+  const ws = weights?.weight_soft ?? 0
+
+  // If no soft skills available, redistribute soft weight proportionally
+  if (tauxSoft == null) {
+    if (tauxPoste == null) return null
+    const fallbackWp = wp + ws * (wp / (wp + we))
+    const fallbackWe = we + ws * (we / (wp + we))
+    return Math.round((tauxPoste * fallbackWp + (tauxEquipe ?? 0) * fallbackWe))
+  }
+
+  return Math.round(
+    (tauxPoste ?? 0) * wp + (tauxEquipe ?? 0) * we + tauxSoft * ws
+  )
+}
+
+/**
+ * Calculate compatibility scores for other postes in the same pole.
+ */
+export function calculateMultiPosteCompatibility(
+  candidateRatings: Record<string, number>,
+  currentPosteId: string,
+): { posteId: string; posteTitre: string; tauxPoste: number }[] {
+  const db = getDb()
+  const currentPoste = db.prepare('SELECT pole FROM postes WHERE id = ?')
+    .get(currentPosteId) as { pole: string } | undefined
+  if (!currentPoste) return []
+
+  const otherPostes = db.prepare(
+    'SELECT id, role_id, titre FROM postes WHERE pole = ? AND id != ?'
+  ).all(currentPoste.pole, currentPosteId) as { id: string; role_id: string; titre: string }[]
+
+  return otherPostes.map(p => ({
+    posteId: p.id,
+    posteTitre: p.titre,
+    tauxPoste: calculatePosteCompatibility(candidateRatings, p.role_id),
+  }))
+}
+
+/**
+ * Get skills the candidate has rated that are NOT in the poste's role categories.
+ * These are "bonus" skills that show additional value beyond the role requirements.
+ */
+export function getBonusSkills(
+  candidateRatings: Record<string, number>,
+  posteRoleId: string,
+): { skillId: string; skillLabel: string; categoryLabel: string; score: number }[] {
+  const db = getDb()
+
+  // Get the role's category IDs
+  const roleCats = db.prepare(
+    'SELECT category_id FROM role_categories WHERE role_id = ?'
+  ).all(posteRoleId) as { category_id: string }[]
+  const roleCatIds = new Set(roleCats.map(c => c.category_id))
+
+  // Get all skills with their category info
+  const allSkills = db.prepare(
+    'SELECT s.id, s.label, s.category_id, c.label as category_label FROM skills s JOIN categories c ON c.id = s.category_id'
+  ).all() as { id: string; label: string; category_id: string; category_label: string }[]
+
+  // Find skills rated by candidate that are NOT in the role's categories
+  const bonusSkills: { skillId: string; skillLabel: string; categoryLabel: string; score: number }[] = []
+  for (const skill of allSkills) {
+    if (roleCatIds.has(skill.category_id)) continue
+    const rating = candidateRatings[skill.id]
+    if (rating != null && rating > 0) {
+      bonusSkills.push({
+        skillId: skill.id,
+        skillLabel: skill.label,
+        categoryLabel: skill.category_label,
+        score: rating,
+      })
+    }
+  }
+
+  return bonusSkills.sort((a, b) => b.score - a.score)
+}
