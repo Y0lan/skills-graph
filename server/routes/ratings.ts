@@ -9,7 +9,20 @@ const VALID_SLUGS = new Set(teamMembers.map(m => m.slug))
 
 export const ratingsRouter = Router()
 
-// GET / — all ratings (public)
+// GET /status — lightweight public endpoint for status dots (no auth required)
+// Returns { slug: 'submitted' | 'draft' | 'none' } only, no scores or summaries
+ratingsRouter.get('/status', (_req, res) => {
+  const all = getAllEvaluations()
+  const result: Record<string, string> = {}
+  for (const [slug, eval_] of Object.entries(all)) {
+    if (eval_.submittedAt) result[slug] = 'submitted'
+    else if (Object.keys(eval_.ratings).length > 0) result[slug] = 'draft'
+    else result[slug] = 'none'
+  }
+  res.json(result)
+})
+
+// GET / — all ratings (requires auth)
 ratingsRouter.get('/', (_req, res) => {
   res.json(getAllEvaluations())
 })

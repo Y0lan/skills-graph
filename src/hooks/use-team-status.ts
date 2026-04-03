@@ -7,15 +7,13 @@ export function useTeamStatus(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return
     const controller = new AbortController()
-    fetch('/api/ratings', { signal: controller.signal })
+    fetch('/api/ratings/status', { signal: controller.signal })
       .then((r) => r.json())
-      .then((data: Record<string, { ratings: Record<string, number>; submittedAt: string | null }>) => {
+      .then((data: Record<string, string>) => {
         const map = new Map<string, EvalStatus>()
-        for (const [slug, eval_] of Object.entries(data)) {
-          if (eval_.submittedAt) {
-            map.set(slug, 'submitted')
-          } else if (Object.keys(eval_.ratings).length > 0) {
-            map.set(slug, 'draft')
+        for (const [slug, status] of Object.entries(data)) {
+          if (status === 'submitted' || status === 'draft') {
+            map.set(slug, status)
           }
         }
         setStatusMap(map)
