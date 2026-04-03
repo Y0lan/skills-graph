@@ -20,7 +20,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle, FileText, Download, FolderArchive } from 'lucide-react'
 
 interface CandidateDetail {
   id: string
@@ -76,6 +77,24 @@ interface CandidatureEvent {
   notes: string | null
   createdBy: string
   createdAt: string
+}
+
+interface CandidatureDocument {
+  id: string
+  type: string
+  filename: string
+  uploaded_by: string
+  created_at: string
+}
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  cv: 'CV',
+  lettre: 'Lettre de motivation',
+  aboro: 'Rapport Âboro',
+  entretien: 'Compte-rendu entretien',
+  proposition: 'Proposition',
+  administratif: 'Administratif',
+  other: 'Autre',
 }
 
 const STATUT_LABELS: Record<string, string> = {
@@ -151,6 +170,9 @@ export default function CandidateDetailPage() {
     skipTransitions: { statut: string; skipped: string[] }[]
     notesRequired: string[]
   } | null>(null)
+  const [documents, setDocuments] = useState<CandidatureDocument[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadType, setUploadType] = useState('other')
 
   useEffect(() => {
     if (!id) return
@@ -178,13 +200,15 @@ export default function CandidateDetailPage() {
         const mine = all.filter((c: CandidatureInfo) => c.candidateId === id)
         setCandidatures(mine)
         if (mine.length > 0) {
-          // Fetch events + allowed transitions for the first candidature
+          // Fetch events + allowed transitions + documents for the first candidature
           Promise.all([
             fetch(`/api/recruitment/candidatures/${mine[0].id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
             fetch(`/api/recruitment/candidatures/${mine[0].id}/transitions`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
-          ]).then(([detail, transitions]) => {
+            fetch(`/api/recruitment/candidatures/${mine[0].id}/documents`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+          ]).then(([detail, transitions, docs]) => {
             if (detail?.events) setEvents(detail.events)
             if (transitions) setAllowedTransitions(transitions)
+            setDocuments(docs ?? [])
           })
         }
       })
@@ -293,6 +317,35 @@ export default function CandidateDetailPage() {
     } catch { /* silent */ }
     finally { setSavingNotes(false) }
   }, [id, notes])
+
+  const uploadDocument = useCallback(async (file: File) => {
+    const cId = candidatures[0]?.id
+    if (!cId) return
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('type', uploadType)
+      const res = await fetch(`/api/recruitment/candidatures/${cId}/documents`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      })
+      if (!res.ok) throw new Error('Erreur upload')
+      const doc = await res.json()
+      setDocuments(prev => [{ id: doc.id, type: doc.type, filename: doc.filename, uploaded_by: 'moi', created_at: new Date().toISOString() }, ...prev])
+      setUploadType('other')
+      toast.success(`Document uploadé : ${doc.filename}`)
+      // Refresh events (upload creates a timeline event)
+      fetch(`/api/recruitment/candidatures/${cId}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(detail => { if (detail?.events) setEvents(detail.events) })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur upload')
+    } finally {
+      setUploading(false)
+    }
+  }, [candidatures, uploadType])
 
   if (loading) {
     return (
@@ -793,6 +846,94 @@ export default function CandidateDetailPage() {
                       )}
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Documents */}
+            {candidatures.length > 0 && (
+              <Card className="lg:col-span-2">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle className="text-base">Documents</CardTitle>
+                  <div className="flex items-center gap-2">
+                    {documents.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          window.open(`/api/recruitment/candidatures/${candidatures[0].id}/documents/zip`, '_blank')
+                        }}
+                      >
+                        <FolderArchive className="mr-2 h-4 w-4" />
+                        Télécharger tout (.zip)
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {/* Upload form */}
+                  <div className="flex items-center gap-2 mb-4">
+                    <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>
+                      <SelectTrigger className="w-[180px]">
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(DOC_TYPE_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={uploading}
+                      onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = '.pdf,.docx,.doc,.png,.jpg,.jpeg'
+                        input.onchange = (e) => {
+                          const file = (e.target as HTMLInputElement).files?.[0]
+                          if (file) uploadDocument(file)
+                        }
+                        input.click()
+                      }}
+                    >
+                      {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                      Uploader
+                    </Button>
+                  </div>
+
+                  {/* Document list */}
+                  {documents.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {documents.map(doc => (
+                        <div key={doc.id} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="text-sm truncate">{doc.filename}</span>
+                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                              {DOC_TYPE_LABELS[doc.type] ?? doc.type}
+                            </Badge>
+                            <span className="text-[10px] text-muted-foreground shrink-0">
+                              {formatDateShort(doc.created_at)}
+                            </span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
+                            onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Aucun document. Utilisez le bouton ci-dessus pour ajouter des pièces au dossier.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}
