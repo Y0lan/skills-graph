@@ -40,7 +40,7 @@ jobs:
         run: gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,30 +50,32 @@ jobs:
         with:
           context: .
           push: true
-          tags: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-${{ github.sha }}
+          tags: |
+            asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
+            asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Get GKE credentials
         run: |
-          gcloud container clusters get-credentials skill-radar \
-            --region australia-southeast1 \
-            --project ${{ vars.GCP_PROJECT_ID }}
+          gcloud container clusters get-credentials cloud-sinapse \
+            --region asia-northeast1 \
+            --project premier-socle-sinapse
 
       - name: Deploy to GKE (dev)
         run: |
           cd k8s-dev
-          kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-${{ github.sha }}
+          kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
           kubectl apply -k .
-          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=120s
+          kubectl -n apps rollout status deployment/skill-radar --timeout=120s
 
       - name: Smoke test
         run: |
           # Wait for rollout to complete (pod ready)
-          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=90s
+          kubectl -n apps rollout status deployment/skill-radar --timeout=90s
 
           # Test via port-forward (bypasses LB propagation delay)
-          kubectl -n skill-radar-dev port-forward deploy/skill-radar 9090:8080 &
+          kubectl -n apps port-forward deploy/skill-radar 9090:8080 &
           PF_PID=$!
           sleep 3
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
