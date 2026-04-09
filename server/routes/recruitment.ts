@@ -119,7 +119,7 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
       fields = req.body
     }
 
-    const result = await processIntake(fields as Parameters<typeof processIntake>[0], cvFile)
+    const result = await processIntake(fields as unknown as Parameters<typeof processIntake>[0], cvFile)
 
     if ('error' in result) {
       res.status(result.status).json({ error: result.error })
@@ -570,7 +570,7 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
     const user = getUser(req)
 
     const result = await uploadDocument({
-      candidatureId: req.params.id,
+      candidatureId: req.params.id as string,
       file,
       docType,
       userSlug: user.slug || 'unknown',

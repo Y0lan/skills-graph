@@ -183,7 +183,9 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
   ).all(candidatureId) as { type: string; statut_from: string | null; statut_to: string | null; notes: string | null; created_by: string; created_at: string }[]
 
   const fs = await import('fs')
-  const sanitized = (candidature.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_')
+  // candidature is guaranteed non-undefined after the early return above
+  const cand = candidature!
+  const sanitized = (cand.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_')
   const candidateName = sanitized || 'Candidat'
 
   async function pipe(output: Writable): Promise<void> {
@@ -207,17 +209,17 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
     }
 
     // Add resume.txt
-    let resume = `DOSSIER CANDIDAT — ${candidature.name}\n`
+    let resume = `DOSSIER CANDIDAT — ${cand.name}\n`
     resume += `${'='.repeat(50)}\n\n`
-    resume += `Poste : ${candidature.poste_titre}\n`
-    resume += `Pôle : ${candidature.poste_pole}\n`
-    resume += `Statut : ${statusLabels[candidature.statut as string] ?? candidature.statut}\n`
-    resume += `Canal : ${candidature.canal}\n`
-    resume += `Email : ${candidature.email ?? '—'}\n`
-    resume += `Téléphone : ${candidature.telephone ?? '—'}\n`
-    resume += `Pays : ${candidature.pays ?? '—'}\n`
-    resume += `\nCompatibilité poste : ${candidature.taux_compatibilite_poste ?? '—'}%\n`
-    resume += `Compatibilité équipe : ${candidature.taux_compatibilite_equipe ?? '—'}%\n`
+    resume += `Poste : ${cand.poste_titre}\n`
+    resume += `Pôle : ${cand.poste_pole}\n`
+    resume += `Statut : ${statusLabels[cand.statut as string] ?? cand.statut}\n`
+    resume += `Canal : ${cand.canal}\n`
+    resume += `Email : ${cand.email ?? '—'}\n`
+    resume += `Téléphone : ${cand.telephone ?? '—'}\n`
+    resume += `Pays : ${cand.pays ?? '—'}\n`
+    resume += `\nCompatibilité poste : ${cand.taux_compatibilite_poste ?? '—'}%\n`
+    resume += `Compatibilité équipe : ${cand.taux_compatibilite_equipe ?? '—'}%\n`
     resume += `\nHISTORIQUE\n${'-'.repeat(30)}\n`
     for (const e of events) {
       const date = e.created_at.substring(0, 10)
