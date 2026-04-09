@@ -28,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Auth via sinapse-core (has WI pool + SA)
       - id: auth
         uses: google-github-actions/auth@v2
         with:
@@ -39,8 +40,9 @@ jobs:
       - name: Install gke-gcloud-auth-plugin
         run: gcloud components install gke-gcloud-auth-plugin --quiet
 
+      # Push to sinapse-core registry (where SA has write access)
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -51,12 +53,13 @@ jobs:
           context: .
           push: true
           tags: |
-            asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
-            asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-latest
+            australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-${{ github.sha }}
+            australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Get GKE credentials
+      # Deploy to premier-socle-sinapse GKE (dev cluster)
+      - name: Get GKE credentials (dev cluster)
         run: |
           gcloud container clusters get-credentials cloud-sinapse \
             --region asia-northeast1 \
@@ -65,7 +68,7 @@ jobs:
       - name: Deploy to GKE (dev)
         run: |
           cd k8s-dev
-          kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
+          kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-${{ github.sha }}
           kubectl apply -k .
           kubectl -n apps rollout status deployment/skill-radar --timeout=120s
 
