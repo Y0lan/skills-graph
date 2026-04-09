@@ -6,6 +6,8 @@ import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
 import FitReport from '@/components/recruit/fit-report'
 import MultiPosteCard from '@/components/recruit/multi-poste-card'
+import CandidateStatusBar from '@/components/recruit/candidate-status-bar'
+import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,9 +24,9 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, GitBranch, Mail, Phone, Globe, MapPin, ChevronRight, Upload, AlertCircle, FileText, Download, FolderArchive, PenLine } from 'lucide-react'
+import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, Upload, AlertCircle, FileText, Download, FolderArchive, PenLine } from 'lucide-react'
 import AboroManualForm from '@/components/recruit/aboro-manual-form'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateShort } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, formatDateShort } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -55,7 +57,6 @@ export default function CandidateDetailPage() {
   } = useCandidateData(id)
 
   const [analyzing, setAnalyzing] = useState(false)
-  const [savingNotes, setSavingNotes] = useState(false)
   const [changingStatus, setChangingStatus] = useState(false)
   const [transitionDialog, setTransitionDialog] = useState<{
     candidatureId: string
@@ -161,19 +162,6 @@ export default function CandidateDetailPage() {
       setAnalyzing(false)
     }
   }, [id, setCandidate])
-
-  const saveNotes = useCallback(async () => {
-    if (!id) return
-    setSavingNotes(true)
-    try {
-      await fetch(`/api/candidates/${id}/notes`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes }),
-      })
-    } catch { /* silent */ }
-    finally { setSavingNotes(false) }
-  }, [id, notes])
 
   const uploadDocument = useCallback(async (file: File) => {
     const cId = candidatures[0]?.id
@@ -329,130 +317,13 @@ export default function CandidateDetailPage() {
         )}
 
         {/* Pipeline candidature(s) */}
-        {candidatures.length > 0 && (
-          <div className="mt-6 space-y-3">
-            {candidatures.map(c => (
-              <Card key={c.id}>
-                <CardContent className="py-4 px-5">
-                  {/* Header: poste + current status + scores */}
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div className="flex items-center gap-3">
-                      <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium">{c.posteTitre}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {CANAL_LABELS[c.canal] ?? c.canal}
-                          {' · '}Candidature du {formatDateShort(c.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {c.tauxPoste != null && (
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Poste</p>
-                          <p className="text-sm font-bold">{c.tauxPoste}%</p>
-                        </div>
-                      )}
-                      {c.tauxEquipe != null && (
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Équipe</p>
-                          <p className="text-sm font-bold">{c.tauxEquipe}%</p>
-                        </div>
-                      )}
-                      {c.tauxSoft != null && (
-                        <div className="text-right">
-                          <p className="text-xs text-muted-foreground">Soft</p>
-                          <p className="text-sm font-bold">{c.tauxSoft}%</p>
-                        </div>
-                      )}
-                      <Badge className={`text-sm px-3 py-1 ${STATUT_COLORS[c.statut] ?? ''}`}>
-                        {STATUT_LABELS[c.statut] ?? c.statut}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {/* Soft skill alerts */}
-                  {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {c.softSkillAlerts.map((a, i) => (
-                        <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600">
-                          {'\u26A0'} {a.message}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Transition actions */}
-                  {allowedTransitions && (allowedTransitions.allowedTransitions.length > 0 || allowedTransitions.skipTransitions.length > 0) && (
-                    <div className="mt-4 pt-3 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Actions suivantes :</p>
-                      <div className="flex flex-wrap gap-2">
-                        {allowedTransitions.allowedTransitions.filter(s => s !== 'refuse').map(s => (
-                          <Button
-                            key={s}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openTransitionDialog(c.id, s)}
-                            disabled={changingStatus}
-                          >
-                            <ChevronRight className="h-3 w-3 mr-1" />
-                            {STATUT_LABELS[s] ?? s}
-                          </Button>
-                        ))}
-                        {allowedTransitions.skipTransitions.map(st => (
-                          <Button
-                            key={st.statut}
-                            size="sm"
-                            variant="ghost"
-                            className="text-muted-foreground"
-                            onClick={() => openTransitionDialog(c.id, st.statut, true, st.skipped)}
-                            disabled={changingStatus}
-                          >
-                            {STATUT_LABELS[st.statut] ?? st.statut}
-                            <span className="text-[10px] ml-1">(sauter {st.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')})</span>
-                          </Button>
-                        ))}
-                        {allowedTransitions.allowedTransitions.includes('refuse') && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="ml-auto"
-                            onClick={() => openTransitionDialog(c.id, 'refuse')}
-                            disabled={changingStatus}
-                          >
-                            Refuser
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Event timeline */}
-                  {events.length > 0 && (
-                    <div className="mt-3 pt-3 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">Historique :</p>
-                      <div className="space-y-1.5">
-                        {events.map(e => (
-                          <div key={e.id} className="flex items-start gap-2 text-xs">
-                            <span className="text-muted-foreground shrink-0 w-12">{formatDateShort(e.createdAt)}</span>
-                            {e.statutTo && (
-                              <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
-                                {STATUT_LABELS[e.statutTo] ?? e.statutTo}
-                              </Badge>
-                            )}
-                            {e.type === 'document' && <Upload className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />}
-                            {e.notes && <span className="text-muted-foreground">{e.notes}</span>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <CandidateStatusBar
+          candidatures={candidatures}
+          events={events}
+          allowedTransitions={allowedTransitions}
+          changingStatus={changingStatus}
+          onOpenTransition={openTransitionDialog}
+        />
 
         {/* Transition confirmation dialog */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) setTransitionDialog(null) }}>
@@ -938,21 +809,11 @@ export default function CandidateDetailPage() {
             </Card>
 
             {/* Notes */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base">Notes privées</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Textarea
-                  value={notes}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
-                  onBlur={saveNotes}
-                  placeholder="Vos notes sur ce candidat..."
-                  rows={3}
-                />
-                {savingNotes && <p className="mt-1 text-xs text-muted-foreground">Sauvegarde...</p>}
-              </CardContent>
-            </Card>
+            <CandidateNotesSection
+              candidateId={candidate.id}
+              notes={notes}
+              onNotesChange={setNotes}
+            />
           </div>
         )}
       </div>
