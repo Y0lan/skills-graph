@@ -9,8 +9,8 @@ import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
-import { calculateSoftSkillScore } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
+import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
 interface AuthUser {
@@ -670,16 +670,7 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
 
 // Get Aboro profile for a candidate
 protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
-  const profile = getDb().prepare(
-    'SELECT profile_json, created_at FROM aboro_profiles WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1'
-  ).get(req.params.candidateId) as { profile_json: string; created_at: string } | undefined
-
-  if (!profile) {
-    res.json({ profile: null })
-    return
-  }
-
-  res.json({ profile: safeJsonParse(profile.profile_json, null, 'aboro_profiles.profile_json'), createdAt: profile.created_at })
+  res.json(getAboroProfile(req.params.candidateId))
 })
 
 // List documents for a candidature
@@ -811,7 +802,6 @@ protectedRouter.post('/recalculate-all', recalcRateLimit, (_req, res) => {
 // Manual Aboro profile entry
 protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) => {
   try {
-    const db = getDb()
     const { traits, talent_cloud, talents, axes_developpement } = req.body
 
     // Validate 20 traits are present and 1-10
@@ -828,25 +818,16 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
       }
     }
 
-    const profile = { traits, talent_cloud: talent_cloud ?? {}, talents: talents ?? [], axes_developpement: axes_developpement ?? [], matrices: [] }
-    const profileId = crypto.randomUUID()
+    const result = saveManualAboroProfile({
+      candidateId: req.params.candidateId,
+      traits,
+      talent_cloud,
+      talents,
+      axes_developpement,
+      userSlug: getUser(req).slug || 'unknown',
+    })
 
-    db.prepare('INSERT OR REPLACE INTO aboro_profiles (id, candidate_id, profile_json, source_document_id, created_by) VALUES (?, ?, ?, ?, ?)')
-      .run(profileId, req.params.candidateId, JSON.stringify(profile), null, getUser(req).slug || 'unknown')
-
-    // Calculate soft skill score and update ALL candidatures for this candidate
-    const softResult = calculateSoftSkillScore(profile)
-
-    const candidatureRows = db.prepare('SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe FROM candidatures WHERE candidate_id = ?')
-      .all(req.params.candidateId) as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null }[]
-
-    for (const c of candidatureRows) {
-      const tauxGlobal = calculateGlobalScore(c.taux_compatibilite_poste, c.taux_compatibilite_equipe, softResult.score)
-      db.prepare('UPDATE candidatures SET taux_soft_skills = ?, soft_skill_alerts = ?, taux_global = ? WHERE id = ?')
-        .run(softResult.score, JSON.stringify(softResult.alerts), tauxGlobal, c.id)
-    }
-
-    res.json({ profile, softSkillScore: softResult.score, alerts: softResult.alerts })
+    res.json(result)
   } catch (err) {
     console.error('[Manual Aboro] Error:', err)
     res.status(500).json({ error: 'Erreur sauvegarde' })
