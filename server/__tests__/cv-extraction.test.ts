@@ -264,25 +264,6 @@ describe('extractSkillsFromCv', () => {
     expect(result).toBeNull()
   })
 
-  it('logs reasoning to console', async () => {
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
-
-    mockCreate.mockResolvedValueOnce(
-      mockToolResponse({ java: 3 }, { java: '3 ans expérience = L3' })
-    )
-    mockCreate.mockResolvedValueOnce(mockToolResponse({}))
-
-    const cvText = 'A'.repeat(100)
-    await extractSkillsFromCv(cvText, mockCatalog)
-
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '[CV extraction] core-engineering reasoning:',
-      { java: '3 ans expérience = L3' }
-    )
-
-    consoleSpy.mockRestore()
-  })
-
   it('requires reasoning field in tool schema', async () => {
     mockCreate.mockResolvedValueOnce(mockToolResponse({ java: 3 }))
     mockCreate.mockResolvedValueOnce(mockToolResponse({}))

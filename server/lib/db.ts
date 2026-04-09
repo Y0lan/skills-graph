@@ -137,7 +137,6 @@ export function initDatabase(): void {
         }
       })
       seedHistory()
-      console.log(`[DB] Seeded initial skill history from ${evals.length} evaluations`)
     }
   }
 
@@ -340,7 +339,6 @@ export function initDatabase(): void {
       }
     })
     seedTransaction()
-    console.log(`[DB] Seeded ${seedRoles.length} default roles`)
   }
 
   // Seed recruitment postes if postes table is empty
@@ -413,7 +411,6 @@ export function initDatabase(): void {
       }
     })
     seedPostes()
-    console.log(`[DB] Seeded ${postes.length} recruitment postes with roles`)
   }
 
   // One-time migration from ratings.json
@@ -441,7 +438,6 @@ export function initDatabase(): void {
 
       migrate()
       fs.renameSync(JSON_PATH, JSON_PATH + '.migrated')
-      console.log(`Migrated ${Object.keys(data).length} evaluations from ratings.json to SQLite`)
     } catch (err) {
       console.error('Failed to migrate ratings.json:', err)
     }

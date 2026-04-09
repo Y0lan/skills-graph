@@ -157,7 +157,4 @@ export function seedCatalog(db: Database.Database): void {
   })
 
   seed()
-  console.log(
-    `Seeded catalog: ${catalog.categories.length} categories, ${catalog.categories.reduce((n, c) => n + c.skills.length, 0)} skills`,
-  )
 }

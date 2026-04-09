@@ -210,10 +210,6 @@ ${cvText}
     reasoning?: Record<string, string>
   }
 
-  if (input.reasoning) {
-    console.log(`[CV extraction] ${category.id} reasoning:`, input.reasoning)
-  }
-
   if (!input.suggestions) return {}
 
   // Return raw suggestions — validation happens in the caller after merge
