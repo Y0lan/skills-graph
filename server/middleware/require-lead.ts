@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import type { AuthUser } from '../lib/types.js'
 
 const RECRUITMENT_LEADS = [
   'yolan-maldonado',
@@ -7,12 +8,6 @@ const RECRUITMENT_LEADS = [
   'olivier-faivre',
   'guillaume-benoit',
 ]
-
-interface AuthUser {
-  id: string
-  slug: string | null
-  [key: string]: unknown
-}
 
 export function isRecruitmentLead(slug: string | null | undefined): boolean {
   return !!slug && RECRUITMENT_LEADS.includes(slug)

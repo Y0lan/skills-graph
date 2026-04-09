@@ -9,17 +9,7 @@ import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalys
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
-import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
-
-interface AuthUser {
-  id: string
-  slug: string | null
-  [key: string]: unknown
-}
-
-function getUser(req: import('express').Request): AuthUser {
-  return (req as typeof req & { user: AuthUser }).user
-}
+import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
 interface ParsedIntake {
   fields: Record<string, string>

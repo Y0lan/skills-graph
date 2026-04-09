@@ -1,3 +1,15 @@
+export interface AuthUser {
+  id: string
+  email: string
+  name: string
+  slug: string | null
+  pinCustomized?: boolean
+}
+
+export function getUser(req: import('express').Request): AuthUser {
+  return (req as typeof req & { user: AuthUser }).user
+}
+
 export interface CandidateRow {
   id: string
   name: string

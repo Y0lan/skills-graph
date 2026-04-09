@@ -9,13 +9,7 @@ import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
-import { safeJsonParse, type CandidateRow } from '../lib/types.js'
-
-interface AuthUser {
-  id: string
-  slug: string | null
-  [key: string]: unknown
-}
+import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 
 interface ParsedUpload {
   fields: Record<string, string>
@@ -134,7 +128,7 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     return
   }
 
-  const user = (req as typeof req & { user: AuthUser }).user
+  const user = getUser(req)
   const id = crypto.randomUUID()
 
   getDb().prepare(

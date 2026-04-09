@@ -2,12 +2,7 @@ import { Router } from 'express'
 import { getRoles, createRole, updateRole, softDeleteRole } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { getSkillCategories } from '../lib/catalog.js'
-
-interface AuthUser {
-  id: string
-  slug: string | null
-  [key: string]: unknown
-}
+import { getUser } from '../lib/types.js'
 
 function slugify(text: string): string {
   return text
@@ -53,7 +48,7 @@ rolesRouter.post('/', (req, res) => {
     return
   }
 
-  const user = (req as typeof req & { user: AuthUser }).user
+  const user = getUser(req)
   const slug = slugify(label.trim())
   if (!slug) {
     res.status(400).json({ error: 'Le libellé doit contenir au moins un caractère alphanumérique' })

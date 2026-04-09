@@ -5,12 +5,7 @@ import { computeMemberAggregate, computeTeamAggregate } from '../lib/aggregates.
 import { getSkillCategories } from '../lib/catalog.js'
 import { getAllEvaluations } from '../lib/db.js'
 import { getDb } from '../lib/db.js'
-
-interface AuthUser {
-  id: string
-  slug: string | null
-  [key: string]: unknown
-}
+import { getUser } from '../lib/types.js'
 
 const DAILY_LIMIT = 20
 
@@ -62,7 +57,7 @@ function buildSkillDetail(ratings: Record<string, number>): string {
 export const chatRouter = Router()
 
 chatRouter.post('/', requireAuth, async (req, res) => {
-  const user = (req as typeof req & { user: AuthUser }).user
+  const user = getUser(req)
   const { messages, context } = req.body
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -210,7 +205,7 @@ chatRouter.post('/', requireAuth, async (req, res) => {
 
 // GET /remaining — check remaining daily quota + next reset time
 chatRouter.get('/remaining', requireAuth, (req, res) => {
-  const user = (req as typeof req & { user: AuthUser }).user
+  const user = getUser(req)
   const db = getDb()
   const count = db.prepare(
     "SELECT COUNT(*) as cnt FROM chat_usage WHERE user_id = ? AND used_at > datetime('now', '-1 day')"

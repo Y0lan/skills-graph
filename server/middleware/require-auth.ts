@@ -1,14 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { fromNodeHeaders } from 'better-auth/node'
 import { getAuth } from '../lib/auth.js'
-
-interface AuthUser {
-  id: string
-  email: string
-  name: string
-  slug: string | null
-  [key: string]: unknown
-}
+import type { AuthUser } from '../lib/types.js'
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
