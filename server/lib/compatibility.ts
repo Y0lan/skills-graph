@@ -257,6 +257,8 @@ export function calculateGlobalScore(
   // If no soft skills available, redistribute soft weight proportionally
   if (tauxSoft == null) {
     if (tauxPoste == null) return null
+    // Guard against division by zero when both poste and equipe weights are 0
+    if (wp + we === 0) return null
     const fallbackWp = wp + ws * (wp / (wp + we))
     const fallbackWe = we + ws * (we / (wp + we))
     return Math.round((tauxPoste * fallbackWp + (tauxEquipe ?? 0) * fallbackWe))
