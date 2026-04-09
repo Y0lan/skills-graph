@@ -199,7 +199,8 @@ protectedRouter.get('/candidatures', (req, res) => {
     name: string; email: string | null; has_cv: number;
     ai_suggestions: string | null; evaluation_submitted: string | null;
     poste_titre: string; poste_pole: string;
-    taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null
+    taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null;
+    last_event_at: string | null
   })[]
 
   res.json(rows.map(r => ({
@@ -222,7 +223,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     notesDirecteur: r.notes_directeur,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    lastEventAt: (r as unknown as Record<string, unknown>).last_event_at as string | null,
+    lastEventAt: r.last_event_at,
   })))
 })
 

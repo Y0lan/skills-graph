@@ -16,6 +16,11 @@ export interface CandidateRow {
   role: string
   role_id: string | null
   email: string | null
+  telephone: string | null
+  pays: string | null
+  linkedin_url: string | null
+  github_url: string | null
+  canal: string | null
   created_by: string
   created_at: string
   expires_at: string

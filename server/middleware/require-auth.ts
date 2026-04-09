@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { fromNodeHeaders } from 'better-auth/node'
 import { getAuth } from '../lib/auth.js'
-import type { AuthUser } from '../lib/types.js'
+import { getUser, type AuthUser } from '../lib/types.js'
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
@@ -12,7 +12,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       res.status(401).json({ error: 'Non authentifie' })
       return
     }
-    ;(req as Request & { user: AuthUser }).user = session.user as unknown as AuthUser
+    ;(req as Request & { user: AuthUser }).user = session.user as AuthUser
     next()
   } catch (err) {
     console.error('[AUTH] Session check failed:', err)
@@ -21,7 +21,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 export async function requireOwnership(req: Request, res: Response, next: NextFunction) {
-  const user = (req as Request & { user: AuthUser }).user
+  const user = getUser(req)
   if (!user?.slug || user.slug !== req.params.slug) {
     res.status(403).json({ error: 'Acces refuse' })
     return
