@@ -4,6 +4,7 @@ import { Readable } from 'stream'
 import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../lib/db.js'
+import { resolveSafePath } from '../lib/fs-safety.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
@@ -619,18 +620,18 @@ protectedRouter.post('/candidatures/:id/documents', async (req, res) => {
       return
     }
 
-    const docType = parsed.fields.type || 'other'
+    const rawType = parsed.fields.type || 'other'
+    const docType = rawType.replace(/[^a-zA-Z0-9_-]/g, '_')
     const dataDir = process.env.DATA_DIR || 'server/data'
     const docDir = `${dataDir}/documents/${req.params.id}`
 
     // Create directory
     const fs = await import('fs')
-    const path = await import('path')
     fs.mkdirSync(docDir, { recursive: true })
 
     // Save file
     const safeFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const filePath = path.join(docDir, safeFilename)
+    const filePath = resolveSafePath(docDir, safeFilename)
     fs.writeFileSync(filePath, file.buffer)
 
     // Save metadata
@@ -743,8 +744,17 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   }
 
   const fs = await import('fs')
+  const path = await import('path')
   if (!fs.existsSync(doc.path)) {
     res.status(404).json({ error: 'Fichier introuvable sur le disque' })
+    return
+  }
+
+  const dataDir = process.env.DATA_DIR || 'server/data'
+  const expectedBase = path.resolve(dataDir, 'documents')
+  const resolvedPath = path.resolve(doc.path)
+  if (!resolvedPath.startsWith(expectedBase + path.sep)) {
+    res.status(403).json({ error: 'Acces refuse' })
     return
   }
 
@@ -813,7 +823,8 @@ protectedRouter.get('/candidatures/:id/documents/zip', async (req, res) => {
     if (fs.existsSync(doc.path)) {
       const ext = doc.filename.split('.').pop() ?? 'pdf'
       const prefix = String(idx).padStart(2, '0')
-      const typeName = doc.type === 'other' ? 'Document' : doc.type.charAt(0).toUpperCase() + doc.type.slice(1)
+      const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
+      const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
       archive.file(doc.path, { name: `${prefix}_${typeName}_${candidateName}.${ext}` })
       idx++
     }
