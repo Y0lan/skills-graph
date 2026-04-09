@@ -14,6 +14,7 @@ import { extractAboroText, extractAboroProfile } from '../lib/aboro-extraction.j
 import { calculateSoftSkillScore } from '../lib/soft-skill-scoring.js'
 import archiver from 'archiver'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
+import { STATUT_LABELS as statusLabels } from '../lib/constants.js'
 
 interface AuthUser {
   id: string
@@ -863,12 +864,6 @@ protectedRouter.get('/candidatures/:id/documents/zip', async (req, res) => {
   }
 
   // Add resume.txt
-  const statusLabels: Record<string, string> = {
-    postule: 'Postulé', preselectionne: 'Présélectionné', skill_radar_envoye: 'Skill Radar envoyé',
-    skill_radar_complete: 'Skill Radar complété', entretien_1: 'Entretien 1', aboro: 'Test Âboro',
-    entretien_2: 'Entretien 2', proposition: 'Proposition', embauche: 'Embauché', refuse: 'Refusé',
-  }
-
   let resume = `DOSSIER CANDIDAT — ${candidature.name}\n`
   resume += `${'='.repeat(50)}\n\n`
   resume += `Poste : ${candidature.poste_titre}\n`

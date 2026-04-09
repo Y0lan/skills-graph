@@ -4,6 +4,7 @@ import { Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
+import { STATUT_LABELS, CANAL_LABELS } from '@/lib/constants'
 
 interface Candidature {
   id: string
@@ -52,26 +53,6 @@ interface AboroProfile {
   talent_cloud: Record<string, string>
   talents: string[]
   axes_developpement: string[]
-}
-
-const STATUT_LABELS: Record<string, string> = {
-  postule: 'Postule',
-  preselectionne: 'Preselectionne',
-  skill_radar_envoye: 'Skill Radar envoye',
-  skill_radar_complete: 'Skill Radar complete',
-  entretien_1: 'Entretien 1',
-  aboro: 'Test Aboro',
-  entretien_2: 'Entretien 2',
-  proposition: 'Proposition',
-  embauche: 'Embauche',
-  refuse: 'Refuse',
-}
-
-const CANAL_LABELS: Record<string, string> = {
-  cabinet: 'Cabinet',
-  site: 'sinapse.nc',
-  candidature_directe: 'Candidature directe',
-  reseau: 'Reseau',
 }
 
 interface CandidateData {

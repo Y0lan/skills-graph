@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { STATUT_LABELS, CANAL_LABELS } from '@/lib/constants'
 
 interface Poste {
   id: string
@@ -38,26 +39,6 @@ const POLE_LABELS: Record<string, string> = {
   legacy: 'Legacy (Adelia / IBMi)',
   java_modernisation: 'Java / Modernisation',
   fonctionnel: 'Fonctionnel',
-}
-
-const STATUT_LABELS: Record<string, string> = {
-  postule: 'Postule',
-  preselectionne: 'Preselectionne',
-  skill_radar_envoye: 'Skill Radar envoye',
-  skill_radar_complete: 'Skill Radar complete',
-  entretien_1: 'Entretien 1',
-  aboro: 'Test Aboro',
-  entretien_2: 'Entretien 2',
-  proposition: 'Proposition',
-  embauche: 'Embauche',
-  refuse: 'Refuse',
-}
-
-const CANAL_LABELS: Record<string, string> = {
-  cabinet: 'Cabinet',
-  site: 'sinapse.nc',
-  candidature_directe: 'Candidature directe',
-  reseau: 'Reseau',
 }
 
 export default function ReportCampaignPage() {
