@@ -981,7 +981,7 @@ export default function CandidateDetailPage() {
                       onClick={() => {
                         const input = document.createElement('input')
                         input.type = 'file'
-                        input.accept = '.pdf,.docx,.doc,.png,.jpg,.jpeg'
+                        input.accept = '.pdf,.docx,.doc'
                         input.onchange = (e) => {
                           const file = (e.target as HTMLInputElement).files?.[0]
                           if (file) uploadDocument(file)
