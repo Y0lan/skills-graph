@@ -73,6 +73,38 @@ const intakeRateLimit = rateLimit({
   message: { error: 'Trop de candidatures. Réessayez dans une minute.' },
 })
 
+const mutationRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
+})
+
+const uploadRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de fichiers. Réessayez dans une minute.' },
+})
+
+const heavyRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
+})
+
+const recalcRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 2,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Recalcul en cours. Réessayez dans une minute.' },
+})
+
 const WEBHOOK_SECRET = process.env.DRUPAL_WEBHOOK_SECRET
 
 recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
@@ -455,7 +487,7 @@ protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
 })
 
 // Change candidature status (with state machine validation)
-protectedRouter.patch('/candidatures/:id/status', (req, res) => {
+protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) => {
   const { statut, notes, skipReason, sendEmail } = req.body
 
   if (!statut || typeof statut !== 'string') {
@@ -542,7 +574,7 @@ protectedRouter.patch('/candidatures/:id/status', (req, res) => {
 })
 
 // Add note to candidature
-protectedRouter.post('/candidatures/:id/notes', (req, res) => {
+protectedRouter.post('/candidatures/:id/notes', mutationRateLimit, (req, res) => {
   const { notes } = req.body
   if (!notes || typeof notes !== 'string') {
     res.status(400).json({ error: 'Notes requises' })
@@ -569,7 +601,7 @@ protectedRouter.post('/candidatures/:id/notes', (req, res) => {
 })
 
 // Recalculate compatibility for a candidature
-protectedRouter.post('/candidatures/:id/recalculate', (req, res) => {
+protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res) => {
   const row = getDb().prepare(`
     SELECT c.candidate_id, c.poste_id, p.role_id, p.pole, cand.ratings, cand.ai_suggestions
     FROM candidatures c
@@ -605,7 +637,7 @@ protectedRouter.post('/candidatures/:id/recalculate', (req, res) => {
 })
 
 // Upload document for a candidature (Aboro PDF, etc.)
-protectedRouter.post('/candidatures/:id/documents', async (req, res) => {
+protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req, res) => {
   const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
   if (!exists) {
     res.status(404).json({ error: 'Candidature introuvable' })
@@ -907,7 +939,7 @@ protectedRouter.get('/scoring-weights', (_req, res) => {
   res.json(weights ?? { id: 'default', weight_poste: 0.5, weight_equipe: 0.2, weight_soft: 0.3 })
 })
 
-protectedRouter.put('/scoring-weights', async (req, res) => {
+protectedRouter.put('/scoring-weights', heavyRateLimit, async (req, res) => {
   const { weightPoste, weightEquipe, weightSoft } = req.body
   if (typeof weightPoste !== 'number' || typeof weightEquipe !== 'number' || typeof weightSoft !== 'number') {
     res.status(400).json({ error: 'weightPoste, weightEquipe, weightSoft sont requis (nombres)' })
@@ -939,7 +971,7 @@ protectedRouter.put('/scoring-weights', async (req, res) => {
   res.json({ ok: true, recalculated: allCandidatures.length })
 })
 
-protectedRouter.post('/recalculate-all', (_req, res) => {
+protectedRouter.post('/recalculate-all', recalcRateLimit, (_req, res) => {
   const allCandidatures = getDb().prepare(
     'SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe, taux_soft_skills FROM candidatures'
   ).all() as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null; taux_soft_skills: number | null }[]
