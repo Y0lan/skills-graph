@@ -1,16 +1,14 @@
 import { Router } from 'express'
-import crypto from 'crypto'
 import { Readable } from 'stream'
 import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
-import { getSkillCategories } from '../lib/catalog.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
+import { processIntake } from '../lib/intake-service.js'
 import { safeJsonParse, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 
 interface AuthUser {
@@ -131,88 +129,14 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
       fields = req.body
     }
 
-    const { nom, prenom, email, telephone, pays, poste_vise, linkedin, github, message, canal } = fields
+    const result = await processIntake(fields as Parameters<typeof processIntake>[0], cvFile)
 
-    if (!nom || !email || !poste_vise) {
-      res.status(400).json({ error: 'nom, email, et poste_vise sont requis' })
+    if ('error' in result) {
+      res.status(result.status).json({ error: result.error })
       return
     }
 
-    // Validate poste exists
-    const poste = getDb().prepare('SELECT * FROM postes WHERE id = ?').get(poste_vise) as PosteRow | undefined
-    if (!poste) {
-      res.status(400).json({ error: `Poste invalide: ${poste_vise}` })
-      return
-    }
-
-    // Check idempotence: same email + same poste = update existing
-    const existingCandidature = getDb().prepare(`
-      SELECT c.id as candidature_id, c.candidate_id
-      FROM candidatures c
-      JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE cand.email = ? AND c.poste_id = ?
-    `).get(email.trim(), poste_vise) as { candidature_id: string; candidate_id: string } | undefined
-
-    if (existingCandidature) {
-      res.json({ ok: true, candidatureId: existingCandidature.candidature_id, updated: true })
-      return
-    }
-
-    const fullName = prenom ? `${prenom.trim()} ${nom.trim()}` : nom.trim()
-    const candidateId = crypto.randomUUID()
-    const candidatureId = crypto.randomUUID()
-    const resolvedCanal = canal?.trim() || 'site'
-
-    // Atomic creation: candidate + candidature + event
-    const createIntake = getDb().transaction(() => {
-      getDb().prepare(`
-        INSERT INTO candidates (id, name, role, role_id, email, created_by, telephone, pays, linkedin_url, github_url, canal)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        candidateId, fullName, poste.titre, poste.role_id, email.trim(),
-        'drupal-webhook', telephone?.trim() || null, pays?.trim() || null,
-        linkedin?.trim() || null, github?.trim() || null, resolvedCanal,
-      )
-
-      getDb().prepare(`
-        INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal)
-        VALUES (?, ?, ?, 'postule', ?)
-      `).run(candidatureId, candidateId, poste_vise, resolvedCanal)
-
-      getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
-        VALUES (?, 'status_change', 'postule', ?, 'drupal-webhook')
-      `).run(candidatureId, message?.trim() || null)
-    })
-    createIntake()
-
-    // Process CV asynchronously (outside transaction — external API call)
-    if (cvFile) {
-      try {
-        const cvText = await extractCvText(cvFile.buffer)
-        const catalog = getSkillCategories()
-        const result = await extractSkillsFromCv(cvText, catalog)
-        const suggestions = result?.ratings ?? null
-        getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
-          .run(cvText, suggestions ? JSON.stringify(suggestions) : null, candidateId)
-
-        // Update compatibility scores after CV extraction
-        if (suggestions && Object.keys(suggestions).length > 0) {
-          const tauxPoste = calculatePosteCompatibility(suggestions, poste.role_id)
-          const tauxEquipe = calculateEquipeCompatibility(suggestions, poste.role_id)
-          const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
-          getDb().prepare(
-            'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-          ).run(tauxPoste, tauxEquipe, tauxGlobal, candidatureId)
-        }
-      } catch (err) {
-        console.error('[Intake] CV processing error:', err)
-      }
-    }
-
-    // TODO: Send notification email to Guillaume
-
-    res.status(201).json({ ok: true, candidatureId, candidateId, updated: false })
+    res.status(result.updated ? 200 : 201).json(result)
   } catch (err) {
     console.error('[Intake] Error:', err)
     res.status(500).json({ error: 'Erreur interne' })
