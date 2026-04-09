@@ -75,13 +75,15 @@ const intakeRateLimit = rateLimit({
 const WEBHOOK_SECRET = process.env.DRUPAL_WEBHOOK_SECRET
 
 recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
-  // Validate webhook secret if configured
-  if (WEBHOOK_SECRET) {
-    const provided = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '')
-    if (!provided || provided !== WEBHOOK_SECRET) {
-      res.status(401).json({ error: 'Webhook secret invalide' })
-      return
-    }
+  if (!WEBHOOK_SECRET) {
+    console.error('[WEBHOOK] DRUPAL_WEBHOOK_SECRET not set — rejecting all intake requests')
+    res.status(500).json({ error: 'Webhook not configured' })
+    return
+  }
+  const provided = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '')
+  if (!provided || provided !== WEBHOOK_SECRET) {
+    res.status(401).json({ error: 'Webhook secret invalide' })
+    return
   }
 
   try {
