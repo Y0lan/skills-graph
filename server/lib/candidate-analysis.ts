@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { getDb } from './db.js'
 import { computeTeamAggregate } from './aggregates.js'
 import { getSkillCategories } from './catalog.js'
-import type { CandidateRow } from './types.js'
+import { safeJsonParse, type CandidateRow } from './types.js'
 
 export async function generateCandidateAnalysis(candidateId: string): Promise<string> {
   const db = getDb()
@@ -13,7 +13,7 @@ export async function generateCandidateAnalysis(candidateId: string): Promise<st
   // Return cached report if it exists
   if (candidate.ai_report) return candidate.ai_report
 
-  const ratings: Record<string, number> = JSON.parse(candidate.ratings)
+  const ratings: Record<string, number> = safeJsonParse(candidate.ratings, {}, 'candidates.ratings')
   const teamAggregate = computeTeamAggregate()
   const categories = getSkillCategories()
 

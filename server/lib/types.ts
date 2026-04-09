@@ -84,12 +84,14 @@ export interface CandidatureEventRow {
   created_at: string
 }
 
-/** Safe JSON.parse that returns a fallback on error instead of crashing */
-export function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+/** Safe JSON.parse that returns a fallback on error instead of crashing.
+ *  Logs corruption so bad rows are visible, not silently hidden. */
+export function safeJsonParse<T>(json: string | null | undefined, fallback: T, context?: string): T {
   if (json == null) return fallback
   try {
     return JSON.parse(json)
   } catch {
+    console.error(`[DATA] Corrupted JSON${context ? ` in ${context}` : ''}:`, json?.slice(0, 100))
     return fallback
   }
 }

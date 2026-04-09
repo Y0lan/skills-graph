@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import fs from 'fs'
 import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
+import { safeJsonParse } from './types.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -127,7 +128,7 @@ export function initDatabase(): void {
       const insert = db.prepare('INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, 0, ?, ?)')
       const seedHistory = db.transaction(() => {
         for (const ev of evals) {
-          const ratings: Record<string, number> = JSON.parse(ev.ratings)
+          const ratings: Record<string, number> = safeJsonParse(ev.ratings, {}, 'evaluations.ratings')
           for (const [skillId, level] of Object.entries(ratings)) {
             if (level > 0) {
               insert.run(ev.slug, skillId, level, ev.submitted_at)
@@ -462,9 +463,9 @@ export function getAllEvaluations(): Record<string, MemberEvaluation> {
   const result: Record<string, MemberEvaluation> = {}
   for (const row of rows) {
     result[row.slug] = {
-      ratings: JSON.parse(row.ratings),
-      experience: JSON.parse(row.experience),
-      skippedCategories: JSON.parse(row.skipped_categories),
+      ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
+      experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
+      skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
       submittedAt: row.submitted_at,
       profileSummary: row.profile_summary ?? null,
     }
@@ -485,9 +486,9 @@ export function getEvaluation(slug: string): MemberEvaluation | null {
   if (!row) return null
 
   return {
-    ratings: JSON.parse(row.ratings),
-    experience: JSON.parse(row.experience),
-    skippedCategories: JSON.parse(row.skipped_categories),
+    ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
+    experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
+    skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
     submittedAt: row.submitted_at,
     profileSummary: row.profile_summary ?? null,
   }

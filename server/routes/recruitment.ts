@@ -752,7 +752,7 @@ protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
     return
   }
 
-  res.json({ profile: JSON.parse(profile.profile_json), createdAt: profile.created_at })
+  res.json({ profile: safeJsonParse(profile.profile_json, null, 'aboro_profiles.profile_json'), createdAt: profile.created_at })
 })
 
 // List documents for a candidature
