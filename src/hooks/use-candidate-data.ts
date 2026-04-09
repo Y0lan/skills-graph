@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 
 export interface CandidateDetail {
   id: string
@@ -147,7 +148,10 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
     fetch(`/api/recruitment/candidates/${candidateId}/aboro`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data?.profile) setAboroProfile(data.profile) })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[Fetch] Error:', err)
+        toast.error('Erreur de chargement')
+      })
 
     // Fetch candidatures for this candidate
     fetch('/api/recruitment/candidatures', { credentials: 'include' })
@@ -170,7 +174,10 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
           })
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[Fetch] Error:', err)
+        toast.error('Erreur de chargement')
+      })
   }, [candidateId])
 
   return {
