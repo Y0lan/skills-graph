@@ -26,8 +26,9 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
+import { STATUT_LABELS } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
+import { useTransitionState } from '@/hooks/use-transition-state'
 
 export default function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -46,93 +47,19 @@ export default function CandidateDetailPage() {
     notes, setNotes,
   } = useCandidateData(id)
 
+  const {
+    changingStatus,
+    transitionDialog,
+    transitionNotes, setTransitionNotes,
+    transitionSkipReason, setTransitionSkipReason,
+    transitionFile, setTransitionFile,
+    transitionSendEmail, setTransitionSendEmail,
+    openTransitionDialog,
+    closeTransitionDialog,
+    confirmTransition,
+  } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions)
+
   const [analyzing, setAnalyzing] = useState(false)
-  const [changingStatus, setChangingStatus] = useState(false)
-  const [transitionDialog, setTransitionDialog] = useState<{
-    candidatureId: string
-    targetStatut: string
-    isSkip: boolean
-    skipped: string[]
-    notesRequired: boolean
-  } | null>(null)
-  const [transitionNotes, setTransitionNotes] = useState('')
-  const [transitionSkipReason, setTransitionSkipReason] = useState('')
-  const [transitionFile, setTransitionFile] = useState<File | null>(null)
-  const [transitionSendEmail, setTransitionSendEmail] = useState(true)
-
-  const openTransitionDialog = useCallback((candidatureId: string, targetStatut: string, isSkip = false, skipped: string[] = []) => {
-    const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
-    setTransitionDialog({ candidatureId, targetStatut, isSkip, skipped, notesRequired })
-    setTransitionNotes('')
-    setTransitionSkipReason('')
-    setTransitionFile(null)
-    setTransitionSendEmail(true)
-  }, [allowedTransitions])
-
-  const confirmTransition = useCallback(async () => {
-    if (!transitionDialog) return
-    const { candidatureId, targetStatut, isSkip, notesRequired } = transitionDialog
-
-    if (notesRequired && !transitionNotes.trim()) {
-      toast.error('Les notes sont obligatoires pour cette transition')
-      return
-    }
-    if (isSkip && !transitionSkipReason.trim()) {
-      toast.error('Raison requise pour sauter une étape')
-      return
-    }
-
-    setChangingStatus(true)
-    try {
-      // Upload Aboro document if transitioning to aboro with a file
-      if (targetStatut === 'aboro' && transitionFile) {
-        const formData = new FormData()
-        formData.append('file', transitionFile)
-        formData.append('type', 'aboro')
-        await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        })
-      }
-
-      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          statut: targetStatut,
-          notes: transitionNotes.trim() || undefined,
-          skipReason: isSkip ? transitionSkipReason.trim() : undefined,
-          sendEmail: targetStatut === 'skill_radar_envoye' ? transitionSendEmail : undefined,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Erreur')
-      }
-
-      setCandidatures(prev => prev.map(c =>
-        c.id === candidatureId ? { ...c, statut: targetStatut } : c
-      ))
-
-      // Refresh events + transitions
-      const [detail, transitions] = await Promise.all([
-        fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json()),
-        fetch(`/api/recruitment/candidatures/${candidatureId}/transitions`, { credentials: 'include' }).then(r => r.json()),
-      ])
-      if (detail?.events) setEvents(detail.events)
-      if (transitions) setAllowedTransitions(transitions)
-
-      toast.success(`Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
-      setTransitionDialog(null)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')
-    } finally {
-      setChangingStatus(false)
-    }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, setCandidatures, setEvents, setAllowedTransitions, transitionSendEmail])
 
   const generateAnalysis = useCallback(async () => {
     if (!id) return
@@ -202,7 +129,6 @@ export default function CandidateDetailPage() {
       const candidateScore = candidate.ratings[skill.id] ?? 0
       if (candidateScore === 0) return null
       const memberScores = teamData?.members?.map(m => {
-        // Find this skill's score in member's ratings
         const memberRatings = (m as unknown as { skillRatings?: Record<string, number> }).skillRatings
         return memberRatings?.[skill.id] ?? 0
       }) ?? []
@@ -284,7 +210,7 @@ export default function CandidateDetailPage() {
         />
 
         {/* Transition confirmation dialog */}
-        <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) setTransitionDialog(null) }}>
+        <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
