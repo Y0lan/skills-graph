@@ -4,6 +4,7 @@ import { findMember } from '@/data/team-roster'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { MessageSquare, ArrowLeft } from 'lucide-react'
 import AppHeader from '@/components/app-header'
+import { SectionErrorBoundary } from '@/components/ui/section-error-boundary'
 import { TeamPopover } from '@/components/team-popover'
 import { authClient } from '@/lib/auth-client'
 import MemberAvatar from '@/components/member-avatar'
@@ -207,70 +208,78 @@ export default function DashboardPage() {
                 {/* Personal Overview tab */}
                 {slug && (
                   <TabsContent value="profil" className="space-y-8 pt-6">
-                    <Suspense fallback={tabFallback}>
-                      {member && memberAggregate && (
-                        <PersonalOverview
-                          aggregate={memberAggregate}
-                          teamMembers={teamAggregate?.members}
-                          teamCategories={teamAggregate?.categories}
-                          isOwnProfile={!!isOwnProfile}
-                          onFindExpert={(categoryId) => {
-                            setExpertCategoryHint(categoryId)
-                            setActiveTab('expert')
-                          }}
-                          onCompareChange={handleCompareChange}
-                          onOpenChat={handleOpenChat}
-                        />
-                      )}
-                    </Suspense>
+                    <SectionErrorBoundary>
+                      <Suspense fallback={tabFallback}>
+                        {member && memberAggregate && (
+                          <PersonalOverview
+                            aggregate={memberAggregate}
+                            teamMembers={teamAggregate?.members}
+                            teamCategories={teamAggregate?.categories}
+                            isOwnProfile={!!isOwnProfile}
+                            onFindExpert={(categoryId) => {
+                              setExpertCategoryHint(categoryId)
+                              setActiveTab('expert')
+                            }}
+                            onCompareChange={handleCompareChange}
+                            onOpenChat={handleOpenChat}
+                          />
+                        )}
+                      </Suspense>
+                    </SectionErrorBoundary>
                   </TabsContent>
                 )}
 
                 {/* Team tab — all team sections */}
                 <TabsContent value="equipe" className="space-y-8 pt-6">
-                  <Suspense fallback={tabFallback}>
-                    {teamAggregate && hasTeamData && (
-                      <>
-                        <TeamOverview
-                          categories={teamAggregate.categories}
-                          teamSize={teamAggregate.teamSize}
-                          submittedCount={teamAggregate.submittedCount}
-                        />
-                        <TeamMembersGrid members={teamAggregate.members} />
-                        <CategorySummaryCards
-                          categories={teamAggregate.categories}
-                          categoryTargets={teamAggregate.categoryTargets}
-                        />
-                        <CategoryDeepDive
-                          categories={teamAggregate.categories}
-                          members={teamAggregate.members}
-                          viewerSlug={member?.slug}
-                        />
-                        <SkillsGapTable
-                          members={teamAggregate.members}
-                          categories={teamAggregate.categories}
-                        />
-                      </>
-                    )}
-                  </Suspense>
+                  <SectionErrorBoundary>
+                    <Suspense fallback={tabFallback}>
+                      {teamAggregate && hasTeamData && (
+                        <>
+                          <TeamOverview
+                            categories={teamAggregate.categories}
+                            teamSize={teamAggregate.teamSize}
+                            submittedCount={teamAggregate.submittedCount}
+                          />
+                          <TeamMembersGrid members={teamAggregate.members} />
+                          <CategorySummaryCards
+                            categories={teamAggregate.categories}
+                            categoryTargets={teamAggregate.categoryTargets}
+                          />
+                          <CategoryDeepDive
+                            categories={teamAggregate.categories}
+                            members={teamAggregate.members}
+                            viewerSlug={member?.slug}
+                          />
+                          <SkillsGapTable
+                            members={teamAggregate.members}
+                            categories={teamAggregate.categories}
+                          />
+                        </>
+                      )}
+                    </Suspense>
+                  </SectionErrorBoundary>
                 </TabsContent>
 
                 {/* Cartographie (heatmap) tab */}
                 <TabsContent value="cartographie" className="space-y-8 pt-6">
-                  <Suspense fallback={tabFallback}>
-                    {teamAggregate && hasTeamData && (
-                      <SkillHeatmap members={teamAggregate.members} />
-                    )}
-                  </Suspense>
+                  <SectionErrorBoundary>
+                    <Suspense fallback={tabFallback}>
+                      {teamAggregate && hasTeamData && (
+                        <SkillHeatmap members={teamAggregate.members} />
+                      )}
+                    </Suspense>
+                  </SectionErrorBoundary>
                 </TabsContent>
 
                 {/* Expert Finder tab */}
                 <TabsContent value="expert" className="space-y-8 pt-6">
-                  <Suspense fallback={tabFallback}>
-                    {teamAggregate && hasTeamData && (
-                      <ExpertFinder members={teamAggregate.members} initialCategoryId={expertCategoryHint} />
-                    )}
-                  </Suspense>
+                  <SectionErrorBoundary>
+                    <Suspense fallback={tabFallback}>
+                      {teamAggregate && hasTeamData && (
+                        <ExpertFinder members={teamAggregate.members} initialCategoryId={expertCategoryHint} />
+                      )}
+                    </Suspense>
+                  </SectionErrorBoundary>
                 </TabsContent>
               </Tabs>
             )}
