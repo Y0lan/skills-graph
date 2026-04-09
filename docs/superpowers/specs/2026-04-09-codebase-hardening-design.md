@@ -80,7 +80,9 @@ Upload handler: Replace `path.join(docDir, safeFilename)` with `resolveSafePath(
 
 Download handler: After fetching `doc.path` from DB, validate it against the expected base directory before streaming.
 
-**Commit:** `fix(security): add path boundary validation on document upload/download`
+ZIP handler: Sanitize `doc.type` before using it in archive entry names at `recruitment.ts:814`. A malicious authenticated user could store a `docType` like `../../evil` via the upload endpoint (`recruitment.ts:620`) and generate ZIP entries with path-traversal names. Apply the same `[^a-zA-Z0-9._-]` sanitization to `docType` that's already applied to filenames.
+
+**Commit:** `fix(security): add path boundary validation on document upload/download/zip`
 
 ### A3. Rate Limiting on Mutation Routes
 
@@ -91,6 +93,8 @@ Download handler: After fetching `doc.path` from DB, validate it against the exp
 - `POST /candidatures/:id/notes` — 20/min
 - `POST /candidatures/:id/documents` — 10/min
 - `POST /candidatures/:id/recalculate` — 5/min
+- `PUT /scoring-weights` — 5/min (most DB-expensive mutation, recalculates all candidatures)
+- `POST /recalculate-all` — 2/min (bulk recalculation across all candidatures)
 
 Reuse the existing `rateLimit` import and pattern from `intakeRateLimit`.
 
@@ -115,6 +119,12 @@ Reuse the existing `rateLimit` import and pattern from `intakeRateLimit`.
 - `server/lib/catalog.ts:106` — reading local catalog JSON
 - `server/lib/db.ts:422` — reading local JSON file for migration
 
+**Important:** Every `safeJsonParse` fallback must also `console.error` the failure so corrupted rows are visible in logs, not silently turned into empty objects. Pattern:
+```typescript
+// In safeJsonParse or at call sites:
+console.error(`[DATA] Corrupted JSON in ${context}:`, json?.slice(0, 100))
+```
+
 **Commit:** `fix(security): use safeJsonParse for all database JSON fields`
 
 ### A5. Strip Production Console Logs
@@ -138,6 +148,16 @@ Reuse the existing `rateLimit` import and pattern from `intakeRateLimit`.
 - All `console.warn` and `console.error` calls
 
 **Commit:** `chore: remove debug console.log from server code`
+
+### A6. Fix Frontend/Backend MIME Type Mismatch
+
+**Files:** `src/pages/candidate-detail-page.tsx:984`, `server/routes/recruitment.ts:41`
+
+**Problem (Codex #12):** The frontend file picker accepts `.png,.jpg,.jpeg` but the backend multipart parser only allows `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`, `application/msword`. Users selecting images see confusing "Fichier requis" errors.
+
+**Change:** Align the frontend `accept` attribute with what the backend actually processes. Remove image types from the picker, or add image MIME types to the backend `allowedMimes` array if image support is intended. Given that documents are PDFs and Word docs, restrict the frontend picker to match.
+
+**Commit:** `fix: align document upload file picker with backend MIME types`
 
 ### A-Check: Verification Gate
 
@@ -321,8 +341,23 @@ Security fixes need test coverage. Add these tests:
 
 ## What We're NOT Touching
 
-- No UI/UX changes
+- No UI/UX changes (except A6 file picker alignment)
 - No new features
 - No dependency upgrades
 - No CI/CD changes (per user decision)
 - No changes to public API response shapes
+
+## Appendix: Codex Adversarial Challenge — Deferred Findings
+
+Codex found 8 additional issues that are pre-existing bugs, not introduced or worsened by this plan. Documented here for future work:
+
+| # | Severity | Finding | Why Deferred |
+|---|----------|---------|--------------|
+| 1 | Critical | `trust proxy: true` makes rate limiting bypassable via spoofed X-Forwarded-For | App is behind GKE Gateway which controls XFF. Not exploitable in current deployment. |
+| 2 | Critical | Intake race condition: read-before-write on email+poste creates duplicates under concurrent retries | Pre-existing. Needs UNIQUE constraint on candidatures(candidate_id, poste_id) — separate migration. |
+| 3 | High | Document re-upload silently overwrites previous file bytes, DB failure leaves orphan files | Pre-existing design. Needs UUID-based storage keys — separate refactor. |
+| 5 | High | Aboro data model inconsistency: auto-extraction updates one candidature, manual entry updates all | Pre-existing business logic. Needs data model decision, not a code refactor. |
+| 6 | High | Manual Aboro edits destroy extracted qualitative data (talent_cloud, matrices wiped) | Pre-existing. Needs merge strategy for partial updates. |
+| 7 | High | candidate-detail-page assumes candidatures[0] for all operations | Pre-existing. B2 extraction makes this easier to fix later via candidature selector. |
+| 8 | High | Aboro upload + status transition is non-atomic (partial side effects on failure) | Pre-existing. Needs server-side transaction or saga pattern. |
+| 9 | Medium | Status transitions set emailSent=true before async send completes | Pre-existing. Needs callback-based status update. |
