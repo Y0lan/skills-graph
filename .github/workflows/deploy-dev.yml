@@ -58,27 +58,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Deploy to premier-socle-sinapse GKE (dev cluster)
-      - name: Get GKE credentials (dev cluster)
+      # Deploy to sinapse-core GKE (same cluster as prod, different namespace)
+      - name: Get GKE credentials
         run: |
-          gcloud container clusters get-credentials cloud-sinapse \
-            --region asia-northeast1 \
-            --project premier-socle-sinapse
+          gcloud container clusters get-credentials skill-radar \
+            --region australia-southeast1 \
+            --project ${{ vars.GCP_PROJECT_ID }}
 
       - name: Deploy to GKE (dev)
         run: |
           cd k8s-dev
           kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:dev-${{ github.sha }}
           kubectl apply -k .
-          kubectl -n apps rollout status deployment/skill-radar --timeout=120s
+          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=120s
 
       - name: Smoke test
         run: |
           # Wait for rollout to complete (pod ready)
-          kubectl -n apps rollout status deployment/skill-radar --timeout=90s
+          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=90s
 
           # Test via port-forward (bypasses LB propagation delay)
-          kubectl -n apps port-forward deploy/skill-radar 9090:8080 &
+          kubectl -n skill-radar-dev port-forward deploy/skill-radar 9090:8080 &
           PF_PID=$!
           sleep 3
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
