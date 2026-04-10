@@ -33,6 +33,7 @@ export default function FormPage() {
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
+  const [poleCategories, setPoleCategories] = useState<string[] | null>(null)
 
   const handleNavigationChange = useCallback((nav: WizardNavigation) => {
     setWizardNav(nav)
@@ -43,6 +44,14 @@ export default function FormPage() {
       fetchRatings(slug).then(() => setReady(true))
     }
   }, [slug, member, fetchRatings])
+
+  useEffect(() => {
+    if (!member?.pole) return
+    fetch(`/api/catalog/pole-categories/${member.pole}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(cats => { if (cats) setPoleCategories(cats) })
+      .catch(() => {})
+  }, [member?.pole])
 
   if (!member) {
     return (
@@ -229,6 +238,7 @@ export default function FormPage() {
         <SkillFormWizard
           key={resetKey}
           slug={slug!}
+          roleCategories={poleCategories ?? undefined}
           initialData={{
             ratings: data?.ratings ?? {},
             experience: data?.experience ?? {},

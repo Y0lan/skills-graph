@@ -106,26 +106,18 @@ describe('SkillFormWizard pre-fill behaviour', () => {
     expect(screen.queryByText(/pr..?-remplies/)).not.toBeInTheDocument()
   })
 
-  it('orders role categories first when roleCategories provided', () => {
+  it('shows only role categories by default when roleCategories provided', () => {
     renderWizard({ roleCategories: ['backend-integration'] })
 
-    // The progress bar renders step pills with short labels (first word).
-    // With roleCategories=['backend-integration'], "Backend & Services" should
-    // come before "Socle Technique" in the rendered order.
+    // With roleCategories=['backend-integration'], only Backend should be visible.
+    // Non-role categories are hidden by default (pole filtering).
     const buttons = screen.getAllByRole('button')
-    // Step pills contain a number badge. The first category pill has "1".
-    // Find the pill labelled "Backend" (short label from "Backend & Services")
     const backendPill = buttons.find((btn) => btn.textContent?.includes('Backend'))
     const soclePill = buttons.find((btn) => btn.textContent?.includes('Socle'))
 
     expect(backendPill).toBeDefined()
-    expect(soclePill).toBeDefined()
-
-    // Backend should appear before Socle in DOM order
-    // compareDocumentPosition: bit 4 (DOCUMENT_POSITION_FOLLOWING) means the
-    // argument node follows the reference node.
-    const position = backendPill!.compareDocumentPosition(soclePill!)
-    expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Socle is a non-role category, so it should be hidden by default
+    expect(soclePill).toBeUndefined()
   })
 
   it('works normally without any pre-fill props (regression)', () => {

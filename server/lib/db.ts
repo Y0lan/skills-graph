@@ -311,7 +311,7 @@ export function initDatabase(): void {
   // Auto-seed if categories table is empty or catalog version changed
   // NOTE: This MUST run BEFORE role seeding (roles reference categories via FK)
   db.exec('CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT)')
-  const CATALOG_VERSION = '4.0.0'
+  const CATALOG_VERSION = '5.0.0'
   const currentVersion = (db.prepare("SELECT value FROM catalog_meta WHERE key = 'version'").get() as { value: string } | undefined)?.value
   const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
   if (count === 0 || currentVersion !== CATALOG_VERSION) {
@@ -411,6 +411,46 @@ export function initDatabase(): void {
       }
     })
     seedPostes()
+  }
+
+  // Idempotent: add legacy-ibmi-adelia category to legacy roles (roles already exist in prod)
+  const legacyRoleIds = ['tech-lead-adelia', 'dev-senior-adelia']
+  for (const roleId of legacyRoleIds) {
+    db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)').run(roleId, 'legacy-ibmi-adelia')
+  }
+
+  // Pole → category mapping table
+  db.exec(`CREATE TABLE IF NOT EXISTS pole_categories (
+    pole TEXT NOT NULL CHECK(pole IN ('legacy', 'java_modernisation', 'fonctionnel')),
+    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (pole, category_id)
+  )`)
+
+  const poleCatCount = (db.prepare('SELECT COUNT(*) as c FROM pole_categories').get() as { c: number }).c
+  if (poleCatCount === 0) {
+    const poleMapping: Record<string, string[]> = {
+      legacy: [
+        'legacy-ibmi-adelia', 'core-engineering',
+        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+      ],
+      java_modernisation: [
+        'core-engineering', 'backend-integration', 'frontend-ui',
+        'platform-engineering', 'observability-reliability', 'security-compliance',
+        'ai-engineering', 'qa-test-engineering',
+        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+      ],
+      fonctionnel: [
+        'analyse-fonctionnelle', 'project-management-pmo', 'change-management-training',
+        'design-ux', 'data-engineering-governance', 'management-leadership',
+        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+      ],
+    }
+    const insertPoleCategory = db.prepare('INSERT INTO pole_categories (pole, category_id) VALUES (?, ?)')
+    db.transaction(() => {
+      for (const [pole, cats] of Object.entries(poleMapping)) {
+        for (const catId of cats) insertPoleCategory.run(pole, catId)
+      }
+    })()
   }
 
   // One-time migration from ratings.json

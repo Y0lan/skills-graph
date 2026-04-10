@@ -84,6 +84,7 @@ interface TeamMemberAggregateResponse {
   name: string
   role: string
   team: string
+  pole: string | null
   submittedAt: string | null
   categoryAverages: Record<string, number>
   skillRatings: Record<string, number>
@@ -185,13 +186,29 @@ export function computeMemberAggregate(slug: string): MemberAggregateResponse | 
 
 // ─── Compute team aggregate ──────────────────────────────────
 
-export function computeTeamAggregate(): TeamAggregateResponse {
-  const skillCategories = getSkillCategories()
+export function computeTeamAggregate(pole?: string): TeamAggregateResponse {
+  const allSkillCategories = getSkillCategories()
   const allRatings = getAllEvaluations()
   const targets = readTargets()
 
+  // Filter categories by pole if specified
+  let skillCategories = allSkillCategories
+  if (pole) {
+    const db = getDb()
+    const poleCatRows = db.prepare('SELECT category_id FROM pole_categories WHERE pole = ?')
+      .all(pole) as { category_id: string }[]
+    const poleCatIds = new Set(poleCatRows.map(r => r.category_id))
+    skillCategories = allSkillCategories.filter(c => poleCatIds.has(c.id))
+  }
+
+  // Filter team members by pole if specified
+  const filteredMembers = pole
+    ? teamMembers.filter(m => m.pole === pole || m.pole === null)
+    : teamMembers
+  const filteredSlugs = new Set(filteredMembers.map(m => m.slug))
+
   const submittedEntries = Object.entries(allRatings).filter(
-    ([, data]) => data.submittedAt !== null,
+    ([slug, data]) => data.submittedAt !== null && filteredSlugs.has(slug),
   )
 
   const submittedCount = submittedEntries.length
@@ -271,7 +288,7 @@ export function computeTeamAggregate(): TeamAggregateResponse {
   }
 
   // Per-member summaries
-  const members: TeamMemberAggregateResponse[] = teamMembers.map((member) => {
+  const members: TeamMemberAggregateResponse[] = filteredMembers.map((member) => {
     const memberData = allRatings[member.slug]
     const memberRatings = memberData?.ratings ?? {}
     const roleTargets = targets[member.role] ?? {}
@@ -323,6 +340,7 @@ export function computeTeamAggregate(): TeamAggregateResponse {
       name: member.name,
       role: member.role,
       team: member.team,
+      pole: member.pole,
       submittedAt: memberData?.submittedAt ?? null,
       categoryAverages,
       skillRatings,
@@ -339,7 +357,7 @@ export function computeTeamAggregate(): TeamAggregateResponse {
   for (const cat of skillCategories) {
     const targetValues = submittedEntries
       .map(([slug]) => {
-        const member = teamMembers.find((m) => m.slug === slug)
+        const member = filteredMembers.find((m) => m.slug === slug)
         if (!member) return null
         const roleTarget = targets[member.role]
         return roleTarget?.[cat.id] ?? 0
@@ -353,7 +371,7 @@ export function computeTeamAggregate(): TeamAggregateResponse {
   }
 
   return {
-    teamSize: teamMembers.length,
+    teamSize: filteredMembers.length,
     submittedCount,
     categoryTargets,
     categories,

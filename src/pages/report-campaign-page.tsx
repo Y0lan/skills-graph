@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { STATUT_LABELS, CANAL_LABELS } from '@/lib/constants'
+import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS } from '@/lib/constants'
 
 interface Poste {
   id: string
@@ -33,12 +33,6 @@ interface DashboardStats {
   totalCandidatures: number
   totalActive: number
   statusBreakdown: Record<string, number>
-}
-
-const POLE_LABELS: Record<string, string> = {
-  legacy: 'Legacy (Adelia / IBMi)',
-  java_modernisation: 'Java / Modernisation',
-  fonctionnel: 'Fonctionnel',
 }
 
 export default function ReportCampaignPage() {

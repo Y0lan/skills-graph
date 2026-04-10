@@ -31,6 +31,18 @@ export const CANAL_LABELS: Record<string, string> = {
   reseau: 'Réseau',
 }
 
+export const POLE_LABELS: Record<string, string> = {
+  legacy: 'Legacy (Adélia / IBMi)',
+  java_modernisation: 'Java / Modernisation',
+  fonctionnel: 'Fonctionnel',
+}
+
+export const POLE_COLORS: Record<string, string> = {
+  legacy: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  java_modernisation: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+  fonctionnel: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+}
+
 export function formatDateShort(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')

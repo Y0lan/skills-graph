@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown, Globe } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +37,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   const [comparisonSummary, setComparisonSummary] = useState<string | null>(null)
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [compareAggregate, setCompareAggregate] = useState<MemberAggregateResponse | null>(null)
+  const [crossPole, setCrossPole] = useState(false)
+  const currentMemberPole = teamMembers?.find(m => m.slug === memberId)?.pole ?? null
+
+  const comparableMembers = useMemo(() => {
+    if (!teamMembers) return []
+    const submitted = teamMembers.filter(m => m.slug !== memberId && m.submittedAt)
+    if (crossPole || !currentMemberPole) return submitted
+    return submitted.filter(m => m.pole === currentMemberPole || m.pole === null)
+  }, [teamMembers, memberId, currentMemberPole, crossPole])
 
   // Client-side cache for comparison summaries (survives re-renders, cleared on profile change)
   const comparisonCache = useRef<Map<string, string>>(new Map())
@@ -271,11 +280,22 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Moyenne équipe</SelectItem>
-                    {teamMembers.filter(m => m.slug !== memberId && m.submittedAt).map(m => (
+                    {comparableMembers.map(m => (
                       <SelectItem key={m.slug} value={m.slug}>{m.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {currentMemberPole && (
+                  <Button
+                    variant={crossPole ? 'default' : 'ghost'}
+                    size="sm"
+                    onClick={() => setCrossPole(!crossPole)}
+                    title={crossPole ? 'Afficher mon pôle uniquement' : 'Comparer inter-pôles'}
+                    className="shrink-0"
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 {compareSlug && (
                   <Button
                     variant="outline"

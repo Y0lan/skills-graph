@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3 } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDate } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
 
 interface Poste {
   id: string
@@ -70,17 +70,6 @@ interface DashboardStats {
   statusBreakdown: Record<string, number>
 }
 
-const POLE_LABELS: Record<string, string> = {
-  legacy: 'Legacy (Adélia / IBMi)',
-  java_modernisation: 'Java / Modernisation',
-  fonctionnel: 'Fonctionnel',
-}
-
-const POLE_COLORS: Record<string, string> = {
-  legacy: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  java_modernisation: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  fonctionnel: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-}
 
 function CompatibilityBar({ value, label }: { value: number | null; label: string }) {
   if (value == null) return <span className="text-xs text-muted-foreground">—</span>

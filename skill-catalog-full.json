@@ -1783,6 +1783,109 @@
           }
         }
       ]
+    },
+    {
+      "id": "legacy-ibmi-adelia",
+      "label": "Legacy IBMi & Adélia",
+      "scenario": "Vous maintenez et faites évoluer un patrimoine applicatif IBMi/Adélia : programmes RPG, écrans Web Adélia, tables DB2/400, programmes CL, interfaces batch et flux entre SI Legacy et SI cible. À quel point maîtrisez-vous chaque aspect ?",
+      "skills": [
+        {
+          "id": "adelia-rpg-4gl",
+          "label": "Adélia / RPG (4GL)",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec Adélia ou RPG",
+            "1": "Comprend le principe d'un L4G ; peut lire du code RPG simple et identifier la logique métier",
+            "2": "Modifie des programmes RPG/Adélia existants avec de l'aide ; comprend les écrans, les fichiers et les appels de programmes",
+            "3": "Développe des programmes Adélia/RPG de bout en bout : écrans, accès base, gestion d'erreurs ; livre en autonomie des correctifs et évolutions MCO",
+            "4": "Conçoit des solutions Adélia complexes (multi-programmes, flux inter-applicatifs) ; optimise les performances RPG ; accompagne les développeurs junior",
+            "5": "Référent Adélia/RPG de l'équipe ; définit les standards de développement ; arbitre les choix techniques entre refonte et évolution du patrimoine"
+          }
+        },
+        {
+          "id": "web-adelia",
+          "label": "Web Adélia",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec Web Adélia",
+            "1": "Sait que Web Adélia permet de créer des interfaces web à partir de programmes Adélia ; a vu des démonstrations",
+            "2": "Modifie des écrans Web Adélia existants avec de l'aide ; comprend la génération HTML et la gestion des événements",
+            "3": "Développe des interfaces Web Adélia complètes : formulaires, listes, navigation ; gère les sessions et la sécurité applicative",
+            "4": "Conçoit des applications Web Adélia complexes (parcours multi-écrans, intégration avec des services REST) ; optimise l'ergonomie et les temps de réponse",
+            "5": "Référent Web Adélia ; définit l'architecture des applications web legacy ; pilote la stratégie de modernisation progressive des interfaces"
+          }
+        },
+        {
+          "id": "ibmi-as400-platform",
+          "label": "Plateforme IBMi / AS400",
+          "descriptors": {
+            "0": "N'a jamais utilisé un système IBMi/AS400",
+            "1": "Comprend le principe de l'IBMi (OS, bibliothèques, sous-systèmes) ; peut naviguer dans l'interface 5250",
+            "2": "Exécute des commandes système de base ; compile et soumet des programmes avec de l'aide ; utilise les outils de debug",
+            "3": "Gère les bibliothèques, les files d'attente de travaux, les journaux ; configure les sous-systèmes et les profils utilisateur ; diagnostique les incidents de production",
+            "4": "Administre la plateforme IBMi : gestion des PTF, optimisation des performances système, stratégie de sauvegarde ; automatise les opérations récurrentes",
+            "5": "Référent plateforme IBMi ; définit la stratégie d'exploitation ; pilote les montées de version OS et les choix d'infrastructure legacy"
+          }
+        },
+        {
+          "id": "db2-400",
+          "label": "DB2/400",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec DB2/400",
+            "1": "Comprend les concepts de base : fichiers physiques/logiques, enregistrements, clés ; peut lire des requêtes SQL/400 simples",
+            "2": "Écrit des requêtes SQL sur DB2/400 ; crée des fichiers logiques avec de l'aide ; comprend les journaux et les validations",
+            "3": "Conçoit et optimise des modèles de données DB2/400 ; utilise les vues SQL, les procédures stockées, les triggers ; analyse les plans d'exécution",
+            "4": "Architécte les modèles de données complexes ; optimise les performances (index, requêtes, journalisation) ; gère la cohérence référentielle entre applications",
+            "5": "Référent DB2/400 ; définit les standards de modélisation et de nommage ; pilote les migrations de données et les stratégies d'archivage"
+          }
+        },
+        {
+          "id": "cl-control-language",
+          "label": "CL (Control Language)",
+          "descriptors": {
+            "0": "N'a jamais écrit de programme CL",
+            "1": "Comprend que CL est le langage système de l'IBMi ; peut lire des scripts CL simples (CRTLIB, CALL, SBMJOB)",
+            "2": "Écrit des programmes CL simples (soumission de travaux, copie de fichiers, gestion de bibliothèques) avec de l'aide",
+            "3": "Développe des programmes CL structurés : enchaînements de traitements, gestion d'erreurs (MONMSG), paramétrage dynamique, logging",
+            "4": "Conçoit des automates CL complexes (ordonnancement, reprise sur erreur, notifications) ; optimise les chaînes batch ; documente les procédures d'exploitation",
+            "5": "Référent CL de l'équipe ; définit les standards d'écriture CL et les patterns d'automatisation ; arbitre l'usage CL vs solutions alternatives"
+          }
+        },
+        {
+          "id": "legacy-batch-interfaces",
+          "label": "Intégration Legacy (batch, interfaces, flux)",
+          "descriptors": {
+            "0": "N'a jamais travaillé sur des interfaces legacy",
+            "1": "Comprend les principes d'échange de données entre systèmes (fichiers plats, transferts FTP, files d'attente) ; a vu des schémas de flux",
+            "2": "Modifie des interfaces existantes (formats de fichiers, mappings) avec de l'aide ; comprend les chaînes batch et leur ordonnancement",
+            "3": "Développe des interfaces de bout en bout : extraction, transformation, chargement, contrôles de cohérence ; gère les reprises sur erreur et la traçabilité des flux",
+            "4": "Conçoit des architectures d'échange complexes (multi-systèmes, temps réel + batch) ; diagnostique les incidents de flux en production ; optimise les temps de traitement",
+            "5": "Référent intégration legacy ; définit les standards d'échange inter-applicatifs ; pilote la migration des flux legacy vers des patterns modernes (API, événements)"
+          }
+        },
+        {
+          "id": "legacy-diagnostic-mco",
+          "label": "Diagnostic & MCO Legacy",
+          "descriptors": {
+            "0": "N'a jamais fait de maintenance corrective sur un système legacy",
+            "1": "Comprend le principe du MCO (maintien en conditions opérationnelles) ; peut lire les logs d'erreur et remonter les incidents",
+            "2": "Diagnostique des bugs simples avec de l'aide (lecture de logs, trace de programmes, reproduction du problème) ; applique des correctifs guidés",
+            "3": "Diagnostique et corrige en autonomie : analyse d'impact, identification de la cause racine dans du code legacy, correctif, tests de non-régression ; gère les demandes MCO courantes",
+            "4": "Pilote le MCO d'un périmètre applicatif : priorisation des demandes, estimation des charges, arbitrage correctif vs évolution ; identifie les zones fragiles et propose des consolidations",
+            "5": "Référent MCO legacy ; définit les processus de diagnostic et de capitalisation ; forme les nouveaux arrivants au patrimoine applicatif"
+          }
+        },
+        {
+          "id": "legacy-modernisation",
+          "label": "Modernisation Pragmatique (exposition API)",
+          "descriptors": {
+            "0": "N'a jamais participé à un chantier de modernisation legacy",
+            "1": "Comprend les enjeux de modernisation (dette technique, coexistence legacy/cible, API-fication) ; a lu des retours d'expérience",
+            "2": "Participe à des POC de modernisation avec de l'aide (wrapper API autour d'un programme RPG, extraction de données pour un nouveau service)",
+            "3": "Développe des API REST exposant des fonctions legacy ; gère la coexistence des données entre ancien et nouveau SI ; documente les contrats d'interface",
+            "4": "Conçoit des stratégies de modernisation pragmatiques (strangler fig, anti-corruption layer) ; pilote la mise en place de couches de médiation entre legacy et SI cible",
+            "5": "Référent modernisation ; définit la trajectoire de transformation du patrimoine legacy ; arbitre les choix entre refonte, encapsulation et maintien"
+          }
+        }
+      ]
     }
   ]
 }

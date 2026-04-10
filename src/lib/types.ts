@@ -87,6 +87,7 @@ export interface TeamMemberAggregateResponse {
   name: string
   role: string
   team: string
+  pole: string | null
   submittedAt: string | null
   categoryAverages: Record<string, number>
   skillRatings: Record<string, number>

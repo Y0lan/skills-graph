@@ -2,7 +2,9 @@ import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { findMember } from '@/data/team-roster'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MessageSquare, ArrowLeft } from 'lucide-react'
+import { POLE_LABELS } from '@/lib/constants'
 import AppHeader from '@/components/app-header'
 import { SectionErrorBoundary } from '@/components/ui/section-error-boundary'
 import { TeamPopover } from '@/components/team-popover'
@@ -50,14 +52,15 @@ function useMemberAggregate(slug: string | undefined) {
   return { data, loading }
 }
 
-function useTeamAggregate() {
+function useTeamAggregate(pole?: string | null) {
   const [data, setData] = useState<TeamAggregateResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
   const fetchAggregate = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/aggregates')
+      const url = pole ? `/api/aggregates?pole=${pole}` : '/api/aggregates'
+      const res = await fetch(url)
       if (!res.ok) {
         setData(null)
         return
@@ -69,13 +72,13 @@ function useTeamAggregate() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [pole])
 
   useEffect(() => {
     fetchAggregate()
   }, [fetchAggregate])
 
-  return { data, loading }
+  return { data, loading, refetch: fetchAggregate }
 }
 
 const tabFallback = (
@@ -90,7 +93,8 @@ export default function DashboardPage() {
   const slug = urlSlug || (session?.user?.slug as string | undefined) || undefined
   const member = slug ? findMember(slug) : undefined
   const { data: memberAggregate, loading: memberLoading } = useMemberAggregate(slug)
-  const { data: teamAggregate, loading: teamLoading } = useTeamAggregate()
+  const [poleFilter, setPoleFilter] = useState<string | null>(member?.pole ?? null)
+  const { data: teamAggregate, loading: teamLoading } = useTeamAggregate(poleFilter)
 
   const [activeTab, setActiveTab] = useState(slug ? 'profil' : 'equipe')
   const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
@@ -231,6 +235,20 @@ export default function DashboardPage() {
 
                 {/* Team tab — all team sections */}
                 <TabsContent value="equipe" className="space-y-8 pt-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Pôle :</span>
+                    <Select value={poleFilter ?? 'all'} onValueChange={v => setPoleFilter(v === 'all' ? null : v)}>
+                      <SelectTrigger className="w-[200px]" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tous les pôles</SelectItem>
+                        {Object.entries(POLE_LABELS).map(([k, v]) => (
+                          <SelectItem key={k} value={k}>{v}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <SectionErrorBoundary>
                     <Suspense fallback={tabFallback}>
                       {teamAggregate && hasTeamData && (

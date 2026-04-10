@@ -1,9 +1,12 @@
+export type Pole = 'legacy' | 'java_modernisation' | 'fonctionnel'
+
 export interface TeamMember {
   slug: string
   name: string
   role: string
   team: string
   email: string
+  pole: Pole | null
 }
 
 export const teamMembers: TeamMember[] = [
@@ -14,6 +17,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
     email: 'yolan.maldonado@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'alexandre-thomas',
@@ -21,6 +25,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Architecte Technique Logiciel',
     team: 'Ingénierie Technique',
     email: 'alexandre.thomas@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'alan-huitel',
@@ -28,6 +33,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Ingénieur DevOps',
     team: 'Ingénierie Technique',
     email: 'alan.huitel@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'pierre-mathieu-barras',
@@ -35,6 +41,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Ingénieur DevOps / Développeur',
     team: 'Ingénierie Technique',
     email: 'pierre-mathieu.barras@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'andy-malo',
@@ -42,6 +49,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Ingénieur Data',
     team: 'Ingénierie Technique',
     email: 'andy.malo@sinapse.nc',
+    pole: 'java_modernisation',
   },
 
   // Développement
@@ -51,6 +59,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Développeur Full Stack',
     team: 'Développement',
     email: 'steven.nguyen@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'matthieu-alcime',
@@ -58,6 +67,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Développeur Full Stack',
     team: 'Développement',
     email: 'matthieu.alcime@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'martin-vallet',
@@ -65,6 +75,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Développeur Full Stack',
     team: 'Développement',
     email: 'martin.vallet@sinapse.nc',
+    pole: 'java_modernisation',
   },
   {
     slug: 'nicole-nguon',
@@ -72,6 +83,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Développeuse Full Stack',
     team: 'Développement',
     email: 'nicole.nguon@sinapse.nc',
+    pole: 'java_modernisation',
   },
 
   // QA & Automatisation
@@ -81,6 +93,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Ingénieure QA',
     team: 'QA & Automatisation',
     email: 'bethlehem.mengistu@sinapse.nc',
+    pole: 'java_modernisation',
   },
 
   // Management
@@ -90,6 +103,57 @@ export const teamMembers: TeamMember[] = [
     role: 'Lead Développeur (Manager MOE)',
     team: 'Management',
     email: 'pierre.rossato@sinapse.nc',
+    pole: null,
+  },
+
+  // Business Analysts
+  {
+    slug: 'nicolas-dufillot',
+    name: 'Nicolas DUFILLOT',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'nicolas.dufillot@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'nicolas-eppe',
+    name: 'Nicolas EPPE',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'nicolas.eppe@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'leila-benakezouh',
+    name: 'Leila BENAKEZOUH',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'leila.benakezouh@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'sonalie-taconet',
+    name: 'Sonalie TACONET',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'sonalie.taconet@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'amine-bouali',
+    name: 'Amine BOUALI',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'amine.bouali@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'audrey-queau',
+    name: 'Audrey QUEAU',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'audrey.queau@sinapse.nc',
+    pole: 'fonctionnel',
   },
 
   // Direction
@@ -99,6 +163,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Directeur des Programmes',
     team: 'Direction',
     email: 'olivier.faivre@sinapse.nc',
+    pole: null,
   },
   {
     slug: 'guillaume-benoit',
@@ -106,6 +171,7 @@ export const teamMembers: TeamMember[] = [
     role: 'Directeur',
     team: 'Direction',
     email: 'guillaume.benoit@sinapse.nc',
+    pole: null,
   },
 ]
 

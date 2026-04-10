@@ -27,6 +27,7 @@ dist-ssr
 # Server data (DB files, not source code)
 server/data/*
 !server/data/team-roster.ts
+!server/data/targets.json
 
 # Environment variables
 .env
@@ -42,3 +43,4 @@ k8s-dev/secret.yaml
 .claude/
 .gstack/
 .worktrees/
+.superpowers/

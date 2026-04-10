@@ -59,6 +59,10 @@ function preSeedCategories() {
     'change-management-training',
     'architecture-governance',
     'design-ux',
+    'legacy-ibmi-adelia',
+    'ai-engineering',
+    'management-leadership',
+    'data-engineering-governance',
   ]
   for (let i = 0; i < cats.length; i++) {
     insert.run(cats[i], cats[i], '', i)

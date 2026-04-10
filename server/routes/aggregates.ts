@@ -6,9 +6,10 @@ import { requireAuth } from '../middleware/require-auth.js'
 
 export const aggregatesRouter = Router()
 
-// GET / — team aggregate
-aggregatesRouter.get('/', (_req, res) => {
-  const result = computeTeamAggregate()
+// GET / — team aggregate (optional ?pole=xxx for pole-filtered view)
+aggregatesRouter.get('/', (req, res) => {
+  const pole = req.query.pole as string | undefined
+  const result = computeTeamAggregate(pole)
   res.json(result)
 })
 

@@ -1,0 +1,123 @@
+{
+  "Architecte Technique Logiciel": {
+    "core-engineering": 4,
+    "backend-integration": 4,
+    "frontend-ui": 3,
+    "platform-engineering": 3,
+    "observability-reliability": 3,
+    "security-compliance": 3,
+    "architecture-governance": 5,
+    "soft-skills": 3,
+    "domain-knowledge": 4
+  },
+  "Ingénieur DevOps": {
+    "core-engineering": 3,
+    "backend-integration": 2,
+    "frontend-ui": 1,
+    "platform-engineering": 5,
+    "observability-reliability": 4,
+    "security-compliance": 3,
+    "architecture-governance": 3,
+    "soft-skills": 2,
+    "domain-knowledge": 2
+  },
+  "Ingénieur DevOps / Développeur": {
+    "core-engineering": 3,
+    "backend-integration": 3,
+    "frontend-ui": 2,
+    "platform-engineering": 4,
+    "observability-reliability": 4,
+    "security-compliance": 3,
+    "architecture-governance": 3,
+    "soft-skills": 2,
+    "domain-knowledge": 3
+  },
+  "Ingénieur Data": {
+    "core-engineering": 3,
+    "backend-integration": 4,
+    "frontend-ui": 1,
+    "platform-engineering": 3,
+    "observability-reliability": 3,
+    "security-compliance": 2,
+    "architecture-governance": 3,
+    "soft-skills": 2,
+    "domain-knowledge": 3
+  },
+  "Développeur Full Stack": {
+    "core-engineering": 3,
+    "backend-integration": 3,
+    "frontend-ui": 3,
+    "platform-engineering": 2,
+    "observability-reliability": 2,
+    "security-compliance": 2,
+    "architecture-governance": 2,
+    "soft-skills": 2,
+    "domain-knowledge": 3
+  },
+  "Développeuse Full Stack": {
+    "core-engineering": 3,
+    "backend-integration": 3,
+    "frontend-ui": 3,
+    "platform-engineering": 2,
+    "observability-reliability": 2,
+    "security-compliance": 2,
+    "architecture-governance": 2,
+    "soft-skills": 2,
+    "domain-knowledge": 3
+  },
+  "Ingénieure QA": {
+    "core-engineering": 2,
+    "backend-integration": 2,
+    "frontend-ui": 2,
+    "platform-engineering": 2,
+    "observability-reliability": 2,
+    "security-compliance": 2,
+    "architecture-governance": 2,
+    "soft-skills": 3,
+    "domain-knowledge": 3
+  },
+  "Lead Développeur (Manager MOE)": {
+    "core-engineering": 3,
+    "backend-integration": 3,
+    "frontend-ui": 3,
+    "platform-engineering": 3,
+    "observability-reliability": 3,
+    "security-compliance": 3,
+    "architecture-governance": 4,
+    "soft-skills": 4,
+    "domain-knowledge": 4
+  },
+  "Directeur des Programmes": {
+    "core-engineering": 2,
+    "backend-integration": 2,
+    "frontend-ui": 1,
+    "platform-engineering": 2,
+    "observability-reliability": 2,
+    "security-compliance": 3,
+    "architecture-governance": 4,
+    "soft-skills": 5,
+    "domain-knowledge": 4
+  },
+  "Business Analyst": {
+    "analyse-fonctionnelle": 4,
+    "project-management-pmo": 3,
+    "change-management-training": 3,
+    "design-ux": 2,
+    "data-engineering-governance": 3,
+    "management-leadership": 2,
+    "architecture-governance": 2,
+    "soft-skills-delivery": 4,
+    "domain-knowledge": 4
+  },
+  "Directeur": {
+    "core-engineering": 1,
+    "backend-integration": 1,
+    "frontend-ui": 1,
+    "platform-engineering": 1,
+    "observability-reliability": 1,
+    "security-compliance": 2,
+    "architecture-governance": 3,
+    "soft-skills": 5,
+    "domain-knowledge": 4
+  }
+}
