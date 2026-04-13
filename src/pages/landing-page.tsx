@@ -49,10 +49,10 @@ export default function LandingPage() {
       </div>
 
       {/* Overlay for readability */}
-      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm pointer-events-none" />
 
       {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-10">
+      <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
 
