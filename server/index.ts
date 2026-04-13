@@ -30,7 +30,7 @@ await ctx.runMigrations()
 console.log('[AUTH] Better Auth migrations complete')
 
 const app = express()
-app.set('trust proxy', true) // Behind GKE Gateway — trust X-Forwarded-For
+app.set('trust proxy', 1) // Behind GKE Gateway — trust 1 proxy hop
 
 app.use(cors({
   origin: CORS_ORIGIN,
