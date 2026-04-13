@@ -254,9 +254,13 @@ export default function RecruitPipelinePage() {
                     <Badge variant="secondary" className={POLE_COLORS[pole]}>
                       {POLE_LABELS[pole]}
                     </Badge>
-                    <span className="text-muted-foreground text-sm font-normal">
+                    <Link
+                      to="/recruit"
+                      className="text-muted-foreground text-sm font-normal hover:text-foreground hover:underline"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {polePostes.reduce((s, p) => s + p.candidateCount, 0)} candidat(s)
-                    </span>
+                    </Link>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
@@ -278,9 +282,14 @@ export default function RecruitPipelinePage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <Badge variant="outline" className="text-xs">
-                            {p.candidateCount} candidat{p.candidateCount !== 1 ? 's' : ''}
-                          </Badge>
+                          <Link
+                            to="/recruit"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Badge variant="outline" className="text-xs hover:bg-accent cursor-pointer">
+                              {p.candidateCount} candidat{p.candidateCount !== 1 ? 's' : ''}
+                            </Badge>
+                          </Link>
                           {p.activeCount > 0 && (
                             <Badge className="text-xs bg-blue-500">
                               {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
@@ -357,9 +366,9 @@ export default function RecruitPipelinePage() {
             </Button>
           )}
 
-          <span className="text-sm text-muted-foreground ml-auto">
+          <Link to="/recruit" className="text-sm text-muted-foreground ml-auto hover:text-foreground hover:underline">
             {filtered.length} candidature{filtered.length !== 1 ? 's' : ''}
-          </span>
+          </Link>
         </div>
 
         {/* Candidatures list */}
