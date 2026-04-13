@@ -31,44 +31,7 @@
  *   Light:  #FFF9DB
  */
 
-@theme {
-  --color-background: #FFFFFF;
-  --color-foreground: #153243;
-  --color-card: #FFFFFF;
-  --color-card-foreground: #153243;
-  --color-popover: #FFFFFF;
-  --color-popover-foreground: #153243;
-  --color-primary: #52B6CF;
-  --color-primary-foreground: #FFFFFF;
-  --color-secondary: #FEF5EC;
-  --color-secondary-foreground: #153243;
-  --color-muted: #F4FDFF;
-  --color-muted-foreground: #1B6179;
-  --color-accent: #F4FDFF;
-  --color-accent-foreground: #153243;
-  --color-destructive: #DC2626;
-  --color-destructive-foreground: #DC2626;
-  --color-border: #D6ECF2;
-  --color-input: #D6ECF2;
-  --color-ring: #52B6CF;
-  --color-chart-1: #52B6CF;
-  --color-chart-2: #F5A65B;
-  --color-chart-3: #FFD400;
-  --color-chart-4: #1B6179;
-  --color-chart-5: #EC8C32;
-  --color-sidebar: #F4FDFF;
-  --color-sidebar-foreground: #153243;
-  --color-sidebar-primary: #52B6CF;
-  --color-sidebar-primary-foreground: #FFFFFF;
-  --color-sidebar-accent: #F4FDFF;
-  --color-sidebar-accent-foreground: #153243;
-  --color-sidebar-border: #D6ECF2;
-  --color-sidebar-ring: #52B6CF;
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-}
+/* Static theme values registered via @theme inline below */
 
 @layer base {
   *,
