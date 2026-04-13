@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 import { Button } from '@/components/ui/button'
 import { Moon, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 
+// Hydration-safe mounted check without useEffect+setState
+const subscribe = () => () => {}
+const getSnapshot = () => true
+const getServerSnapshot = () => false
+
 export default function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
   if (!mounted) return <Button variant="ghost" size="icon" className="relative h-9 w-9" disabled />
 

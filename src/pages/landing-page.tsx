@@ -51,13 +51,12 @@ export default function LandingPage() {
       {/* Overlay for readability */}
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm pointer-events-none" />
 
-      {/* Theme toggle */}
-      <div className="absolute top-4 right-4 z-20">
-        <ThemeToggle />
-      </div>
-
       {/* Centered content */}
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center gap-6 px-4">
+        {/* Theme toggle — inside content div so it's in the same stacking context */}
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
         <img
           src="/assets/logo-sinapse.svg"
           alt="SINAPSE"
