@@ -59,9 +59,9 @@ export default function LandingPage() {
       {/* Centered content */}
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center gap-6 px-4">
         <img
-          src="/radar.png"
-          alt="Radar des Compétences"
-          className="h-20 w-20 drop-shadow-lg"
+          src="/assets/logo-sinapse.svg"
+          alt="SINAPSE"
+          className="h-24 w-auto drop-shadow-lg"
         />
         <div className="text-center">
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
