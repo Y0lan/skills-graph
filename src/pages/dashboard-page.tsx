@@ -187,7 +187,7 @@ export default function DashboardPage() {
 
             {/* Empty state — outside tabs */}
             {!hasTeamData && !memberAggregate ? (
-              <div className="rounded-lg border border-dashed p-12 text-center">
+              <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-12 text-center">
                 <h2 className="text-xl font-semibold">Aucune donnée</h2>
                 <p className="mt-2 text-muted-foreground">
                   Les membres de l'équipe n'ont pas encore soumis leurs évaluations.
@@ -306,7 +306,7 @@ export default function DashboardPage() {
       {session && (
         <Suspense fallback={null}>
           {chatOpen ? (
-            <div className="fixed bottom-6 right-6 z-50 flex h-[520px] w-[400px] flex-col rounded-xl border bg-background shadow-2xl">
+            <div className="fixed bottom-6 right-6 z-50 flex h-[520px] w-[400px] flex-col rounded-xl border border-primary/20 bg-background shadow-2xl ring-1 ring-primary/10">
               <ChatPanel
                 contextSlugs={contextSlugs}
                 onContextChange={setContextSlugs}

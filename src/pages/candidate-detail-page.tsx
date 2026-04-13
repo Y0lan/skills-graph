@@ -160,9 +160,9 @@ export default function CandidateDetailPage() {
               <Clock className="mr-1 h-3 w-3" /> En attente
             </Badge>
           ) : candidate.aiReport ? (
-            <Badge variant="default" className="ml-auto bg-green-600">Analysé</Badge>
+            <Badge variant="default" className="ml-auto bg-[#1B6179]">Analysé</Badge>
           ) : (
-            <Badge variant="default" className="ml-auto bg-blue-600">Soumis</Badge>
+            <Badge variant="default" className="ml-auto bg-primary">Soumis</Badge>
           )}
         </div>
 

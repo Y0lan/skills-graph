@@ -124,7 +124,7 @@ export function LoginDialog({ redirectTo }: LoginDialogProps = {}) {
 
             <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground space-y-1">
               <div className="flex items-center gap-2">
-                <CheckCircle className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                <CheckCircle className="h-3.5 w-3.5 text-primary shrink-0" />
                 <span>Évaluation soumise</span>
               </div>
               <div className="flex items-center gap-2">

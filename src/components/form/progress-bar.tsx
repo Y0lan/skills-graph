@@ -41,7 +41,7 @@ export default function ProgressBar({
       {/* Progress bar */}
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500 transition-all duration-500 ease-out"
+          className="h-full rounded-full bg-gradient-to-r from-[#1B6179] via-[#52B6CF] to-[#F5A65B] transition-all duration-500 ease-out"
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -82,7 +82,7 @@ export default function ProgressBar({
               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
               <span className="max-w-[5rem] truncate">{shortLabel}</span>
               {stepInfo.isRoleCategory === true && !isActive && (
-                <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-blue-500 dark:text-blue-400">req</span>
+                <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-primary dark:text-primary">req</span>
               )}
               {isLocked ? (
                 <Lock className="h-3 w-3 shrink-0 opacity-60" />

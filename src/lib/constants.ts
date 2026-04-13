@@ -38,9 +38,9 @@ export const POLE_LABELS: Record<string, string> = {
 }
 
 export const POLE_COLORS: Record<string, string> = {
-  legacy: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  java_modernisation: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  fonctionnel: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
+  legacy: 'bg-[#FEF5EC] text-[#EC8C32] dark:bg-[#EC8C32]/15 dark:text-[#F5A65B]',
+  java_modernisation: 'bg-[#F4FDFF] text-[#1B6179] dark:bg-[#1B6179]/15 dark:text-[#52B6CF]',
+  fonctionnel: 'bg-[#FFF9DB] text-[#F0B800] dark:bg-[#F0B800]/15 dark:text-[#FFD400]',
 }
 
 export function formatDateShort(dateStr: string | null | undefined): string {

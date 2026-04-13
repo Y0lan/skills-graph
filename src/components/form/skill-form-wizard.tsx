@@ -223,7 +223,7 @@ export default function SkillFormWizard({
   return (
     <div className="space-y-6">
       {aiSuggestions && Object.keys(aiSuggestions).length > 0 && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-[#1B6179] dark:border-primary/30 dark:bg-primary/10 dark:text-primary">
           ✨ {Object.keys(aiSuggestions).length} compétences pré-remplies depuis votre CV. <strong>Vérifiez et ajustez</strong> les niveaux suggérés.
         </div>
       )}

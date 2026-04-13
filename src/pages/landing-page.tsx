@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTheme } from 'next-themes'
 import { authClient } from '@/lib/auth-client'
 import { LoginDialog } from '@/components/auth/login-dialog'
 import ThemeToggle from '@/components/theme-toggle'
@@ -8,7 +9,11 @@ import { RadarBackground } from '@/components/ui/radar-background'
 export default function LandingPage() {
   const { data: session, isPending } = authClient.useSession()
   const navigate = useNavigate()
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
+
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     if (!isPending && session?.user) {
@@ -44,7 +49,7 @@ export default function LandingPage() {
           scale={0.9}
           ringCount={6}
           spokeCount={8}
-          color="rgba(34, 197, 94, 0.35)"
+          color="rgba(82, 182, 207, 0.35)"
         />
       </div>
 
@@ -58,7 +63,7 @@ export default function LandingPage() {
           <ThemeToggle />
         </div>
         <img
-          src="/assets/logo-sinapse.svg"
+          src={mounted && resolvedTheme === 'dark' ? '/assets/logo-sinapse-dark.svg' : '/assets/logo-sinapse.svg'}
           alt="SINAPSE"
           className="h-24 w-auto drop-shadow-lg"
         />

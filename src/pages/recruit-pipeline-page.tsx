@@ -291,7 +291,7 @@ export default function RecruitPipelinePage() {
                             </Badge>
                           </Link>
                           {p.activeCount > 0 && (
-                            <Badge className="text-xs bg-blue-500">
+                            <Badge className="text-xs bg-primary">
                               {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
                             </Badge>
                           )}

@@ -348,7 +348,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {topStrengths.map(s => (
-                <Badge key={s.categoryId} className="bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30">
+                <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30">
                   {shortLabel(s.categoryLabel)}
                 </Badge>
               ))}
@@ -390,7 +390,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                 {((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
                   <div className="flex flex-wrap gap-1">
                     {topStrengths.map(s => (
-                      <Badge key={s.categoryId} className="bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 text-[10px] px-1.5 h-4">
+                      <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30 text-[10px] px-1.5 h-4">
                         {shortLabel(s.categoryLabel)}
                       </Badge>
                     ))}
@@ -425,7 +425,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                 {compareAggregate && ((compareAggregate.topStrengths?.length > 0) || (compareAggregate.topGaps?.length > 0)) && (
                   <div className="flex flex-wrap gap-1">
                     {compareAggregate.topStrengths.map(s => (
-                      <Badge key={s.categoryId} className="bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 text-[10px] px-1.5 h-4">
+                      <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30 text-[10px] px-1.5 h-4">
                         {shortLabel(s.categoryLabel)}
                       </Badge>
                     ))}

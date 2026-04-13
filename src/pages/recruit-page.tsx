@@ -159,8 +159,8 @@ export default function RecruitPage() {
   }
 
   function statusBadge(c: Candidate) {
-    if (c.hasReport) return <Badge variant="default" className="bg-green-600">Analysé</Badge>
-    if (c.submittedAt) return <Badge variant="default" className="bg-blue-600">Soumis</Badge>
+    if (c.hasReport) return <Badge variant="default" className="bg-[#1B6179]">Analysé</Badge>
+    if (c.submittedAt) return <Badge variant="default" className="bg-primary">Soumis</Badge>
     if (new Date(c.expiresAt) < new Date()) return <Badge variant="destructive">Expiré</Badge>
     return <Badge variant="secondary">En attente</Badge>
   }
@@ -251,14 +251,14 @@ export default function RecruitPage() {
                       <p className="font-medium">{creationResult.name}</p>
                       {creationResult.suggestionsCount > 0 && creationResult.suggestions ? (
                         <>
-                          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200">
+                          <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-[#1B6179] dark:border-primary/30 dark:bg-primary/10 dark:text-primary">
                             ✨ {creationResult.suggestionsCount} compétences détectées et pré-remplies
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {Object.entries(creationResult.suggestions).map(([skillId, level]) => {
                               const skillLabel = skillLabels[skillId] ?? skillId
                               return (
-                                <span key={skillId} className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-700 dark:text-blue-300">
+                                <span key={skillId} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-[#1B6179] dark:text-primary">
                                   {skillLabel} <span className="font-bold">L{level}</span>
                                 </span>
                               )

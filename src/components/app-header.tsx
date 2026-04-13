@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTheme } from 'next-themes'
 import { LogOut, FileText, Users } from 'lucide-react'
 import ThemeToggle from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,9 @@ interface AppHeaderProps {
 export default function AppHeader({ headerActions, headerNav, hideSessionNav }: AppHeaderProps) {
   const { data: session } = authClient.useSession()
   const navigate = useNavigate()
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   const loggedInMember = session?.user.slug
     ? findMember(session.user.slug as string)
@@ -32,10 +36,10 @@ export default function AppHeader({ headerActions, headerNav, hideSessionNav }: 
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border/50">
       <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-8">
         <div className="flex items-center gap-2">
-          <Link to="/"><img src="/assets/logo-sinapse-horizontal.svg" alt="SINAPSE" className="h-8 w-auto" /></Link>
+          <Link to="/"><img src={mounted && resolvedTheme === 'dark' ? '/assets/logo-sinapse-horizontal-dark.svg' : '/assets/logo-sinapse-horizontal.svg'} alt="SINAPSE" className="h-8 w-auto" /></Link>
           {headerActions}
         </div>
         <div className="flex items-center gap-2">

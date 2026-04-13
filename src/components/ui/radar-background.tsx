@@ -15,7 +15,7 @@ export function RadarBackground({
   scale = 1.0,
   ringCount = 6,
   spokeCount = 8,
-  color = 'rgba(34, 197, 94, 0.4)',
+  color = 'rgba(82, 182, 207, 0.4)',
   backgroundColor = 'transparent',
   className = '',
 }: RadarProps) {
@@ -187,7 +187,7 @@ export function RadarBackground({
           height: '100%',
           background: backgroundColor !== 'transparent'
             ? backgroundColor
-            : 'radial-gradient(ellipse at center, rgba(34,197,94,0.08) 0%, transparent 70%)',
+            : 'radial-gradient(ellipse at center, rgba(82,182,207,0.08) 0%, transparent 70%)',
         }}
       />
     )
@@ -216,6 +216,6 @@ function parseColor(color: string): [number, number, number] {
       parseInt(rgbaMatch[3]) / 255,
     ]
   }
-  // Default green
-  return [0.133, 0.773, 0.369]
+  // Default teal (#52B6CF)
+  return [0.322, 0.714, 0.812]
 }

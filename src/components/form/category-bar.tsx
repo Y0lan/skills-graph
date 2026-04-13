@@ -55,7 +55,7 @@ export default function CategoryBar({
   const suivantClasses = [
     'gap-1.5 transition-colors duration-300',
     allRated && !isSkipped
-      ? 'bg-green-600 hover:bg-green-700 text-white'
+      ? 'bg-[#1B6179] hover:bg-[#153243] text-white'
       : '',
   ]
     .filter(Boolean)
@@ -71,7 +71,7 @@ export default function CategoryBar({
           {categoryLabel}
           {isRoleCategory !== undefined && (
             isRoleCategory
-              ? <span className="ml-1 rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">Requis</span>
+              ? <span className="ml-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary dark:text-primary">Requis</span>
               : <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Optionnel</span>
           )}
           {!isSkipped && (

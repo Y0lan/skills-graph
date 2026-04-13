@@ -26,7 +26,7 @@ interface ExpertFinderProps {
 function scoreColorClass(score: number | null): string {
   if (score === null) return 'bg-muted text-muted-foreground'
   if (score >= 4) return 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-  if (score >= 3) return 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
+  if (score >= 3) return 'bg-primary/20 text-[#1B6179] dark:text-primary'
   if (score >= 2) return 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
   if (score >= 1) return 'bg-red-500/20 text-red-600 dark:text-red-400'
   return 'bg-muted text-muted-foreground'
