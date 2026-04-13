@@ -107,19 +107,22 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
 
   try {
     let fields: Record<string, string>
-    let cvFile: { buffer: Buffer; mimetype: string } | null = null
+    let cvFile: { buffer: Buffer; mimetype: string; originalname?: string } | null = null
+    let lettreFile: { buffer: Buffer; mimetype: string; originalname?: string } | null = null
 
     const contentType = req.headers['content-type'] || ''
     if (contentType.startsWith('multipart/')) {
       const parsed = await parseMultipartIntake(req)
       fields = parsed.fields
       const cv = parsed.files.get('cv')
-      if (cv) cvFile = { buffer: cv.buffer, mimetype: cv.mimetype }
+      if (cv) cvFile = { buffer: cv.buffer, mimetype: cv.mimetype, originalname: cv.filename }
+      const lettre = parsed.files.get('lettre')
+      if (lettre) lettreFile = { buffer: lettre.buffer, mimetype: lettre.mimetype, originalname: lettre.filename }
     } else {
       fields = req.body
     }
 
-    const result = await processIntake(fields as unknown as Parameters<typeof processIntake>[0], cvFile)
+    const result = await processIntake(fields as unknown as Parameters<typeof processIntake>[0], cvFile, lettreFile)
 
     if ('error' in result) {
       res.status(result.status).json({ error: result.error })
