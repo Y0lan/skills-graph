@@ -161,7 +161,6 @@ export default function DashboardPage() {
             {/* Header — always visible, outside tabs */}
             <div>
               <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
-                <img src="/radar.png" alt="" className="h-8 w-8" />
                 Radar des Compétences
               </h1>
               {member && (

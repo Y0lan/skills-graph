@@ -35,7 +35,7 @@ export default function AppHeader({ headerActions, headerNav, hideSessionNav }: 
     <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm">
       <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-8">
         <div className="flex items-center gap-2">
-          <img src="/assets/logo-sinapse-horizontal.svg" alt="SINAPSE" className="h-8 w-auto" />
+          <Link to="/"><img src="/assets/logo-sinapse-horizontal.svg" alt="SINAPSE" className="h-8 w-auto" /></Link>
           {headerActions}
         </div>
         <div className="flex items-center gap-2">
