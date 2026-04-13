@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: skill-radar
-  namespace: skill-radar
+  namespace: public-webapp
   labels:
     app: skill-radar
 spec:

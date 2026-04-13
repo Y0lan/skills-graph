@@ -2,5 +2,5 @@ dbs:
   - path: /data/ratings.db
     replicas:
       - type: gcs
-        bucket: skill-radar-litestream-backup
-        path: ratings
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}

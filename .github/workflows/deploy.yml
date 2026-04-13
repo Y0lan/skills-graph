@@ -1,4 +1,4 @@
-name: Deploy to GKE Autopilot
+name: Deploy to GKE (Prod)
 
 on:
   push:
@@ -40,7 +40,7 @@ jobs:
         run: gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,39 +50,35 @@ jobs:
         with:
           context: .
           push: true
-          tags: australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:${{ github.sha }}
+          tags: |
+            asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:${{ github.sha }}
+            asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Get GKE credentials
         run: |
-          gcloud container clusters get-credentials skill-radar \
-            --region australia-southeast1 \
+          gcloud container clusters get-credentials cloud-sinapse \
+            --region asia-northeast1 \
             --project ${{ vars.GCP_PROJECT_ID }}
 
       - name: Deploy to GKE
         run: |
           cd k8s
-          kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/skill-radar/app:${{ github.sha }}
+          kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:${{ github.sha }}
           kubectl apply -k .
-          kubectl -n skill-radar rollout status deployment/skill-radar --timeout=120s
+          kubectl -n public-webapp rollout status deployment/skill-radar --timeout=120s
 
       - name: Smoke test
         run: |
-          # Wait for Gateway to assign an IP (may take a moment on first deploy)
-          for i in $(seq 1 12); do
-            IP=$(kubectl -n skill-radar get gateway skill-radar-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null)
-            [ -n "$IP" ] && break
-            echo "Waiting for Gateway IP... ($i/12)"
-            sleep 10
-          done
-          if [ -z "$IP" ]; then
-            echo "Warning: Gateway IP not yet assigned (normal on first deploy — can take 2-5 min)"
-            exit 0
+          kubectl -n public-webapp rollout status deployment/skill-radar --timeout=90s
+          kubectl -n public-webapp port-forward deploy/skill-radar 9090:8080 &
+          PF_PID=$!
+          sleep 3
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
+          kill $PF_PID 2>/dev/null || true
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed (via port-forward)"
+          else
+            echo "Health check failed: HTTP $STATUS" && exit 1
           fi
-          for i in 1 2 3 4 5; do
-            STATUS=$(curl -sL -o /dev/null -w '%{http_code}' "http://$IP/health")
-            [ "$STATUS" = "200" ] && echo "Health check passed" && exit 0
-            sleep 5
-          done
-          echo "Health check failed after 5 retries" && exit 1

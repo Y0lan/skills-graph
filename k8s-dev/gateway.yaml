@@ -2,11 +2,11 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: skill-radar-dev-route
-  namespace: skill-radar-dev
+  namespace: public-webapp
 spec:
   parentRefs:
-    - name: skill-radar-dev-gateway
-      namespace: skill-radar-dev
+    - name: cloud-sinapse-gateway
+      namespace: gateway
       sectionName: https
   hostnames: ["dev.radar.sinapse.nc"]
   rules:
@@ -15,5 +15,5 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: skill-radar
+        - name: skill-radar-dev
           port: 80
