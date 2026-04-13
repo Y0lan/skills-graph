@@ -278,7 +278,7 @@ export default function RecruitPipelinePage() {
                         <div>
                           <span className="font-medium text-sm">{p.titre}</span>
                           <span className="text-xs text-muted-foreground ml-2">
-                            {p.headcount} poste{p.headcountFlexible ? ' (flex.)' : ''} · {p.experienceMin} ans min.
+                            {p.headcount} poste{p.headcountFlexible ? ' (flex.)' : ''} · {p.experienceMin} ans d'exp. req.
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
