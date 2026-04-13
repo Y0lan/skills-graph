@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Upload, FileText, Download, FolderArchive } from 'lucide-react'
-import { formatDateShort } from '@/lib/constants'
+import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
 
@@ -96,7 +96,7 @@ export default function CandidateDocumentsPanel({
                     {DOC_TYPE_LABELS[doc.type] ?? doc.type}
                   </Badge>
                   <span className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDateShort(doc.created_at)}
+                    {formatDateTime(doc.created_at)}
                   </span>
                 </div>
                 <Button

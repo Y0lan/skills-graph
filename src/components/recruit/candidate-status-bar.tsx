@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { GitBranch, ChevronRight, Upload } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateShort } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import type { CandidatureInfo, CandidatureEvent, AllowedTransitions } from '@/hooks/use-candidate-data'
 
 export interface CandidateStatusBarProps {
@@ -35,7 +35,7 @@ export default function CandidateStatusBar({
                   <p className="text-sm font-medium">{c.posteTitre}</p>
                   <p className="text-xs text-muted-foreground">
                     {CANAL_LABELS[c.canal] ?? c.canal}
-                    {' · '}Candidature du {formatDateShort(c.createdAt)}
+                    {' · '}Candidature du {formatDateTime(c.createdAt)}
                   </p>
                 </div>
               </div>
@@ -128,7 +128,7 @@ export default function CandidateStatusBar({
                 <div className="space-y-1.5">
                   {events.map(e => (
                     <div key={e.id} className="flex items-start gap-2 text-xs">
-                      <span className="text-muted-foreground shrink-0 w-12">{formatDateShort(e.createdAt)}</span>
+                      <span className="text-muted-foreground shrink-0 w-12">{formatDateTime(e.createdAt)}</span>
                       {e.statutTo && (
                         <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
                           {STATUT_LABELS[e.statutTo] ?? e.statutTo}

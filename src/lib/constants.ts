@@ -55,3 +55,12 @@ export function formatDate(dateStr: string | null | undefined): string {
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR')
 }
+
+/** Date + time format: "13/04/2026 14:32" */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+}
