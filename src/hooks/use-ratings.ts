@@ -12,6 +12,7 @@ interface UseRatingsReturn {
       ratings: Record<string, number>
       experience: Record<string, number>
       skippedCategories: string[]
+      declinedCategories: string[]
     },
   ) => Promise<MemberRatings | null>
   resetRatings: (slug: string) => Promise<boolean>
@@ -49,6 +50,7 @@ export function useRatings(): UseRatingsReturn {
         ratings: Record<string, number>
         experience: Record<string, number>
         skippedCategories: string[]
+        declinedCategories: string[]
       },
     ): Promise<MemberRatings | null> => {
       setLoading(true)

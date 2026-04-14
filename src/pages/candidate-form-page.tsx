@@ -48,7 +48,7 @@ export default function CandidateFormPage() {
           return
         }
         const initialRatings = formInfo.aiSuggestions ?? {}
-        setExistingRatings({ ratings: initialRatings, experience: {}, skippedCategories: [] })
+        setExistingRatings({ ratings: initialRatings, experience: {}, skippedCategories: [], declinedCategories: [] })
       })
       .catch(() => setError('Impossible de charger le formulaire'))
       .finally(() => setLoading(false))

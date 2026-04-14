@@ -12,6 +12,7 @@ export const SkillFormSchema = z.object({
     z.number().int().min(0).max(4)
   ),
   skippedCategories: z.array(z.string()),
+  declinedCategories: z.array(z.string()),
 })
 
 export type SkillFormValues = z.infer<typeof SkillFormSchema>

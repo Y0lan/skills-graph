@@ -34,6 +34,7 @@ export default function FormPage() {
   const [resetting, setResetting] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
   const [poleCategories, setPoleCategories] = useState<string[] | null>(null)
+  const [nonPoleGroups, setNonPoleGroups] = useState<any[] | null>(null)
 
   const handleNavigationChange = useCallback((nav: WizardNavigation) => {
     setWizardNav(nav)
@@ -50,6 +51,14 @@ export default function FormPage() {
     fetch(`/api/catalog/pole-categories/${member.pole}`)
       .then(r => r.ok ? r.json() : null)
       .then(cats => { if (cats) setPoleCategories(cats) })
+      .catch(() => {})
+  }, [member?.pole])
+
+  useEffect(() => {
+    if (!member?.pole) return
+    fetch(`/api/catalog/non-pole-categories/${member.pole}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.groups) setNonPoleGroups(data.groups) })
       .catch(() => {})
   }, [member?.pole])
 
@@ -239,10 +248,12 @@ export default function FormPage() {
           key={resetKey}
           slug={slug!}
           roleCategories={poleCategories ?? undefined}
+          nonPoleGroups={nonPoleGroups ?? undefined}
           initialData={{
             ratings: data?.ratings ?? {},
             experience: data?.experience ?? {},
             skippedCategories: data?.skippedCategories ?? [],
+            declinedCategories: data?.declinedCategories ?? [],
           }}
           submitting={loading}
           onSubmit={async (payload) => {

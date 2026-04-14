@@ -68,6 +68,7 @@ const emptyInitialData = {
   ratings: {},
   experience: {},
   skippedCategories: [] as string[],
+  declinedCategories: [] as string[],
 }
 
 function renderWizard(props: Partial<Parameters<typeof SkillFormWizard>[0]> = {}) {
@@ -94,6 +95,7 @@ describe('SkillFormWizard pre-fill behaviour', () => {
         ratings: { java: 3, typescript: 4 },
         experience: {},
         skippedCategories: [],
+        declinedCategories: [],
       },
     })
 

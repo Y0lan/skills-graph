@@ -3,7 +3,7 @@ import { Check, Lock, SkipForward } from 'lucide-react'
 
 export interface StepInfo {
   label: string
-  emoji: string
+  emoji?: string
   ratedCount: number
   totalCount: number
   isSkipped: boolean

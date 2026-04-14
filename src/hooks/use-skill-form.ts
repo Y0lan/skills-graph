@@ -16,6 +16,7 @@ export function useSkillForm({ defaultValues }: UseSkillFormOptions) {
   const ratings = form.watch('ratings')
   const experience = form.watch('experience')
   const skippedCategories = form.watch('skippedCategories')
+  const declinedCategories = form.watch('declinedCategories')
 
   function setRating(skillId: string, value: number) {
     form.setValue(`ratings.${skillId}`, value, { shouldDirty: true })
@@ -43,14 +44,21 @@ export function useSkillForm({ defaultValues }: UseSkillFormOptions) {
     return skippedCategories.includes(categoryId)
   }
 
+  function setDeclinedCategories(updater: (prev: string[]) => string[]) {
+    const current = form.getValues('declinedCategories')
+    form.setValue('declinedCategories', updater(current), { shouldDirty: true })
+  }
+
   return {
     form,
     ratings,
     experience,
     skippedCategories,
+    declinedCategories,
     setRating,
     setExperience,
     toggleSkipCategory,
     isSkipped,
+    setDeclinedCategories,
   }
 }

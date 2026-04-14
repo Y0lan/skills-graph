@@ -5,6 +5,7 @@ export interface MemberRatings {
   ratings: Record<string, number>
   experience: Record<string, number>
   skippedCategories: string[]
+  declinedCategories: string[]
   submittedAt: string | null
 }
 

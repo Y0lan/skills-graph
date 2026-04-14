@@ -11,6 +11,7 @@ import type { StepInfo } from './progress-bar'
 import CategoryBar from './category-bar'
 import CategoryStep from './category-step'
 import ReviewStep from './review-step'
+import DiscoveryStep from './discovery-step'
 
 export interface WizardNavigation {
   step: number
@@ -25,6 +26,17 @@ export interface WizardNavigation {
   onSubmit: () => void
 }
 
+interface CategoryGroup {
+  pole: string
+  label: string
+  categories: Array<{
+    id: string
+    label: string
+    emoji: string
+    skills: Array<{ id: string; label: string; descriptors: Array<{ level: number; label: string; description: string }> }>
+  }>
+}
+
 interface SkillFormWizardProps {
   slug: string
   initialData: SkillFormValues
@@ -34,6 +46,7 @@ interface SkillFormWizardProps {
   autosaveEndpoint?: string
   aiSuggestions?: Record<string, number>
   roleCategories?: string[]
+  nonPoleGroups?: CategoryGroup[]
 }
 
 export default function SkillFormWizard({
@@ -45,6 +58,7 @@ export default function SkillFormWizard({
   autosaveEndpoint,
   aiSuggestions,
   roleCategories,
+  nonPoleGroups,
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
@@ -72,10 +86,14 @@ export default function SkillFormWizard({
   }, [roleCategories])
 
   const TOTAL_CATEGORY_STEPS = orderedCategories.length
-  const REVIEW_STEP = TOTAL_CATEGORY_STEPS
+  const hasDiscovery = nonPoleGroups && nonPoleGroups.length > 0
+  const DISCOVERY_STEP = hasDiscovery ? TOTAL_CATEGORY_STEPS : -1
+  const REVIEW_STEP = hasDiscovery ? TOTAL_CATEGORY_STEPS + 1 : TOTAL_CATEGORY_STEPS
 
-  const { form, ratings, skippedCategories, setRating, toggleSkipCategory, isSkipped } =
+  const { form, ratings, skippedCategories, declinedCategories, setRating, toggleSkipCategory, isSkipped, setDeclinedCategories } =
     useSkillForm({ defaultValues: initialData })
+
+  const [discoveryVisited, setDiscoveryVisited] = useState(false)
 
   const { saveStatus } = useAutosave({ control: form.control, slug, endpoint: autosaveEndpoint })
 
@@ -97,7 +115,8 @@ export default function SkillFormWizard({
   })
 
   const isReviewStep = step === REVIEW_STEP
-  const category = !isReviewStep ? orderedCategories[step] : null
+  const isDiscoveryStep = hasDiscovery && step === DISCOVERY_STEP
+  const category = !isReviewStep && !isDiscoveryStep ? orderedCategories[step] : null
 
   // Clear validation errors when ratings change or step changes
   useEffect(() => {
@@ -140,6 +159,16 @@ export default function SkillFormWizard({
         isRoleCategory: roleCategories ? isRoleCategory(cat.id) : undefined,
       }
     }),
+    ...(hasDiscovery
+      ? [
+          {
+            label: '+',
+            ratedCount: 0,
+            totalCount: 0,
+            isSkipped: false,
+          },
+        ]
+      : []),
     {
       label: 'Récapitulatif',
       emoji: '✅',
@@ -151,7 +180,7 @@ export default function SkillFormWizard({
 
   // Validate current step before advancing
   const validateCurrentStep = useCallback((): boolean => {
-    if (isReviewStep) return true
+    if (isReviewStep || isDiscoveryStep) return true
     const cat = orderedCategories[step]
     if (!cat || isSkipped(cat.id)) return true
 
@@ -171,7 +200,7 @@ export default function SkillFormWizard({
     setUnratedSkillIds([])
     setValidationMessage(undefined)
     return true
-  }, [step, ratings, isSkipped, isReviewStep, orderedCategories])
+  }, [step, ratings, isSkipped, isReviewStep, isDiscoveryStep, orderedCategories])
 
   const handleNext = () => {
     if (!validateCurrentStep()) return
@@ -200,6 +229,10 @@ export default function SkillFormWizard({
   }
 
   const handleSubmit = async () => {
+    if (hasDiscovery && !discoveryVisited) {
+      setStep(DISCOVERY_STEP)
+      return
+    }
     const values = form.getValues()
     await onSubmit(values)
   }
@@ -218,7 +251,7 @@ export default function SkillFormWizard({
       onSubmit: handleSubmit,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, isReviewStep, editingFromReview, submitting, saveStatus, ratings, skippedCategories])
+  }, [step, isReviewStep, editingFromReview, submitting, saveStatus, ratings, skippedCategories, declinedCategories, discoveryVisited])
 
   return (
     <div className="space-y-6">
@@ -262,6 +295,16 @@ export default function SkillFormWizard({
           categories={orderedCategories}
           ratingScale={ratingScale}
           onGoToStep={handleGoToStep}
+        />
+      ) : isDiscoveryStep && nonPoleGroups ? (
+        <DiscoveryStep
+          groups={nonPoleGroups}
+          ratings={ratings}
+          declinedCategories={declinedCategories}
+          onRate={(skillId, value) => setRating(skillId, value)}
+          onDecline={(catId) => setDeclinedCategories(prev => [...new Set([...prev, catId])])}
+          onUndecline={(catId) => setDeclinedCategories(prev => prev.filter(id => id !== catId))}
+          onContinue={() => { setDiscoveryVisited(true); setStep(REVIEW_STEP) }}
         />
       ) : (
         category && (
