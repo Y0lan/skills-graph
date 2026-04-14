@@ -31,11 +31,13 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
           {sorted.map((member) => {
             const hasSubmitted = member.submittedAt !== null
             const radarData = hasSubmitted
-              ? skillCategories.map((cat) => ({
-                  label: cat.label.split(/[&(]/)[0].trim(),
-                  value: member.categoryAverages[cat.id] ?? 0,
-                  fullMark: 5,
-                }))
+              ? skillCategories
+                  .filter((cat) => (member.categoryAverages[cat.id] ?? 0) > 0)
+                  .map((cat) => ({
+                    label: cat.label.split(/[&(]/)[0].trim(),
+                    value: member.categoryAverages[cat.id],
+                    fullMark: 5,
+                  }))
               : []
 
             // Top 3 strengths with category metadata
@@ -56,7 +58,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
                 className={`overflow-hidden transition-opacity ${!hasSubmitted ? 'opacity-40' : ''}`}
               >
                 <CardContent className="flex flex-col items-center gap-2 pt-4">
-                  {hasSubmitted && radarData.length > 0 && (
+                  {hasSubmitted && radarData.length >= 3 && (
                     <VisxRadarChart data={radarData} height={180} compact />
                   )}
                   <MemberAvatar

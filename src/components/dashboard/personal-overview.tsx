@@ -18,6 +18,8 @@ import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
 import MentorSuggestions from '@/components/dashboard/mentor-suggestions'
 
+const COMPARE_AVERAGE = '__average__'
+
 interface PersonalOverviewProps {
   aggregate: MemberAggregateResponse & { hasRatings?: boolean }
   teamMembers?: TeamMemberAggregateResponse[]
@@ -322,8 +324,8 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           <div className="flex items-center gap-2 shrink-0">
             {teamMembers && teamMembers.length > 0 && (
               <>
-                <Select value={compareSlug ?? ''} onValueChange={(v) => {
-                  const newSlug = v || null
+                <Select value={compareSlug ?? COMPARE_AVERAGE} onValueChange={(v) => {
+                  const newSlug = v === COMPARE_AVERAGE ? null : v
                   if (newSlug === compareSlug) return
                   setCompareSlug(newSlug)
                   onCompareChange?.(newSlug)
@@ -339,7 +341,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                     <SelectValue placeholder={`Comparer avec : ${poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}`} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">{poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}</SelectItem>
+                    <SelectItem value={COMPARE_AVERAGE}>{poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}</SelectItem>
                     {membersByPole.map(group => (
                       <SelectGroup key={group.pole ?? '__null'}>
                         <SelectLabel>{group.label}</SelectLabel>
@@ -439,8 +441,37 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           <div className="space-y-3">
             {/* Cross-pole banner */}
             {isCrossPole && sharedCategoryIds && (
-              <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-[#1B6179] dark:border-primary/30 dark:bg-primary/10 dark:text-primary">
-                Comparaison inter-pôles — catégories communes uniquement
+              <div className="rounded-lg border-2 border-dashed border-primary/40 bg-gradient-to-r from-primary/5 to-primary/10 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-sm">Comparaison inter-pôles</span>
+                  <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
+                    {POLE_LABELS[currentMemberPole!] ?? currentMemberPole}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">vs</span>
+                  <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
+                    {POLE_LABELS[teamMembers?.find(m => m.slug === compareSlug)?.pole ?? ''] ?? 'Autre pôle'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {sharedCategoryIds.length} catégorie{sharedCategoryIds.length > 1 ? 's' : ''} commune{sharedCategoryIds.length > 1 ? 's' : ''} sur {categories.length}.
+                  Les catégories spécifiques à chaque pôle sont exclues.
+                </p>
+                {categories.filter(c => !sharedCategoryIds.includes(c.categoryId) && c.avgRank > 0).length > 0 && (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer hover:text-foreground">
+                      Catégories exclues ({categories.filter(c => !sharedCategoryIds.includes(c.categoryId) && c.avgRank > 0).length})
+                    </summary>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {categories
+                        .filter(c => !sharedCategoryIds.includes(c.categoryId) && c.avgRank > 0)
+                        .map(c => (
+                          <Badge key={c.categoryId} variant="outline" className="text-[10px] opacity-60">
+                            {shortLabel(c.categoryLabel)}
+                          </Badge>
+                        ))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

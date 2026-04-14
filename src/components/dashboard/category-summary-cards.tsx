@@ -70,7 +70,7 @@ export default function CategorySummaryCards({
                 <TableHead className="text-right">Moy.</TableHead>
                 <TableHead className="text-right">Objectif</TableHead>
                 <TableHead className="text-right">Min / Max</TableHead>
-                <TableHead className="w-32">Distribution</TableHead>
+                <TableHead className="w-40">Distribution</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -105,16 +105,16 @@ export default function CategorySummaryCards({
                       {cat.minRank.toFixed(1)} — {cat.maxRank.toFixed(1)}
                     </TableCell>
                     <TableCell>
-                      <div className="relative h-1.5 w-full overflow-visible rounded-full bg-secondary">
+                      <div className="relative h-4 w-full overflow-visible rounded bg-secondary">
                         <div
-                          className={`h-full rounded-full transition-all ${barColorClass(cat.teamAvgRank, target)}`}
+                          className={`h-full rounded transition-all ${barColorClass(cat.teamAvgRank, target)}`}
                           style={{ width: `${avgPct}%` }}
                         />
                         <div
                           className="absolute top-1/2 -translate-y-1/2"
                           style={{ left: `${targetPct}%` }}
                         >
-                          <div className="relative -ml-px h-3 w-0.5 rounded-full bg-foreground/70" />
+                          <div className="relative -ml-px h-6 w-1 rounded-sm bg-foreground/60 border border-background" />
                         </div>
                       </div>
                     </TableCell>
@@ -129,8 +129,8 @@ export default function CategorySummaryCards({
                             return (
                               <div key={skill.id} className="flex items-center gap-3 text-sm">
                                 <span className="w-40 truncate text-muted-foreground">{shortLabel(skill.label)}</span>
-                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
-                                  <div className={cn('h-full rounded-full', barBgColorClass(avg))} style={{ width: `${pct}%` }} />
+                                <div className="h-3 flex-1 overflow-hidden rounded bg-secondary">
+                                  <div className={cn('h-full rounded', barBgColorClass(avg))} style={{ width: `${pct}%` }} />
                                 </div>
                                 <span className={cn('w-10 text-right tabular-nums text-xs font-semibold', strengthColor(avg))}>
                                   {avg.toFixed(1)}

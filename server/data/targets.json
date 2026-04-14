@@ -119,5 +119,19 @@
     "architecture-governance": 3,
     "soft-skills": 5,
     "domain-knowledge": 4
+  },
+  "Développeur Adélia": {
+    "legacy-ibmi-adelia": 4,
+    "core-engineering": 3,
+    "architecture-governance": 2,
+    "soft-skills-delivery": 2,
+    "domain-knowledge": 4
+  },
+  "Directrice": {
+    "management-leadership": 4,
+    "architecture-governance": 3,
+    "soft-skills-delivery": 5,
+    "domain-knowledge": 4,
+    "project-management-pmo": 3
   }
 }

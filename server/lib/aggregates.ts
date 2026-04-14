@@ -346,7 +346,10 @@ export function computeTeamAggregate(pole?: string): TeamAggregateResponse {
       skillRatings,
       topGaps,
       topStrengths,
-      lastActivityAt: lastActivityBySlug[member.slug] ?? memberData?.submittedAt ?? null,
+      lastActivityAt: [lastActivityBySlug[member.slug], memberData?.submittedAt]
+        .filter((d): d is string => !!d)
+        .sort()
+        .pop() ?? null,
       skillDates: skillDatesBySlug[member.slug] ?? {},
       progressionDelta: progressionDeltaBySlug[member.slug] ?? 0,
     }

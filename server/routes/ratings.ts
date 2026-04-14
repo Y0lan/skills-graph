@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { teamMembers } from '../data/team-roster.js'
-import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, deleteEvaluation, getDb } from '../lib/db.js'
+import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, recordSkillChangesOnSubmit, deleteEvaluation, getDb } from '../lib/db.js'
 import { generateAndSaveSummary } from '../lib/summary.js'
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js'
 import { getSkillById } from '../lib/catalog.js'
@@ -138,6 +138,7 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, r
   }
 
   submitEvaluation(slug)
+  recordSkillChangesOnSubmit(slug)
 
   // Generate LLM summary (≤10s, returns null on failure)
   try {

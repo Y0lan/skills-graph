@@ -18,45 +18,99 @@ const members = [
   { slug: 'nicole-nguon', role: 'fullstack', team: 'dev' },
   { slug: 'bethlehem-mengistu', role: 'qa', team: 'qa' },
   { slug: 'pierre-rossato', role: 'lead', team: 'management' },
+  // Demo users
+  { slug: 'demo_ba', role: 'ba', team: 'fonctionnel' },
+  { slug: 'demo_legacy', role: 'legacy-dev', team: 'dev' },
+  { slug: 'demo_modern', role: 'fullstack', team: 'dev' },
+  { slug: 'demo_direction', role: 'direction', team: 'direction' },
 ]
 
-// ─── Categories and their skills ─────────────────────────
+// ─── Categories and their skills (full catalog) ─────────
 const categories: Record<string, string[]> = {
   'core-engineering': [
-    'java', 'typescript', 'python', 'sql', 'bash-shell', 'git-branching', 'patterns-solid',
+    'java', 'typescript', 'python', 'sql', 'bash-shell', 'git-branching', 'patterns-solid', 'testing-strategy',
   ],
   'backend-integration': [
     'spring-boot', 'jpa-hibernate', 'ddd', 'api-design', 'messaging',
-    'bpm-orchestration', 'postgresql', 'redis-dragonfly',
+    'bpm-orchestration', 'postgresql', 'redis', 'integration-contract-testing',
   ],
   'frontend-ui': [
     'angular', 'rxjs', 'html-css-scss', 'state-management',
-    'component-libraries', 'accessibility-design-system',
+    'component-libraries', 'accessibility-design-system', 'frontend-testing',
   ],
   'platform-engineering': [
-    'gitlab-ci', 'docker-podman', 'kubernetes', 'helm-kustomize',
-    'terraform-opentofu', 'ansible', 'artifact-registries',
+    'gitlab-ci', 'docker-podman', 'kubernetes', 'helm-kustomize', 'gitops',
+    'terraform-opentofu', 'ansible', 'artifact-registries', 'object-storage',
   ],
   'observability-reliability': [
     'prometheus', 'grafana', 'loki-elasticsearch', 'tempo-opentelemetry',
-    'sentry', 'slo-sla-alerting', 'capacity-resilience',
+    'error-tracking', 'slo-sla-alerting', 'capacity-resilience',
   ],
   'security-compliance': [
-    'iam-keycloak', 'secret-management', 'supply-chain', 'code-security',
-    'mfa-yubikey', 'encryption-tls', 'threat-modeling',
+    'iam-authn', 'secret-management', 'supply-chain', 'code-security',
+    'encryption-tls', 'network-security-zerotrust', 'threat-modeling',
   ],
   'architecture-governance': [
     'c4-structurizr', 'adrs', 'archimate', 'technical-documentation',
-    'agile-scrum', 'code-review', 'modular-microservices', 'api-governance', 'data-modeling',
+    'modular-microservices', 'api-governance', 'data-modeling', 'urbanisation-si',
   ],
-  'soft-skills': [
-    'technical-writing', 'mentoring', 'cross-team-communication',
+  'soft-skills-delivery': [
+    'vulgarisation-pedagogie', 'mentoring', 'cross-team-communication',
     'problem-solving-debugging', 'incident-response', 'stakeholder-communication',
+    'agile-scrum', 'code-review',
   ],
   'domain-knowledge': [
     'reglementation-sociale', 'processus-recouvrement', 'travailleurs-independants',
-    'sante-ruamm', 'portail-pro', 'gue-rue', 'comptabilite-paiements',
-    'si-legacy', 'urbanisation-si',
+    'sante-ruamm', 'portail-pro', 'gue-rue', 'comptabilite-paiements', 'si-legacy',
+  ],
+  'ai-engineering': [
+    'prompt-engineering', 'ai-assistants', 'coding-assistants', 'rag-knowledge-bases',
+    'llm-local-inference', 'llm-api-integration', 'ai-project-management', 'ai-ethics-governance',
+  ],
+  'qa-test-engineering': [
+    'test-strategy', 'test-automation-frameworks', 'e2e-functional-testing',
+    'performance-load-testing', 'test-data-management', 'test-environments', 'defect-management',
+  ],
+  // Fonctionnel pole categories
+  'analyse-fonctionnelle': [
+    'cross-domain-coordination', 'data-dictionary-referentials', 'gap-analysis-legacy',
+    'regulatory-interpretation', 'process-modeling', 'functional-testing',
+    'functional-specifications', 'requirements-elicitation',
+  ],
+  'project-management-pmo': [
+    'dependency-coordination', 'stakeholder-engagement', 'risk-management',
+    'procurement-contracts', 'scope-change-control', 'planning-scheduling',
+    'governance-reporting', 'budget-financial-tracking',
+  ],
+  'change-management-training': [
+    'external-user-accompaniment', 'training-delivery', 'change-communication',
+    'training-design', 'impact-analysis', 'adoption-measurement', 'stakeholder-network',
+  ],
+  'design-ux': [
+    'accessibility-rgaa', 'information-architecture', 'ux-design',
+    'ui-design-prototyping', 'service-design', 'user-research',
+    'ux-writing', 'usability-testing',
+  ],
+  'data-engineering-governance': [
+    'bi-reporting', 'etl-pipelines', 'data-governance-compliance',
+    'mdm-referentials', 'data-migration-legacy', 'data-modeling-conceptual', 'data-quality',
+  ],
+  'management-leadership': [
+    'coaching-development', 'management-communication', 'team-management',
+    'change-management-legacy', 'multi-stakeholder-piloting', 'strategic-planning',
+    'recruiting-onboarding', 'knowledge-transfer-run',
+  ],
+  // Legacy pole category
+  'legacy-ibmi-adelia': [
+    'adelia-rpg-4gl', 'cl-control-language', 'db2-400',
+    'legacy-diagnostic-mco', 'batch-scheduling-operations', 'legacy-batch-interfaces',
+    'legacy-modernisation', 'ibmi-as400-platform', 'web-adelia',
+  ],
+  // Infrastructure (shared/transverse)
+  'infrastructure-systems-network': [
+    'linux-administration', 'messaging-collaboration-m365', 'network-switching-routing',
+    'backup-disaster-recovery', 'storage-san-nas', 'monitoring-supervision',
+    'security-perimeter', 'vmware-virtualization', 'windows-ad', 'cdc-realtime-sync',
   ],
 }
 
@@ -77,8 +131,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.65,
     'security-compliance': 0.70,
     'architecture-governance': 0.90,
-    'soft-skills': 0.80,
+    'soft-skills-delivery': 0.80,
     'domain-knowledge': 0.55,
+    'ai-engineering': 0.65,
+    'qa-test-engineering': 0.40,
   },
   devops: {
     'core-engineering': 0.55,
@@ -88,8 +144,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.85,
     'security-compliance': 0.70,
     'architecture-governance': 0.45,
-    'soft-skills': 0.55,
+    'soft-skills-delivery': 0.55,
     'domain-knowledge': 0.20,
+    'ai-engineering': 0.30,
+    'qa-test-engineering': 0.35,
   },
   'devops-dev': {
     'core-engineering': 0.65,
@@ -99,8 +157,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.70,
     'security-compliance': 0.60,
     'architecture-governance': 0.45,
-    'soft-skills': 0.50,
+    'soft-skills-delivery': 0.50,
     'domain-knowledge': 0.25,
+    'ai-engineering': 0.35,
+    'qa-test-engineering': 0.40,
   },
   data: {
     'core-engineering': 0.60,
@@ -110,8 +170,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.45,
     'security-compliance': 0.35,
     'architecture-governance': 0.40,
-    'soft-skills': 0.50,
+    'soft-skills-delivery': 0.50,
     'domain-knowledge': 0.30,
+    'ai-engineering': 0.55,
+    'qa-test-engineering': 0.30,
   },
   fullstack: {
     'core-engineering': 0.70,
@@ -121,8 +183,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.40,
     'security-compliance': 0.40,
     'architecture-governance': 0.50,
-    'soft-skills': 0.55,
+    'soft-skills-delivery': 0.55,
     'domain-knowledge': 0.50,
+    'ai-engineering': 0.35,
+    'qa-test-engineering': 0.45,
   },
   qa: {
     'core-engineering': 0.45,
@@ -132,8 +196,10 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.50,
     'security-compliance': 0.55,
     'architecture-governance': 0.40,
-    'soft-skills': 0.60,
+    'soft-skills-delivery': 0.60,
     'domain-knowledge': 0.45,
+    'ai-engineering': 0.25,
+    'qa-test-engineering': 0.85,
   },
   lead: {
     'core-engineering': 0.75,
@@ -143,8 +209,49 @@ const profiles: Record<string, Profile> = {
     'observability-reliability': 0.55,
     'security-compliance': 0.60,
     'architecture-governance': 0.80,
-    'soft-skills': 0.90,
+    'soft-skills-delivery': 0.90,
     'domain-knowledge': 0.65,
+    'ai-engineering': 0.40,
+    'qa-test-engineering': 0.50,
+  },
+  // Fonctionnel pole
+  ba: {
+    'analyse-fonctionnelle': 0.85,
+    'project-management-pmo': 0.65,
+    'change-management-training': 0.60,
+    'design-ux': 0.45,
+    'data-engineering-governance': 0.55,
+    'management-leadership': 0.40,
+    'architecture-governance': 0.50,
+    'soft-skills-delivery': 0.80,
+    'domain-knowledge': 0.75,
+    // Cross-pole (lower, but present for comparison)
+    'core-engineering': 0.20,
+    'backend-integration': 0.15,
+    'frontend-ui': 0.10,
+  },
+  // Legacy pole
+  'legacy-dev': {
+    'legacy-ibmi-adelia': 0.90,
+    'core-engineering': 0.55,
+    'architecture-governance': 0.40,
+    'soft-skills-delivery': 0.50,
+    'domain-knowledge': 0.80,
+    // Cross-pole (lower)
+    'backend-integration': 0.30,
+    'frontend-ui': 0.10,
+    'platform-engineering': 0.20,
+  },
+  // Direction
+  direction: {
+    'management-leadership': 0.90,
+    'architecture-governance': 0.55,
+    'soft-skills-delivery': 0.95,
+    'domain-knowledge': 0.70,
+    'project-management-pmo': 0.60,
+    // Technical (low)
+    'core-engineering': 0.15,
+    'backend-integration': 0.10,
   },
 }
 
@@ -202,10 +309,12 @@ const individualOverrides: Record<string, Record<string, number>> = {
     'kubernetes': 1,
   },
   'bethlehem-mengistu': {
-    'code-security': 4, 'sentry': 4,
-    'agile-scrum': 4, 'technical-writing': 4,
+    'code-security': 4, 'error-tracking': 4,
+    'agile-scrum': 4, 'vulgarisation-pedagogie': 4,
     'java': 2, 'angular': 2, 'typescript': 2,
     'kubernetes': 0, 'terraform-opentofu': 0, 'ansible': 0,
+    'test-strategy': 5, 'test-automation-frameworks': 4,
+    'e2e-functional-testing': 5, 'defect-management': 4,
   },
   'pierre-rossato': {
     'java': 5, 'spring-boot': 5, 'angular': 4, 'typescript': 4,
@@ -213,6 +322,47 @@ const individualOverrides: Record<string, Record<string, number>> = {
     'agile-scrum': 5, 'cross-team-communication': 5,
     'technical-documentation': 4, 'ddd': 4,
     'kubernetes': 2, 'terraform-opentofu': 1,
+  },
+  // Demo users — distinctive profiles for cross-pole testing
+  'demo_ba': {
+    'functional-specifications': 5, 'requirements-elicitation': 5,
+    'process-modeling': 4, 'regulatory-interpretation': 4,
+    'cross-domain-coordination': 4, 'gap-analysis-legacy': 4,
+    'stakeholder-engagement': 4, 'change-communication': 4,
+    'stakeholder-communication': 4, 'agile-scrum': 3,
+    // Cross-pole transverse skills for comparison
+    'api-design': 2, 'data-modeling': 3, 'technical-documentation': 3,
+    'reglementation-sociale': 5, 'processus-recouvrement': 4,
+    'travailleurs-independants': 3, 'sante-ruamm': 4,
+  },
+  'demo_legacy': {
+    'adelia-rpg-4gl': 5, 'cl-control-language': 5, 'db2-400': 5,
+    'ibmi-as400-platform': 5, 'web-adelia': 4,
+    'legacy-diagnostic-mco': 4, 'batch-scheduling-operations': 4,
+    'legacy-batch-interfaces': 4, 'legacy-modernisation': 3,
+    'sql': 4, 'bash-shell': 3,
+    'reglementation-sociale': 4, 'processus-recouvrement': 3,
+    'si-legacy': 5, 'comptabilite-paiements': 3,
+    // Cross-pole transverse
+    'technical-documentation': 2, 'agile-scrum': 2,
+    'code-review': 3, 'problem-solving-debugging': 4,
+  },
+  'demo_modern': {
+    'java': 4, 'typescript': 4, 'angular': 4, 'spring-boot': 4,
+    'html-css-scss': 3, 'rxjs': 3, 'postgresql': 3,
+    'docker-podman': 2, 'gitlab-ci': 2,
+    'agile-scrum': 3, 'code-review': 3,
+  },
+  'demo_direction': {
+    'team-management': 5, 'strategic-planning': 5,
+    'multi-stakeholder-piloting': 5, 'coaching-development': 4,
+    'management-communication': 5, 'recruiting-onboarding': 4,
+    'knowledge-transfer-run': 4, 'change-management-legacy': 3,
+    'stakeholder-communication': 5, 'cross-team-communication': 5,
+    'mentoring': 4, 'agile-scrum': 3,
+    'reglementation-sociale': 3, 'processus-recouvrement': 3,
+    'domain-knowledge': 4,
+    'urbanisation-si': 3, 'archimate': 2,
   },
 }
 
@@ -262,12 +412,18 @@ async function main() {
 
   for (const member of members) {
     const profile = profiles[member.role]
+    if (!profile) {
+      console.error(`  SKIPPED ${member.slug}: no profile for role '${member.role}'`)
+      continue
+    }
     const overrides = individualOverrides[member.slug] ?? {}
 
     // Generate ratings — per-skill variation within each category
+    // Only rate categories that the profile has a strength for (skip irrelevant categories)
     const ratings: Record<string, number> = {}
     for (const [catId, skills] of Object.entries(categories)) {
-      const strength = profile[catId] ?? 0.5
+      const strength = profile[catId]
+      if (strength === undefined) continue // Skip categories not in this role's profile
       for (const skillId of skills) {
         if (overrides[skillId] !== undefined) {
           ratings[skillId] = overrides[skillId]
@@ -277,10 +433,11 @@ async function main() {
       }
     }
 
-    // Generate experience per category
+    // Generate experience per category (only for categories in profile)
     const experience: Record<string, number> = {}
     for (const catId of categoryIds) {
-      const strength = profile[catId] ?? 0.5
+      const strength = profile[catId]
+      if (strength === undefined) continue
       experience[catId] = generateExperience(strength)
     }
 

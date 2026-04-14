@@ -577,6 +577,48 @@ export function submitEvaluation(slug: string): MemberEvaluation | null {
   return getEvaluation(slug)
 }
 
+/**
+ * Record skill-level changes in skill_changes when a full form is re-submitted.
+ * Diffs current ratings against the last-known levels from skill_changes.
+ * If no prior history exists (first submission), seeds all non-zero ratings.
+ */
+export function recordSkillChangesOnSubmit(slug: string): void {
+  const memberData = getEvaluation(slug)
+  if (!memberData) return
+
+  const currentRatings = memberData.ratings
+
+  // Get last-known level per skill from skill_changes
+  const rows = db.prepare(
+    `SELECT skill_id, new_level FROM skill_changes
+     WHERE slug = ? AND (skill_id, changed_at) IN (
+       SELECT skill_id, MAX(changed_at) FROM skill_changes WHERE slug = ? GROUP BY skill_id
+     )`
+  ).all(slug, slug) as { skill_id: string; new_level: number }[]
+
+  const lastKnown = new Map(rows.map(r => [r.skill_id, r.new_level]))
+  const now = new Date().toISOString()
+
+  const insert = db.prepare(
+    'INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, ?, ?, ?)'
+  )
+
+  db.transaction(() => {
+    for (const [skillId, level] of Object.entries(currentRatings)) {
+      const prev = lastKnown.get(skillId)
+      if (prev === undefined) {
+        // New skill not previously tracked — seed it
+        if (level > 0) {
+          insert.run(slug, skillId, 0, level, now)
+        }
+      } else if (prev !== level) {
+        // Skill level changed
+        insert.run(slug, skillId, prev, level, now)
+      }
+    }
+  })()
+}
+
 export function deleteEvaluation(slug: string): void {
   db.prepare('DELETE FROM evaluations WHERE slug = ?').run(slug)
 }
