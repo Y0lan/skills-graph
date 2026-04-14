@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -53,26 +53,14 @@ export default function DiscoveryStep({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   )
-  const [checkedSkills, setCheckedSkills] = useState<Set<string>>(new Set())
-
-  // Pre-check skills that already have ratings > 0
-  useEffect(() => {
+  const [checkedSkills, setCheckedSkills] = useState<Set<string>>(() => {
+    // Pre-check skills that already have ratings > 0
     const alreadyRated = new Set<string>()
     for (const [skillId, value] of Object.entries(ratings)) {
-      if (value > 0) {
-        alreadyRated.add(skillId)
-      }
+      if (value > 0) alreadyRated.add(skillId)
     }
-    if (alreadyRated.size > 0) {
-      setCheckedSkills((prev) => {
-        const merged = new Set(prev)
-        for (const id of alreadyRated) {
-          merged.add(id)
-        }
-        return merged
-      })
-    }
-  }, [ratings])
+    return alreadyRated
+  })
 
   const toggleExpand = useCallback(
     (categoryId: string) => {

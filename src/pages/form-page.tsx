@@ -34,7 +34,7 @@ export default function FormPage() {
   const [resetting, setResetting] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
   const [poleCategories, setPoleCategories] = useState<string[] | null>(null)
-  const [nonPoleGroups, setNonPoleGroups] = useState<any[] | null>(null)
+  const [nonPoleGroups, setNonPoleGroups] = useState<{ pole: string; label: string; categories: { id: string; label: string; emoji: string; skills: { id: string; label: string; descriptors: { level: number; label: string; description: string }[] }[] }[] }[] | null>(null)
 
   const handleNavigationChange = useCallback((nav: WizardNavigation) => {
     setWizardNav(nav)

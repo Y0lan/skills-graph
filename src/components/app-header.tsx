@@ -1,6 +1,10 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useSyncExternalStore } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTheme } from 'next-themes'
+
+const subscribe = () => () => {}
+const getSnapshot = () => true
+const getServerSnapshot = () => false
 import { LogOut, FileText, Users } from 'lucide-react'
 import ThemeToggle from '@/components/theme-toggle'
 import { Button } from '@/components/ui/button'
@@ -19,8 +23,7 @@ export default function AppHeader({ headerActions, headerNav, hideSessionNav }: 
   const { data: session } = authClient.useSession()
   const navigate = useNavigate()
   const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
   const loggedInMember = session?.user.slug
     ? findMember(session.user.slug as string)

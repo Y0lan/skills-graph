@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from 'next-themes'
 import { authClient } from '@/lib/auth-client'
@@ -6,14 +6,17 @@ import { LoginDialog } from '@/components/auth/login-dialog'
 import ThemeToggle from '@/components/theme-toggle'
 import { RadarBackground } from '@/components/ui/radar-background'
 
+// Hydration-safe mounted check
+const subscribe = () => () => {}
+const getSnapshot = () => true
+const getServerSnapshot = () => false
+
 export default function LandingPage() {
   const { data: session, isPending } = authClient.useSession()
   const navigate = useNavigate()
   const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const [timedOut, setTimedOut] = useState(false)
-
-  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     if (!isPending && session?.user) {
