@@ -54,6 +54,7 @@ export default function CandidateDetailPage() {
     transitionSkipReason, setTransitionSkipReason,
     transitionFile, setTransitionFile,
     transitionSendEmail, setTransitionSendEmail,
+    transitionIncludeReason, setTransitionIncludeReason,
     openTransitionDialog,
     closeTransitionDialog,
     confirmTransition,
@@ -275,6 +276,19 @@ export default function CandidateDetailPage() {
                     className="rounded border-input"
                   />
                   <span className="text-sm">Envoyer le lien d'évaluation par email au candidat</span>
+                </label>
+              )}
+
+              {/* Include reason checkbox for refuse */}
+              {transitionDialog?.targetStatut === 'refuse' && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={transitionIncludeReason}
+                    onChange={(e) => setTransitionIncludeReason(e.target.checked)}
+                    className="rounded border-input"
+                  />
+                  <span className="text-sm">Inclure le motif dans l'email au candidat</span>
                 </label>
               )}
 

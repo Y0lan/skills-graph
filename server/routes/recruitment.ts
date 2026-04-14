@@ -4,7 +4,7 @@ import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { sendCandidateInvite } from '../lib/email.js'
+import { sendCandidateInvite, sendCandidateDeclined } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
@@ -404,7 +404,7 @@ protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
 
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) => {
-  const { statut, notes, skipReason, sendEmail } = req.body
+  const { statut, notes, skipReason, sendEmail, includeReasonInEmail } = req.body
 
   if (!statut || typeof statut !== 'string') {
     res.status(400).json({ error: 'Statut requis' })
@@ -483,6 +483,34 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) 
         console.error('[Email] Failed to send evaluation link:', err)
       })
       emailSent = true
+    }
+  }
+
+  // Send decline emails when transitioning to refuse
+  if (statut === 'refuse') {
+    const candidateInfo = getDb().prepare(`
+      SELECT cand.name, cand.email, cand.role, c.candidate_id
+      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.id = ?
+    `).get(req.params.id) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
+
+    if (candidateInfo?.email) {
+      const leadSlug = user.slug || 'unknown'
+      const leadEmail = `${leadSlug.replaceAll('-', '.')}@sinapse.nc`
+      sendCandidateDeclined({
+        candidateName: candidateInfo.name,
+        role: candidateInfo.role,
+        candidateEmail: candidateInfo.email,
+        leadEmail,
+        reason: notes?.trim() || undefined,
+        includeReason: !!includeReasonInEmail,
+      }).catch(err => console.error('[Email] Failed to send decline:', err))
+      emailSent = true
+
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, 'email', ?, ?)
+      `).run(req.params.id, `Email de refus envoyé à ${candidateInfo.email}${includeReasonInEmail ? ' (motif inclus)' : ''}`, user.slug || 'unknown')
     }
   }
 

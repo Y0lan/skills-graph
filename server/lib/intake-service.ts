@@ -4,6 +4,7 @@ import { extractCvText, extractSkillsFromCv } from './cv-extraction.js'
 import { getSkillCategories } from './catalog.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from './compatibility.js'
 import { uploadDocument } from './document-service.js'
+import { sendApplicationReceived } from './email.js'
 import type { PosteRow } from './types.js'
 
 // ─── Process intake ──────────────────────────────────────────────────
@@ -146,6 +147,18 @@ export async function processIntake(
     } catch (err) {
       console.error('[Intake] CV processing error:', err)
     }
+  }
+
+  // Send application received emails (candidate + default lead)
+  if (email?.trim()) {
+    const defaultLeadSlug = 'yolan-maldonado'
+    const leadEmail = `${defaultLeadSlug.replaceAll('-', '.')}@sinapse.nc`
+    sendApplicationReceived({
+      candidateName: fullName,
+      role: poste.titre,
+      candidateEmail: email.trim(),
+      leadEmail,
+    }).catch(err => console.error('[Intake] Application email error:', err))
   }
 
   return { ok: true, candidatureId, candidateId, updated: false }

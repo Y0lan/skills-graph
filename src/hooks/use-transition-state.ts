@@ -22,6 +22,8 @@ export interface UseTransitionStateReturn {
   setTransitionFile: React.Dispatch<React.SetStateAction<File | null>>
   transitionSendEmail: boolean
   setTransitionSendEmail: React.Dispatch<React.SetStateAction<boolean>>
+  transitionIncludeReason: boolean
+  setTransitionIncludeReason: React.Dispatch<React.SetStateAction<boolean>>
   openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[]) => void
   closeTransitionDialog: () => void
   confirmTransition: () => Promise<void>
@@ -39,6 +41,7 @@ export function useTransitionState(
   const [transitionSkipReason, setTransitionSkipReason] = useState('')
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
   const [transitionSendEmail, setTransitionSendEmail] = useState(true)
+  const [transitionIncludeReason, setTransitionIncludeReason] = useState(false)
 
   const openTransitionDialog = useCallback((candidatureId: string, targetStatut: string, isSkip = false, skipped: string[] = []) => {
     const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
@@ -47,6 +50,7 @@ export function useTransitionState(
     setTransitionSkipReason('')
     setTransitionFile(null)
     setTransitionSendEmail(true)
+    setTransitionIncludeReason(false)
   }, [allowedTransitions])
 
   const closeTransitionDialog = useCallback(() => {
@@ -89,6 +93,7 @@ export function useTransitionState(
           notes: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
           sendEmail: targetStatut === 'skill_radar_envoye' ? transitionSendEmail : undefined,
+          includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
         }),
       })
 
@@ -116,7 +121,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, setCandidatures, setEvents, setAllowedTransitions])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionIncludeReason, setCandidatures, setEvents, setAllowedTransitions])
 
   return {
     changingStatus,
@@ -129,6 +134,8 @@ export function useTransitionState(
     setTransitionFile,
     transitionSendEmail,
     setTransitionSendEmail,
+    transitionIncludeReason,
+    setTransitionIncludeReason,
     openTransitionDialog,
     closeTransitionDialog,
     confirmTransition,
