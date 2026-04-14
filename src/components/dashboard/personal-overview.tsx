@@ -5,7 +5,7 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger } from '@/components/ui/select'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
@@ -337,10 +337,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                     setComparisonSummary(null)
                   }
                 }}>
-                  <SelectTrigger size="sm">
-                    <SelectValue placeholder={`Comparer avec : ${poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}`} />
+                  <SelectTrigger size="sm" className="min-w-[180px]">
+                    <span className="flex flex-1 text-left truncate">
+                      {compareSlug
+                        ? (teamMembers?.find(m => m.slug === compareSlug)?.name ?? compareSlug)
+                        : (poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale')
+                      }
+                    </span>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="min-w-[220px]">
                     <SelectItem value={COMPARE_AVERAGE}>{poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}</SelectItem>
                     {membersByPole.map(group => (
                       <SelectGroup key={group.pole ?? '__null'}>
