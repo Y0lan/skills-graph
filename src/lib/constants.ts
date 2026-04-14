@@ -46,8 +46,9 @@ export const POLE_COLORS: Record<string, string> = {
 /** Raw hex colors per pole for SVG/canvas rendering */
 export const POLE_HEX: Record<string, string> = {
   legacy: '#EC8C32',
-  java_modernisation: '#1B6179',
-  fonctionnel: '#F0B800',
+  java_modernisation: '#3BA0D8',
+  fonctionnel: '#E8D44D',
+  __transverse: '#8B8B8B',
 }
 
 /** Category IDs belonging to each pole (mirrors server/lib/db.ts pole_categories) */

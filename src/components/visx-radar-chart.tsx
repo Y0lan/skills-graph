@@ -310,7 +310,6 @@ function RadarSvg({
           const startAngle = angleSlice * seg.from - Math.PI / 2 - angleSlice / 2
           const endAngle = angleSlice * (seg.to - 1) - Math.PI / 2 + angleSlice / 2
           const r = maxRadius
-          // Build arc path
           const x1 = r * Math.cos(startAngle)
           const y1 = r * Math.sin(startAngle)
           const x2 = r * Math.cos(endAngle)
@@ -323,10 +322,10 @@ function RadarSvg({
               key={`seg-${si}`}
               d={path}
               fill={seg.color}
-              fillOpacity={0.08}
+              fillOpacity={0.15}
               stroke={seg.color}
-              strokeOpacity={0.2}
-              strokeWidth={1}
+              strokeOpacity={0.4}
+              strokeWidth={1.5}
             />
           )
         })}

@@ -45,37 +45,53 @@ export default function TeamOverview({
 
     // "Tous les pôles" — sort by pole group and build colored segments
     const allCatIds = new Set(categories.map(c => c.categoryId))
-    // Assign each category to its primary pole (first pole that claims it, in POLE_ORDER)
+
+    // Determine which categories are exclusive to one pole vs shared/transverse
+    // A category is "exclusive" if it belongs to exactly one pole
+    // Shared categories (in 2+ poles) go to __transverse
     const catToPole = new Map<string, string>()
     const usedCats = new Set<string>()
 
+    // First pass: find exclusive categories per pole (in POLE_ORDER)
     for (const pole of POLE_ORDER) {
       for (const catId of POLE_CATEGORY_IDS[pole] ?? []) {
-        if (allCatIds.has(catId) && !usedCats.has(catId)) {
+        if (!allCatIds.has(catId) || usedCats.has(catId)) continue
+        // Check if this category is exclusive to this pole
+        const poles = Object.entries(POLE_CATEGORY_IDS)
+          .filter(([, ids]) => ids.includes(catId))
+          .map(([p]) => p)
+        if (poles.length === 1) {
           catToPole.set(catId, pole)
           usedCats.add(catId)
         }
       }
     }
-    // Any remaining categories not in any pole
+    // Second pass: shared categories (in 2+ poles) → transverse
+    for (const pole of POLE_ORDER) {
+      for (const catId of POLE_CATEGORY_IDS[pole] ?? []) {
+        if (!allCatIds.has(catId) || usedCats.has(catId)) continue
+        catToPole.set(catId, '__transverse')
+        usedCats.add(catId)
+      }
+    }
+    // Remaining categories not in any pole → transverse
     for (const cat of skillCategories) {
       if (allCatIds.has(cat.id) && !usedCats.has(cat.id)) {
-        catToPole.set(cat.id, '__other')
+        catToPole.set(cat.id, '__transverse')
         usedCats.add(cat.id)
       }
     }
 
-    // Sort categories by pole group
+    // Sort: pole-exclusive categories grouped together, transverse at the end
+    const groupOrder = [...POLE_ORDER, '__transverse'] as const
     const sorted = [...skillCategories]
       .filter(cat => allCatIds.has(cat.id))
       .sort((a, b) => {
-        const pa = catToPole.get(a.id) ?? '__other'
-        const pb = catToPole.get(b.id) ?? '__other'
-        const ia = POLE_ORDER.indexOf(pa as typeof POLE_ORDER[number])
-        const ib = POLE_ORDER.indexOf(pb as typeof POLE_ORDER[number])
-        const oa = ia >= 0 ? ia : POLE_ORDER.length
-        const ob = ib >= 0 ? ib : POLE_ORDER.length
-        return oa - ob
+        const pa = catToPole.get(a.id) ?? '__transverse'
+        const pb = catToPole.get(b.id) ?? '__transverse'
+        const oa = groupOrder.indexOf(pa as typeof groupOrder[number])
+        const ob = groupOrder.indexOf(pb as typeof groupOrder[number])
+        return (oa >= 0 ? oa : groupOrder.length) - (ob >= 0 ? ob : groupOrder.length)
       })
 
     const sortedData = sorted.map(cat => {
@@ -86,17 +102,17 @@ export default function TeamOverview({
     // Build segments from consecutive runs of the same pole
     const segs: RadarSegment[] = []
     let segStart = 0
-    let currentPole = catToPole.get(sorted[0]?.id) ?? '__other'
+    let currentPole = catToPole.get(sorted[0]?.id) ?? '__transverse'
 
     for (let i = 1; i <= sorted.length; i++) {
-      const pole = i < sorted.length ? (catToPole.get(sorted[i].id) ?? '__other') : '__done'
+      const pole = i < sorted.length ? (catToPole.get(sorted[i].id) ?? '__transverse') : '__done'
       if (pole !== currentPole) {
-        if (currentPole !== '__other' && POLE_HEX[currentPole]) {
+        if (POLE_HEX[currentPole]) {
           segs.push({
             from: segStart,
             to: i,
             color: POLE_HEX[currentPole],
-            label: POLE_LABELS[currentPole] ?? currentPole,
+            label: currentPole === '__transverse' ? 'Transverse' : (POLE_LABELS[currentPole] ?? currentPole),
           })
         }
         segStart = i
