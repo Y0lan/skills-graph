@@ -240,7 +240,7 @@ function RadarSvg({
   const labelWidth = compact ? 50 : 110
   const labelMargin = compact ? 14 : 24
   // Reserve more outer space for long wrapped labels
-  const outerMargin = compact ? 18 : 80
+  const outerMargin = compact ? 40 : 80
   const maxRadius = Math.max(Math.min(width, height) / 2 - outerMargin, 20)
 
   const radiusScale = useMemo(

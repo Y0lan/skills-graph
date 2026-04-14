@@ -55,7 +55,7 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
             return (
               <Card
                 key={member.slug}
-                className={`overflow-hidden transition-opacity ${!hasSubmitted ? 'opacity-40' : ''}`}
+                className={`transition-opacity ${!hasSubmitted ? 'opacity-40' : ''}`}
               >
                 <CardContent className="flex flex-col items-center gap-2 pt-4">
                   {hasSubmitted && radarData.length >= 3 && (
