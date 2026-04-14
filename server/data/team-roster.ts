@@ -156,6 +156,40 @@ export const teamMembers: TeamMember[] = [
     pole: 'fonctionnel',
   },
 
+  // Test users (all map to yolan.maldonado@sinapse.nc)
+  {
+    slug: 'test-ba',
+    name: 'Marie TEST-BA',
+    role: 'Business Analyst',
+    team: 'Analyse Fonctionnelle',
+    email: 'yolan.maldonado@sinapse.nc',
+    pole: 'fonctionnel',
+  },
+  {
+    slug: 'test-legacy',
+    name: 'Jean TEST-LEGACY',
+    role: 'Développeur Adélia',
+    team: 'Développement',
+    email: 'yolan.maldonado@sinapse.nc',
+    pole: 'legacy',
+  },
+  {
+    slug: 'test-modern',
+    name: 'Pierre TEST-MODERN',
+    role: 'Développeur Full Stack',
+    team: 'Développement',
+    email: 'yolan.maldonado@sinapse.nc',
+    pole: 'java_modernisation',
+  },
+  {
+    slug: 'test-direction',
+    name: 'Claire TEST-DIRECTION',
+    role: 'Directrice',
+    team: 'Direction',
+    email: 'yolan.maldonado@sinapse.nc',
+    pole: null,
+  },
+
   // Direction
   {
     slug: 'olivier-faivre',
