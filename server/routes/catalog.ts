@@ -45,3 +45,68 @@ catalogRouter.get('/pole-categories/:pole', (req, res) => {
     .all(pole) as { category_id: string }[]
   res.json(rows.map(r => r.category_id))
 })
+
+const POLE_LABELS: Record<string, string> = {
+  legacy: 'Pôle Legacy (Adélia / IBMi)',
+  java_modernisation: 'Pôle Java / Modernisation',
+  fonctionnel: 'Pôle Fonctionnel',
+}
+
+catalogRouter.get('/non-pole-categories/:pole', (req, res) => {
+  const { pole } = req.params
+  const validPoles = ['legacy', 'java_modernisation', 'fonctionnel']
+  if (!validPoles.includes(pole)) {
+    return res.status(400).json({ error: 'Pôle invalide' })
+  }
+
+  const db = getDb()
+
+  // Get this pole's category IDs
+  const poleRows = db
+    .prepare('SELECT category_id FROM pole_categories WHERE pole = ?')
+    .all(pole) as { category_id: string }[]
+  const poleCatIds = new Set(poleRows.map(r => r.category_id))
+
+  // Get ALL pole_categories mappings: category_id -> pole[]
+  const allMappings = db
+    .prepare('SELECT pole, category_id FROM pole_categories')
+    .all() as { pole: string; category_id: string }[]
+  const categoryPoleMap = new Map<string, string[]>()
+  for (const row of allMappings) {
+    if (!categoryPoleMap.has(row.category_id)) categoryPoleMap.set(row.category_id, [])
+    categoryPoleMap.get(row.category_id)!.push(row.pole)
+  }
+
+  // Get all categories, exclude the ones that belong to this pole
+  const allCategories = getSkillCategories()
+  const nonPoleCategories = allCategories.filter(cat => !poleCatIds.has(cat.id))
+
+  // Group by source pole; categories not in any pole go under "transverse"
+  const groupMap = new Map<string, typeof allCategories>()
+  for (const cat of nonPoleCategories) {
+    const poles = categoryPoleMap.get(cat.id) ?? []
+    if (poles.length === 0) {
+      if (!groupMap.has('transverse')) groupMap.set('transverse', [])
+      groupMap.get('transverse')!.push(cat)
+    } else {
+      // Only put it under poles that are not the user's current pole
+      const otherPoles = poles.filter(p => p !== pole)
+      for (const p of otherPoles) {
+        if (!groupMap.has(p)) groupMap.set(p, [])
+        groupMap.get(p)!.push(cat)
+      }
+    }
+  }
+
+  const groups = Array.from(groupMap.entries()).map(([groupPole, cats]) => ({
+    pole: groupPole,
+    label: POLE_LABELS[groupPole] ?? groupPole,
+    categories: cats.map(cat => ({
+      id: cat.id,
+      label: cat.label,
+      skills: cat.skills,
+    })),
+  }))
+
+  res.json({ groups })
+})
