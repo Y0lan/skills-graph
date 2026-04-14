@@ -172,13 +172,13 @@ export default function VisxRadarChart({
               width={parentWidth}
               height={height}
               compact={compact}
-              showTooltip={compact ? undefined : showTooltip}
-              hideTooltip={compact ? undefined : hideTooltip}
+              showTooltip={showTooltip}
+              hideTooltip={hideTooltip}
             />
           )}
         </ParentSize>
       </div>
-      {!compact && tooltipOpen && tooltipData && (
+      {tooltipOpen && tooltipData && (
         <TooltipWithBounds
           left={tooltipLeft}
           top={tooltipTop}

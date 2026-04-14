@@ -11,9 +11,10 @@ import MemberAvatar from '@/components/member-avatar'
 
 interface TeamMembersGridProps {
   members: TeamMemberAggregateResponse[]
+  poleCategoryIds?: string[]
 }
 
-export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
+export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMembersGridProps) {
   const { categories: skillCategories } = useCatalog()
   const sorted = [...members].sort((a, b) => {
     const aIndex = teamOrder.indexOf(a.team)
@@ -32,10 +33,13 @@ export default function TeamMembersGrid({ members }: TeamMembersGridProps) {
             const hasSubmitted = member.submittedAt !== null
             const radarData = hasSubmitted
               ? skillCategories
-                  .filter((cat) => (member.categoryAverages[cat.id] ?? 0) > 0)
+                  .filter((cat) => poleCategoryIds
+                    ? poleCategoryIds.includes(cat.id)
+                    : (member.categoryAverages[cat.id] ?? 0) > 0
+                  )
                   .map((cat) => ({
                     label: cat.label.split(/[&(]/)[0].trim(),
-                    value: member.categoryAverages[cat.id],
+                    value: member.categoryAverages[cat.id] ?? 0,
                     fullMark: 5,
                   }))
               : []

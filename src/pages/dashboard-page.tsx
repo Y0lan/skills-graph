@@ -258,7 +258,10 @@ export default function DashboardPage() {
                             teamSize={teamAggregate.teamSize}
                             submittedCount={teamAggregate.submittedCount}
                           />
-                          <TeamMembersGrid members={teamAggregate.members} />
+                          <TeamMembersGrid
+                            members={teamAggregate.members}
+                            poleCategoryIds={teamAggregate.categories.map(c => c.categoryId)}
+                          />
                           <CategorySummaryCards
                             categories={teamAggregate.categories}
                             categoryTargets={teamAggregate.categoryTargets}

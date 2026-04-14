@@ -33,7 +33,7 @@ export default function CategoryDeepDive({
         <ChartViewToggle view={view} onChange={setView} />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {skillCategories.map((cat) => {
+        {skillCategories.filter((cat) => categories.some((c) => c.categoryId === cat.id)).map((cat) => {
           const catAgg = categories.find((c) => c.categoryId === cat.id)
 
           const submittedMembers = members.filter((m) => m.submittedAt !== null)
