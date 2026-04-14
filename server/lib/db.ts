@@ -12,6 +12,7 @@ export interface MemberEvaluation {
   ratings: Record<string, number>
   experience: Record<string, number>
   skippedCategories: string[]
+  declinedCategories: string[]
   submittedAt: string | null
   profileSummary: string | null
 }
@@ -453,6 +454,16 @@ export function initDatabase(): void {
     })()
   }
 
+  // Migration: add declined_categories column if missing
+  const evalCols = db.prepare("PRAGMA table_info(evaluations)").all() as { name: string }[]
+  if (!evalCols.some(c => c.name === 'declined_categories')) {
+    db.exec("ALTER TABLE evaluations ADD COLUMN declined_categories TEXT DEFAULT '[]'")
+  }
+  const candCols = db.prepare("PRAGMA table_info(candidates)").all() as { name: string }[]
+  if (!candCols.some(c => c.name === 'declined_categories')) {
+    db.exec("ALTER TABLE candidates ADD COLUMN declined_categories TEXT DEFAULT '[]'")
+  }
+
   // One-time migration from ratings.json
   if (fs.existsSync(JSON_PATH)) {
     try {
@@ -492,6 +503,7 @@ export function getAllEvaluations(): Record<string, MemberEvaluation> {
     ratings: string
     experience: string
     skipped_categories: string
+    declined_categories: string
     submitted_at: string | null
     profile_summary: string | null
   }[]
@@ -502,6 +514,7 @@ export function getAllEvaluations(): Record<string, MemberEvaluation> {
       ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
       experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
       skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
+      declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
       submittedAt: row.submitted_at,
       profileSummary: row.profile_summary ?? null,
     }
@@ -515,6 +528,7 @@ export function getEvaluation(slug: string): MemberEvaluation | null {
     ratings: string
     experience: string
     skipped_categories: string
+    declined_categories: string
     submitted_at: string | null
     profile_summary: string | null
   } | undefined
@@ -525,6 +539,7 @@ export function getEvaluation(slug: string): MemberEvaluation | null {
     ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
     experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
     skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
+    declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
     submittedAt: row.submitted_at,
     profileSummary: row.profile_summary ?? null,
   }
@@ -535,19 +550,22 @@ export function upsertEvaluation(
   ratings: Record<string, number>,
   experience: Record<string, number>,
   skippedCategories: string[],
+  declinedCategories: string[] = [],
 ): MemberEvaluation {
   db.prepare(`
-    INSERT INTO evaluations (slug, ratings, experience, skipped_categories)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(slug) DO UPDATE SET
       ratings = excluded.ratings,
       experience = excluded.experience,
-      skipped_categories = excluded.skipped_categories
+      skipped_categories = excluded.skipped_categories,
+      declined_categories = excluded.declined_categories
   `).run(
     slug,
     JSON.stringify(ratings),
     JSON.stringify(experience),
     JSON.stringify(skippedCategories),
+    JSON.stringify(declinedCategories),
   )
 
   return getEvaluation(slug)!
