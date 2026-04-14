@@ -1,17 +1,18 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown, Globe } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import BarComparisonChart from '@/components/bar-comparison-chart'
 import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { useSkillHistory } from '@/hooks/use-skill-history'
 import { shortLabel, cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
+import { POLE_LABELS } from '@/lib/constants'
 import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
@@ -22,12 +23,13 @@ interface PersonalOverviewProps {
   teamMembers?: TeamMemberAggregateResponse[]
   teamCategories?: TeamCategoryAggregateResponse[]
   isOwnProfile?: boolean
+  poleFilterActive?: boolean
   onFindExpert?: (categoryId: string) => void
   onCompareChange?: (slug: string | null) => void
   onOpenChat?: (prefill: string) => void
 }
 
-export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, onFindExpert, onCompareChange, onOpenChat }: PersonalOverviewProps) {
+export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, poleFilterActive, onFindExpert, onCompareChange, onOpenChat }: PersonalOverviewProps) {
   const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
@@ -37,15 +39,39 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   const [comparisonSummary, setComparisonSummary] = useState<string | null>(null)
   const [comparisonLoading, setComparisonLoading] = useState(false)
   const [compareAggregate, setCompareAggregate] = useState<MemberAggregateResponse | null>(null)
-  const [crossPole, setCrossPole] = useState(false)
   const currentMemberPole = teamMembers?.find(m => m.slug === memberId)?.pole ?? null
 
   const comparableMembers = useMemo(() => {
     if (!teamMembers) return []
-    const submitted = teamMembers.filter(m => m.slug !== memberId && m.submittedAt)
-    if (crossPole || !currentMemberPole) return submitted
-    return submitted.filter(m => m.pole === currentMemberPole || m.pole === null)
-  }, [teamMembers, memberId, currentMemberPole, crossPole])
+    return teamMembers.filter(m => m.slug !== memberId && m.submittedAt)
+  }, [teamMembers, memberId])
+
+  // Group comparable members by pole for the dropdown
+  const membersByPole = useMemo(() => {
+    const groups: { pole: string | null; label: string; members: typeof comparableMembers }[] = []
+    const byPole = new Map<string | null, typeof comparableMembers>()
+    for (const m of comparableMembers) {
+      const key = m.pole
+      if (!byPole.has(key)) byPole.set(key, [])
+      byPole.get(key)!.push(m)
+    }
+    // Own pole first
+    if (currentMemberPole && byPole.has(currentMemberPole)) {
+      groups.push({ pole: currentMemberPole, label: POLE_LABELS[currentMemberPole] ?? currentMemberPole, members: byPole.get(currentMemberPole)! })
+    }
+    // Other poles alphabetically
+    const otherPoles = [...byPole.keys()]
+      .filter(p => p !== null && p !== currentMemberPole)
+      .sort((a, b) => (POLE_LABELS[a!] ?? a!).localeCompare(POLE_LABELS[b!] ?? b!))
+    for (const p of otherPoles) {
+      groups.push({ pole: p, label: POLE_LABELS[p!] ?? p!, members: byPole.get(p)! })
+    }
+    // Null-pole members
+    if (byPole.has(null)) {
+      groups.push({ pole: null, label: 'Direction / Transverse', members: byPole.get(null)! })
+    }
+    return groups.filter(g => g.members.length > 0)
+  }, [comparableMembers, currentMemberPole])
 
   // Client-side cache for comparison summaries (survives re-renders, cleared on profile change)
   const comparisonCache = useRef<Map<string, string>>(new Map())
@@ -173,6 +199,27 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     return () => { cancelled = true }
   }, [compareSlug])
 
+  // Task 8: Compute shared categories when comparing
+  const sharedCategoryIds = useMemo(() => {
+    if (!compareSlug || !compareAggregate || !aggregate) return null
+    const myRated = new Set(
+      aggregate.categories
+        .filter(c => c.avgRank > 0)
+        .map(c => c.categoryId)
+    )
+    const theirRated = new Set(
+      compareAggregate.categories
+        .filter(c => c.avgRank > 0)
+        .map(c => c.categoryId)
+    )
+    return [...myRated].filter(id => theirRated.has(id))
+  }, [compareSlug, aggregate, compareAggregate])
+
+  // Detect cross-pole comparison
+  const isCrossPole = compareSlug &&
+    teamMembers?.find(m => m.slug === compareSlug)?.pole !==
+    teamMembers?.find(m => m.slug === memberId)?.pole
+
   // Empty state: no ratings at all
   if (!hasRatings) {
     return (
@@ -220,17 +267,22 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   const totalSkills = categories.reduce((sum, c) => sum + c.totalCount, 0)
   const memberRole = teamMembers?.find(m => m.slug === memberId)?.role ?? aggregate.role
 
-  const data = categories.map((cat) => ({
+  const compareTarget = compareSlug
+    ? teamMembers?.find(m => m.slug === compareSlug)
+    : null
+
+  // Filter categories to shared ones when comparing
+  const displayCategories = sharedCategoryIds
+    ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
+    : categories
+
+  const data = displayCategories.map((cat) => ({
     label: shortLabel(cat.categoryLabel),
     value: cat.avgRank,
     fullMark: 5,
   }))
 
-  const compareTarget = compareSlug
-    ? teamMembers?.find(m => m.slug === compareSlug)
-    : null
-
-  const overlayData = categories.map((cat) => ({
+  const overlayData = displayCategories.map((cat) => ({
     label: shortLabel(cat.categoryLabel),
     value: compareTarget
       ? (compareTarget.categoryAverages[cat.categoryId] ?? 0)
@@ -238,7 +290,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     fullMark: 5,
   }))
 
-  const overlayLabel = compareTarget ? compareTarget.name : 'Moyenne équipe'
+  const overlayLabel = compareTarget ? compareTarget.name : (poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale')
+
+  // Filter strengths/gaps to shared categories when comparing
+  const displayStrengths = sharedCategoryIds
+    ? topStrengths.filter(s => sharedCategoryIds.includes(s.categoryId))
+    : topStrengths
+  const displayGaps = sharedCategoryIds
+    ? topGaps.filter(g => sharedCategoryIds.includes(g.categoryId))
+    : topGaps
 
   return (
     <Card>
@@ -276,26 +336,20 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                   }
                 }}>
                   <SelectTrigger size="sm">
-                    <SelectValue placeholder="Comparer avec : Moyenne équipe" />
+                    <SelectValue placeholder={`Comparer avec : ${poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}`} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Moyenne équipe</SelectItem>
-                    {comparableMembers.map(m => (
-                      <SelectItem key={m.slug} value={m.slug}>{m.name}</SelectItem>
+                    <SelectItem value="">{poleFilterActive ? 'Moyenne de mon pôle' : 'Moyenne globale'}</SelectItem>
+                    {membersByPole.map(group => (
+                      <SelectGroup key={group.pole ?? '__null'}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.members.map(m => (
+                          <SelectItem key={m.slug} value={m.slug}>{m.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
                     ))}
                   </SelectContent>
                 </Select>
-                {currentMemberPole && (
-                  <Button
-                    variant={crossPole ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setCrossPole(!crossPole)}
-                    title={crossPole ? 'Afficher mon pôle uniquement' : 'Comparer inter-pôles'}
-                    className="shrink-0"
-                  >
-                    <Globe className="h-3.5 w-3.5" />
-                  </Button>
-                )}
                 {compareSlug && (
                   <Button
                     variant="outline"
@@ -344,15 +398,15 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Summary block: pill badges + AI narrative — hidden when side-by-side is active */}
-        {!compareSlug && ((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
+        {!compareSlug && ((displayStrengths && displayStrengths.length > 0) || displayGaps.length > 0) && (
           <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
             <div className="flex flex-wrap gap-1.5">
-              {topStrengths.map(s => (
+              {displayStrengths.map(s => (
                 <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30">
                   {shortLabel(s.categoryLabel)}
                 </Badge>
               ))}
-              {topGaps.map(g => (
+              {displayGaps.map(g => (
                 <Badge key={g.categoryId} className="bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30">
                   {shortLabel(g.categoryLabel)}
                 </Badge>
@@ -383,18 +437,24 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
         {/* Side-by-side summaries + AI comparison — replaces main summary when comparing */}
         {compareSlug && compareTarget && (
           <div className="space-y-3">
+            {/* Cross-pole banner */}
+            {isCrossPole && sharedCategoryIds && (
+              <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-[#1B6179] dark:border-primary/30 dark:bg-primary/10 dark:text-primary">
+                Comparaison inter-pôles — catégories communes uniquement
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Current profile */}
               <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground">{isOwnProfile ? 'Mon profil' : memberName}</p>
-                {((topStrengths && topStrengths.length > 0) || topGaps.length > 0) && (
+                {((displayStrengths && displayStrengths.length > 0) || displayGaps.length > 0) && (
                   <div className="flex flex-wrap gap-1">
-                    {topStrengths.map(s => (
+                    {displayStrengths.map(s => (
                       <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30 text-[10px] px-1.5 h-4">
                         {shortLabel(s.categoryLabel)}
                       </Badge>
                     ))}
-                    {topGaps.map(g => (
+                    {displayGaps.map(g => (
                       <Badge key={g.categoryId} className="bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 text-[10px] px-1.5 h-4">
                         {shortLabel(g.categoryLabel)}
                       </Badge>
@@ -456,32 +516,59 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           </div>
         )}
 
-        {view === 'radar' ? (
-          <VisxRadarChart
-            data={data}
-            overlay={overlayData}
-            height={400}
-            primaryLabel={isOwnProfile ? 'Moi' : memberName}
-            overlayLabel={overlayLabel}
-            showOverlayToggle
-            showExport
-          />
+        {sharedCategoryIds !== null && sharedCategoryIds.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-8 text-center">
+            <p className="font-medium">Pas de catégories en commun.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Complétez vos compétences supplémentaires pour enrichir la comparaison.
+            </p>
+          </div>
+        ) : view === 'radar' ? (
+          <>
+            <VisxRadarChart
+              data={data}
+              overlay={overlayData}
+              height={400}
+              primaryLabel={isOwnProfile ? 'Moi' : memberName}
+              overlayLabel={overlayLabel}
+              showOverlayToggle
+              showExport
+            />
+            {sharedCategoryIds && (
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Comparaison sur : {sharedCategoryIds.map(id => {
+                  const cat = aggregate.categories.find(c => c.categoryId === id)
+                  return cat?.categoryLabel ?? id
+                }).join(', ')}
+              </p>
+            )}
+          </>
         ) : (
-          <BarComparisonChart
-            data={data}
-            overlay={overlayData}
-            primaryLabel={isOwnProfile ? 'Moi' : memberName}
-            overlayLabel={overlayLabel}
-          />
+          <>
+            <BarComparisonChart
+              data={data}
+              overlay={overlayData}
+              primaryLabel={isOwnProfile ? 'Moi' : memberName}
+              overlayLabel={overlayLabel}
+            />
+            {sharedCategoryIds && (
+              <p className="text-xs text-muted-foreground text-center mt-2">
+                Comparaison sur : {sharedCategoryIds.map(id => {
+                  const cat = aggregate.categories.find(c => c.categoryId === id)
+                  return cat?.categoryLabel ?? id
+                }).join(', ')}
+              </p>
+            )}
+          </>
         )}
 
-        {topGaps.length > 0 && (
+        {displayGaps.length > 0 && (
           <div>
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
               Principaux écarts vs cible
             </h3>
             <div className="space-y-2">
-              {topGaps.map((gap) => (
+              {displayGaps.map((gap) => (
                 <div
                   key={gap.categoryId}
                   className="flex items-center justify-between rounded-md border px-3 py-2"

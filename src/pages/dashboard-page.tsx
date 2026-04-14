@@ -219,6 +219,7 @@ export default function DashboardPage() {
                             teamMembers={teamAggregate?.members}
                             teamCategories={teamAggregate?.categories}
                             isOwnProfile={!!isOwnProfile}
+                            poleFilterActive={!!poleFilter}
                             onFindExpert={(categoryId) => {
                               setExpertCategoryHint(categoryId)
                               setActiveTab('expert')
