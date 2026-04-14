@@ -15,28 +15,30 @@ The SINAPSE Skill Radar lets team members self-assess their skills across 19 cat
 ### Location
 A new step after all required pole categories and before the review step. Shows in the progress bar as a dedicated step labeled "+".
 
-### Flow
-Categories are presented one at a time, grouped by pole heading:
+### Layout: Vertical Scroll with Collapsible Cards
+All non-pole categories shown on one scrollable page, grouped by pole heading. Each category is a collapsed card. "Oui, j'en ai" expands inline. "Suivant" collapses and grays out the card. A "Continuer vers le recapitulatif" button appears at the bottom.
 
 ```
 -- Pole Fonctionnel --
-  Analyse Fonctionnelle
-  Cadrage & expression de besoin, Modelisation des processus, Specifications fonctionnelles...
-  [Oui, j'en ai]  [Suivant]
+  [v] Analyse Fonctionnelle              [Suivant]
+      Cadrage, modelisation, specifications...
+
+  [v] Design & UX                        [Suivant]
+      Wireframing, accessibilite, tests UX...
 
 -- Pole Legacy --
-  Legacy IBM i / Adelia
-  RPG, CL, Adelia, DB2/400...
-  [Oui, j'en ai]  [Suivant]
+  [v] Legacy IBM i / Adelia              [Suivant]
+      RPG, CL, Adelia, DB2/400...
 
 -- Transverse --
-  Infrastructure, Systemes, Reseau
-  Linux, Docker, Networking...
-  [Oui, j'en ai]  [Suivant]
+  [v] Infrastructure, Systemes, Reseau   [Suivant]
+      Linux, Docker, Networking...
+
+              [Continuer vers le recapitulatif]
 ```
 
 ### "Oui, j'en ai" — Individual Skill Picking (not full category commitment)
-When the user taps "Oui, j'en ai", the category expands into a **checklist of skills** with checkboxes. The user checks only the skills they know, then rates just those. Unchecked skills are ignored (not counted as 0). This avoids the trap of committing to rate all 7-10 skills in a category.
+When the user taps "Oui, j'en ai", the card expands inline into a **checklist of skills** with checkboxes. Skills appear in catalog order (same as required category steps). The user checks only the skills they know, then rates just those using the existing `SkillRatingRow` component. Unchecked skills are ignored (not counted as 0). This avoids the trap of committing to rate all 7-10 skills in a category.
 
 ### "Suivant" — Declined Category
 Tapping "Suivant" marks the category as `declined` and moves to the next. This is stored as a new `declined_categories: string[]` field, separate from the existing `skipped_categories`. This distinction is important for analytics:
@@ -133,7 +135,55 @@ Moyenne globale        (when no pole filter)
 
 ---
 
-## 5. What We Accept
+## 5. Interaction States
+
+| Feature | Loading | Empty | Error | Success |
+|---------|---------|-------|-------|---------|
+| Discovery step | Skeleton cards while pole categories fetch | No non-pole categories exist: skip step entirely, go to review | Catalog fetch fails: "Impossible de charger les categories" + retry button | All cards answered: "Continuer" button enabled |
+| Expanded checkboxes | N/A (inline) | N/A (always has skills from catalog) | N/A | Checked skills show SkillRatingRow inline |
+| Comparison radar | Same as current loading state | 0 shared categories: friendly empty state (see below) | Aggregate fetch fails: current error handling | Radar renders with category name label |
+| Compare dropdown | Team loading: skeleton | Empty pole group: hidden entirely | Fetch fails: current error handling | Selected member highlighted |
+
+### Zero Shared Categories (empty state)
+When comparing two people with 0 categories in common, show:
+- "Pas de categories en commun."
+- "Completez vos competences supplementaires pour enrichir la comparaison."
+- Link to `/form/{slug}` pointing to the discovery step
+- No radar drawn, no badges, no summary
+
+---
+
+## 6. Responsive & Accessibility
+
+### Mobile (< 640px)
+- Discovery cards: full-width, edge-to-edge
+- Expanded checkboxes + rating rows: stack vertically, same as existing SkillRatingRow on mobile
+- Touch targets: already 44px+ from existing components
+- Compare dropdown: full-width on mobile
+- Mode banner: full-width, smaller text
+
+### Accessibility
+- Discovery cards: `role="group"` with pole heading as `aria-label`
+- Keyboard: Tab through cards, Enter to expand/collapse, Space to toggle checkboxes
+- Screen reader: expanded/collapsed state announced via `aria-expanded`
+- Contrast: all text meets WCAG AA (existing brand colors verified)
+
+---
+
+## 7. Design System Alignment
+
+- Pole headings: use POLE_COLORS from constants.ts (orange/teal/gold)
+- "Transverse" heading: muted foreground styling
+- "Oui, j'en ai" button: `Button variant="outline"` with brand teal border
+- "Suivant" button: `Button variant="ghost"`
+- Expanded skill checkboxes: reuse existing `SkillRatingRow` component
+- Mode banner (inter-poles): teal info box pattern (`border-primary/30 bg-primary/5 text-[#1B6179]`)
+- Declined card state: `opacity-50` with muted background, collapsed
+- Cards: reuse shadcn `Card` component with `ring-1 ring-foreground/10`
+
+---
+
+## What We Accept
 
 - **3-axis minimum for pure cross-pole comparison** is inherent. The discovery step is the mechanism to expand that. We don't force categories onto poles where they don't belong.
 - **Some self-selection bias remains**: confident people will opt into more categories. The `declined_categories` field lets us measure the bias. Individual skill picking (vs. full category commitment) reduces the cost of saying "yes" and thus reduces the bias.
@@ -141,7 +191,7 @@ Moyenne globale        (when no pole filter)
 
 ---
 
-## 6. Files to Modify
+## Files to Modify
 
 ### Backend
 - `server/lib/db.ts` — add `declined_categories` column, add `infrastructure-systems-network` to a "transverse" pole mapping
@@ -166,7 +216,7 @@ Moyenne globale        (when no pole filter)
 
 ---
 
-## 7. Verification
+## Verification
 
 1. **Form**: Fill pole categories → discovery step appears → click through with mix of yes/no → review shows only rated skills
 2. **Form edge case**: Submit without visiting discovery → redirected to discovery first
