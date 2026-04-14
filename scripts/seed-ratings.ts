@@ -18,6 +18,16 @@ const members = [
   { slug: 'nicole-nguon', role: 'fullstack', team: 'dev' },
   { slug: 'bethlehem-mengistu', role: 'qa', team: 'qa' },
   { slug: 'pierre-rossato', role: 'lead', team: 'management' },
+  // Business Analysts (fonctionnel pole)
+  { slug: 'nicolas-dufillot', role: 'ba', team: 'fonctionnel' },
+  { slug: 'nicolas-eppe', role: 'ba', team: 'fonctionnel' },
+  { slug: 'leila-benakezouh', role: 'ba', team: 'fonctionnel' },
+  { slug: 'sonalie-taconet', role: 'ba', team: 'fonctionnel' },
+  { slug: 'amine-bouali', role: 'ba', team: 'fonctionnel' },
+  { slug: 'audrey-queau', role: 'ba', team: 'fonctionnel' },
+  // Direction (no pole)
+  { slug: 'olivier-faivre', role: 'direction', team: 'direction' },
+  { slug: 'guillaume-benoit', role: 'direction', team: 'direction' },
   // Demo users
   { slug: 'demo_ba', role: 'ba', team: 'fonctionnel' },
   { slug: 'demo_legacy', role: 'legacy-dev', team: 'dev' },
@@ -135,6 +145,10 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.55,
     'ai-engineering': 0.65,
     'qa-test-engineering': 0.40,
+    // Transverse — some fonctionnel exposure
+    'project-management-pmo': 0.35,
+    'data-engineering-governance': 0.30,
+    'management-leadership': 0.40,
   },
   devops: {
     'core-engineering': 0.55,
@@ -148,6 +162,8 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.20,
     'ai-engineering': 0.30,
     'qa-test-engineering': 0.35,
+    // Transverse
+    'infrastructure-systems-network': 0.60,
   },
   'devops-dev': {
     'core-engineering': 0.65,
@@ -161,6 +177,8 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.25,
     'ai-engineering': 0.35,
     'qa-test-engineering': 0.40,
+    // Transverse
+    'infrastructure-systems-network': 0.45,
   },
   data: {
     'core-engineering': 0.60,
@@ -174,6 +192,8 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.30,
     'ai-engineering': 0.55,
     'qa-test-engineering': 0.30,
+    // Transverse
+    'data-engineering-governance': 0.65,
   },
   fullstack: {
     'core-engineering': 0.70,
@@ -187,6 +207,8 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.50,
     'ai-engineering': 0.35,
     'qa-test-engineering': 0.45,
+    // Transverse
+    'design-ux': 0.25,
   },
   qa: {
     'core-engineering': 0.45,
@@ -200,6 +222,9 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.45,
     'ai-engineering': 0.25,
     'qa-test-engineering': 0.85,
+    // Transverse
+    'analyse-fonctionnelle': 0.30,
+    'change-management-training': 0.25,
   },
   lead: {
     'core-engineering': 0.75,
@@ -213,6 +238,10 @@ const profiles: Record<string, Profile> = {
     'domain-knowledge': 0.65,
     'ai-engineering': 0.40,
     'qa-test-engineering': 0.50,
+    // Transverse — management-heavy
+    'management-leadership': 0.75,
+    'project-management-pmo': 0.50,
+    'change-management-training': 0.35,
   },
   // Fonctionnel pole
   ba: {
@@ -225,10 +254,12 @@ const profiles: Record<string, Profile> = {
     'architecture-governance': 0.50,
     'soft-skills-delivery': 0.80,
     'domain-knowledge': 0.75,
-    // Cross-pole (lower, but present for comparison)
+    // Cross-pole transverse (lower, but present for comparison)
     'core-engineering': 0.20,
     'backend-integration': 0.15,
     'frontend-ui': 0.10,
+    'qa-test-engineering': 0.30,
+    'ai-engineering': 0.20,
   },
   // Legacy pole
   'legacy-dev': {
@@ -322,6 +353,75 @@ const individualOverrides: Record<string, Record<string, number>> = {
     'agile-scrum': 5, 'cross-team-communication': 5,
     'technical-documentation': 4, 'ddd': 4,
     'kubernetes': 2, 'terraform-opentofu': 1,
+  },
+  // Real BAs — each with a unique specialization
+  'nicolas-dufillot': {
+    'functional-specifications': 5, 'requirements-elicitation': 5,
+    'regulatory-interpretation': 5, 'process-modeling': 4,
+    'reglementation-sociale': 5, 'processus-recouvrement': 5,
+    'travailleurs-independants': 4, 'sante-ruamm': 3,
+    'stakeholder-communication': 4, 'agile-scrum': 3,
+    'data-modeling': 3, 'urbanisation-si': 2,
+  },
+  'nicolas-eppe': {
+    'functional-specifications': 4, 'requirements-elicitation': 4,
+    'gap-analysis-legacy': 5, 'cross-domain-coordination': 5,
+    'data-dictionary-referentials': 4,
+    'si-legacy': 4, 'reglementation-sociale': 3, 'processus-recouvrement': 4,
+    'planning-scheduling': 4, 'risk-management': 3,
+    'sql': 2, 'data-modeling-conceptual': 3,
+  },
+  'leila-benakezouh': {
+    'functional-specifications': 5, 'process-modeling': 5,
+    'functional-testing': 5, 'requirements-elicitation': 4,
+    'change-communication': 4, 'training-delivery': 4,
+    'sante-ruamm': 5, 'portail-pro': 4,
+    'ux-design': 3, 'usability-testing': 3,
+    'test-strategy': 2, 'e2e-functional-testing': 2,
+  },
+  'sonalie-taconet': {
+    'requirements-elicitation': 5, 'regulatory-interpretation': 4,
+    'stakeholder-engagement': 5, 'change-communication': 5,
+    'training-design': 4, 'training-delivery': 4, 'impact-analysis': 4,
+    'comptabilite-paiements': 4, 'gue-rue': 5,
+    'stakeholder-communication': 5, 'mentoring': 3,
+  },
+  'amine-bouali': {
+    'functional-specifications': 4, 'data-dictionary-referentials': 5,
+    'data-modeling-conceptual': 4, 'data-governance-compliance': 4,
+    'bi-reporting': 3, 'etl-pipelines': 3,
+    'reglementation-sociale': 4, 'travailleurs-independants': 5,
+    'sql': 3, 'python': 2,
+    'governance-reporting': 4, 'budget-financial-tracking': 3,
+  },
+  'audrey-queau': {
+    'requirements-elicitation': 4, 'process-modeling': 4,
+    'information-architecture': 4, 'ux-design': 4,
+    'ui-design-prototyping': 3, 'user-research': 4,
+    'accessibility-rgaa': 3, 'service-design': 3,
+    'portail-pro': 5, 'sante-ruamm': 3,
+    'change-communication': 3, 'external-user-accompaniment': 4,
+  },
+  // Direction — broad management + strategic
+  'olivier-faivre': {
+    'strategic-planning': 5, 'multi-stakeholder-piloting': 5,
+    'team-management': 4, 'coaching-development': 4,
+    'management-communication': 5, 'recruiting-onboarding': 4,
+    'stakeholder-communication': 5, 'cross-team-communication': 5,
+    'agile-scrum': 3, 'mentoring': 4,
+    'reglementation-sociale': 4, 'processus-recouvrement': 3,
+    'urbanisation-si': 3, 'archimate': 2,
+    'governance-reporting': 4, 'budget-financial-tracking': 4,
+  },
+  'guillaume-benoit': {
+    'strategic-planning': 4, 'multi-stakeholder-piloting': 4,
+    'team-management': 5, 'coaching-development': 5,
+    'management-communication': 4, 'knowledge-transfer-run': 5,
+    'change-management-legacy': 4, 'recruiting-onboarding': 3,
+    'stakeholder-communication': 4, 'cross-team-communication': 4,
+    'mentoring': 5, 'agile-scrum': 3,
+    'reglementation-sociale': 3, 'si-legacy': 3,
+    'risk-management': 3, 'scope-change-control': 3,
   },
   // Demo users — distinctive profiles for cross-pole testing
   'demo_ba': {
