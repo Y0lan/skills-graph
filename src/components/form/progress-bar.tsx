@@ -1,11 +1,11 @@
 import { cn } from '@/lib/utils'
 import { Check, Lock, SkipForward } from 'lucide-react'
 
-const POLE_DOT_COLORS: Record<string, string> = {
-  legacy: 'bg-[#EC8C32]',
-  java_modernisation: 'bg-[#1B6179]',
-  fonctionnel: 'bg-[#F0B800]',
-  transverse: 'bg-muted-foreground/50',
+const POLE_TAG: Record<string, { label: string; className: string }> = {
+  legacy: { label: 'LEG', className: 'text-[#EC8C32]' },
+  java_modernisation: { label: 'JAVA', className: 'text-[#1B6179] dark:text-[#52B6CF]' },
+  fonctionnel: { label: 'FONC', className: 'text-[#F0B800]' },
+  transverse: { label: 'INFRA', className: 'text-muted-foreground' },
 }
 
 export interface StepInfo {
@@ -87,8 +87,10 @@ export default function ProgressBar({
                         : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
-              {stepInfo.sourcePole && !isActive && (
-                <span className={cn('h-2 w-2 shrink-0 rounded-full', POLE_DOT_COLORS[stepInfo.sourcePole] ?? 'bg-muted-foreground/50')} title={stepInfo.sourcePole} />
+              {stepInfo.sourcePole && !isActive && POLE_TAG[stepInfo.sourcePole] && (
+                <span className={cn('shrink-0 text-[9px] font-bold uppercase tracking-wider', POLE_TAG[stepInfo.sourcePole].className)}>
+                  {POLE_TAG[stepInfo.sourcePole].label}
+                </span>
               )}
               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
               <span className="max-w-[5rem] truncate">{shortLabel}</span>
