@@ -4,6 +4,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillHistory } from '@/hooks/use-skill-history'
 import { shortLabel, cn, strengthColor } from '@/lib/utils'
+import { getCategoryPoles, POLE_HEX, POLE_LABELS } from '@/lib/constants'
 import type { CategoryAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import LevelUpDialog from '@/components/dashboard/level-up-dialog'
@@ -87,13 +88,60 @@ export default function SkillDetailAccordion({
     return memberData?.skillRatings[skillId] ?? 0
   }
 
+  // Group categories by primary pole
+  const POLE_ORDER = ['java_modernisation', 'fonctionnel', 'legacy'] as const
+  const POLE_DESCRIPTIONS: Record<string, string> = {
+    java_modernisation: 'Stack moderne : Java, Spring, Angular, Kubernetes, CI/CD, Cloud',
+    fonctionnel: 'Analyse métier, gestion de projet, conduite du changement, UX',
+    legacy: 'Systèmes IBMi, Adélia/RPG, AS/400, batch et interfaces legacy',
+  }
+
+  const groupedCategories = useMemo(() => {
+    const groups: { pole: string; label: string; color: string; description: string; cats: typeof categories }[] = []
+    const assigned = new Set<string>()
+
+    for (const pole of POLE_ORDER) {
+      const poleCats = categories.filter(cat => {
+        if (assigned.has(cat.categoryId)) return false
+        const poles = getCategoryPoles(cat.categoryId)
+        return poles.includes(pole)
+      })
+      if (poleCats.length > 0) {
+        poleCats.forEach(c => assigned.add(c.categoryId))
+        groups.push({
+          pole,
+          label: POLE_LABELS[pole] ?? pole,
+          color: POLE_HEX[pole] ?? '#888',
+          description: POLE_DESCRIPTIONS[pole] ?? '',
+          cats: poleCats,
+        })
+      }
+    }
+    // Remaining unassigned categories
+    const remaining = categories.filter(c => !assigned.has(c.categoryId))
+    if (remaining.length > 0) {
+      groups.push({ pole: '__other', label: 'Transverse', color: '#8B8B8B', description: 'Compétences partagées entre pôles', cats: remaining })
+    }
+    return groups
+  }, [categories])
+
   return (
     <div>
       <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
         Détail par catégorie
       </h3>
-      <div className="space-y-1">
-        {categories.map(cat => {
+      <div className="space-y-4">
+        {groupedCategories.map(group => (
+          <div key={group.pole}>
+            <div className="flex items-center gap-2 mb-1.5 px-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: group.color }}>
+                {group.label}
+              </span>
+              <span className="text-[10px] text-muted-foreground">{group.description}</span>
+            </div>
+            <div className="space-y-1 border-l-2 pl-2 ml-[4px]" style={{ borderColor: group.color + '40' }}>
+        {group.cats.map(cat => {
           const isOpen = expanded.has(cat.categoryId)
           const catalogCat = categoryById.get(cat.categoryId)
           const teamCat = teamCategories.find(tc => tc.categoryId === cat.categoryId)
@@ -190,6 +238,9 @@ export default function SkillDetailAccordion({
             </div>
           )
         })}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )
