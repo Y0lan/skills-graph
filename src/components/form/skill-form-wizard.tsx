@@ -62,24 +62,11 @@ export default function SkillFormWizard({
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
-  const [showExtraCategories, setShowExtraCategories] = useState(false)
-
-  const allOrderedCategories = useMemo(() => {
+  const orderedCategories = useMemo(() => {
     if (!roleCategories || roleCategories.length === 0) return skillCategories
     const roleSet = new Set(roleCategories)
-    const primary = skillCategories.filter(c => roleSet.has(c.id))
-    const secondary = skillCategories.filter(c => !roleSet.has(c.id))
-    return [...primary, ...secondary]
+    return skillCategories.filter(c => roleSet.has(c.id))
   }, [skillCategories, roleCategories])
-
-  const extraCategoryCount = roleCategories
-    ? allOrderedCategories.length - roleCategories.length
-    : 0
-
-  const orderedCategories = useMemo(() => {
-    if (!roleCategories || roleCategories.length === 0 || showExtraCategories) return allOrderedCategories
-    return allOrderedCategories.filter(c => roleCategories.includes(c.id))
-  }, [allOrderedCategories, roleCategories, showExtraCategories])
 
   const isRoleCategory = useCallback((categoryId: string) => {
     return roleCategories?.includes(categoryId) ?? true
@@ -284,19 +271,19 @@ export default function SkillFormWizard({
 
       <RatingLegend ratingScale={ratingScale} />
 
-      {isReviewStep && !showExtraCategories && roleCategories && extraCategoryCount > 0 && (
+      {isReviewStep && hasDiscovery && (
         <div className="rounded-lg border border-dashed border-muted-foreground/30 p-4 text-center">
           <p className="mb-2 text-sm text-muted-foreground">
-            {extraCategoryCount} catégorie{extraCategoryCount > 1 ? 's' : ''} supplémentaire{extraCategoryCount > 1 ? 's' : ''} disponible{extraCategoryCount > 1 ? 's' : ''} hors de votre pôle
+            Vous avez des compétences en dehors de votre pôle ?
           </p>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setShowExtraCategories(true)}
+            onClick={() => setStep(DISCOVERY_STEP)}
             className="gap-1.5"
           >
             <Plus className="h-4 w-4" />
-            Ajouter des catégories hors pôle
+            J'ai des compétences transverses à noter
           </Button>
         </div>
       )}
