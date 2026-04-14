@@ -257,6 +257,7 @@ export default function DashboardPage() {
                             categories={teamAggregate.categories}
                             teamSize={teamAggregate.teamSize}
                             submittedCount={teamAggregate.submittedCount}
+                            poleFilter={poleFilter}
                           />
                           <TeamMembersGrid
                             members={teamAggregate.members}

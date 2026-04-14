@@ -15,6 +15,18 @@ export interface RadarDataPoint {
   fullMark: number
 }
 
+/** Colored arc segment behind the radar (for pole visualization) */
+export interface RadarSegment {
+  /** Start index (inclusive) in the data array */
+  from: number
+  /** End index (exclusive) in the data array */
+  to: number
+  /** Hex color for the segment */
+  color: string
+  /** Label for the segment (pole name) */
+  label: string
+}
+
 interface RadarChartProps {
   data: RadarDataPoint[]
   overlay?: RadarDataPoint[]
@@ -24,6 +36,8 @@ interface RadarChartProps {
   overlayLabel?: string
   showOverlayToggle?: boolean
   showExport?: boolean
+  /** Optional colored background segments (for pole grouping) */
+  segments?: RadarSegment[]
 }
 
 interface TooltipData {
@@ -71,6 +85,7 @@ export default function VisxRadarChart({
   overlayLabel,
   showOverlayToggle = false,
   showExport = false,
+  segments,
 }: RadarChartProps) {
   const [overlayVisible, setOverlayVisible] = useState(true)
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -174,6 +189,7 @@ export default function VisxRadarChart({
               compact={compact}
               showTooltip={showTooltip}
               hideTooltip={hideTooltip}
+              segments={segments}
             />
           )}
         </ParentSize>
@@ -224,6 +240,7 @@ function RadarSvg({
   compact,
   showTooltip,
   hideTooltip,
+  segments,
 }: {
   data: RadarDataPoint[]
   overlay?: RadarDataPoint[]
@@ -232,6 +249,7 @@ function RadarSvg({
   compact: boolean
   showTooltip?: (args: { tooltipData: TooltipData; tooltipLeft: number; tooltipTop: number }) => void
   hideTooltip?: () => void
+  segments?: RadarSegment[]
 }) {
   const numAxes = data.length
   const angleSlice = getAngleSlice(numAxes)
@@ -287,6 +305,32 @@ function RadarSvg({
       aria-label={`Graphique radar avec ${numAxes} axes`}
     >
       <Group top={cy} left={cx}>
+        {/* Colored pole segments (pie-chart-like background arcs) */}
+        {segments && segments.map((seg, si) => {
+          const startAngle = angleSlice * seg.from - Math.PI / 2 - angleSlice / 2
+          const endAngle = angleSlice * (seg.to - 1) - Math.PI / 2 + angleSlice / 2
+          const r = maxRadius
+          // Build arc path
+          const x1 = r * Math.cos(startAngle)
+          const y1 = r * Math.sin(startAngle)
+          const x2 = r * Math.cos(endAngle)
+          const y2 = r * Math.sin(endAngle)
+          const spanAngle = endAngle - startAngle
+          const largeArc = spanAngle > Math.PI ? 1 : 0
+          const path = `M 0 0 L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`
+          return (
+            <path
+              key={`seg-${si}`}
+              d={path}
+              fill={seg.color}
+              fillOpacity={0.08}
+              stroke={seg.color}
+              strokeOpacity={0.2}
+              strokeWidth={1}
+            />
+          )
+        })}
+
         {/* Concentric grid rings */}
         {gridCircles.map((level) => (
           <LineRadial

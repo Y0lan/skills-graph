@@ -43,6 +43,44 @@ export const POLE_COLORS: Record<string, string> = {
   fonctionnel: 'bg-[#FFF9DB] text-[#F0B800] dark:bg-[#F0B800]/15 dark:text-[#FFD400]',
 }
 
+/** Raw hex colors per pole for SVG/canvas rendering */
+export const POLE_HEX: Record<string, string> = {
+  legacy: '#EC8C32',
+  java_modernisation: '#1B6179',
+  fonctionnel: '#F0B800',
+}
+
+/** Category IDs belonging to each pole (mirrors server/lib/db.ts pole_categories) */
+export const POLE_CATEGORY_IDS: Record<string, string[]> = {
+  legacy: [
+    'legacy-ibmi-adelia', 'core-engineering',
+    'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+  ],
+  java_modernisation: [
+    'core-engineering', 'backend-integration', 'frontend-ui',
+    'platform-engineering', 'observability-reliability', 'security-compliance',
+    'ai-engineering', 'qa-test-engineering',
+    'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+  ],
+  fonctionnel: [
+    'analyse-fonctionnelle', 'project-management-pmo', 'change-management-training',
+    'design-ux', 'data-engineering-governance', 'management-leadership',
+    'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+  ],
+}
+
+/**
+ * Resolve which pole(s) a category belongs to.
+ * Returns an array of pole names (some categories are shared across poles).
+ */
+export function getCategoryPoles(categoryId: string): string[] {
+  const poles: string[] = []
+  for (const [pole, catIds] of Object.entries(POLE_CATEGORY_IDS)) {
+    if (catIds.includes(categoryId)) poles.push(pole)
+  }
+  return poles
+}
+
 export function formatDateShort(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
