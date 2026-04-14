@@ -7,8 +7,11 @@
     "observability-reliability": 3,
     "security-compliance": 3,
     "architecture-governance": 5,
-    "soft-skills": 3,
-    "domain-knowledge": 4
+    "soft-skills-delivery": 4,
+    "domain-knowledge": 4,
+    "ai-engineering": 3,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 2
   },
   "Ingénieur DevOps": {
     "core-engineering": 3,
@@ -18,8 +21,11 @@
     "observability-reliability": 4,
     "security-compliance": 3,
     "architecture-governance": 3,
-    "soft-skills": 2,
-    "domain-knowledge": 2
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 2,
+    "ai-engineering": 2,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 4
   },
   "Ingénieur DevOps / Développeur": {
     "core-engineering": 3,
@@ -29,8 +35,11 @@
     "observability-reliability": 4,
     "security-compliance": 3,
     "architecture-governance": 3,
-    "soft-skills": 2,
-    "domain-knowledge": 3
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 3,
+    "ai-engineering": 2,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 3
   },
   "Ingénieur Data": {
     "core-engineering": 3,
@@ -40,8 +49,12 @@
     "observability-reliability": 3,
     "security-compliance": 2,
     "architecture-governance": 3,
-    "soft-skills": 2,
-    "domain-knowledge": 3
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 3,
+    "ai-engineering": 4,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 2,
+    "data-engineering-governance": 4
   },
   "Développeur Full Stack": {
     "core-engineering": 3,
@@ -51,8 +64,11 @@
     "observability-reliability": 2,
     "security-compliance": 2,
     "architecture-governance": 2,
-    "soft-skills": 2,
-    "domain-knowledge": 3
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 3,
+    "ai-engineering": 2,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 1
   },
   "Développeuse Full Stack": {
     "core-engineering": 3,
@@ -62,8 +78,11 @@
     "observability-reliability": 2,
     "security-compliance": 2,
     "architecture-governance": 2,
-    "soft-skills": 2,
-    "domain-knowledge": 3
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 3,
+    "ai-engineering": 2,
+    "qa-test-engineering": 2,
+    "infrastructure-systems-network": 1
   },
   "Ingénieure QA": {
     "core-engineering": 2,
@@ -73,8 +92,11 @@
     "observability-reliability": 2,
     "security-compliance": 2,
     "architecture-governance": 2,
-    "soft-skills": 3,
-    "domain-knowledge": 3
+    "soft-skills-delivery": 3,
+    "domain-knowledge": 3,
+    "ai-engineering": 2,
+    "qa-test-engineering": 5,
+    "infrastructure-systems-network": 1
   },
   "Lead Développeur (Manager MOE)": {
     "core-engineering": 3,
@@ -84,8 +106,13 @@
     "observability-reliability": 3,
     "security-compliance": 3,
     "architecture-governance": 4,
-    "soft-skills": 4,
-    "domain-knowledge": 4
+    "soft-skills-delivery": 4,
+    "domain-knowledge": 4,
+    "ai-engineering": 3,
+    "qa-test-engineering": 3,
+    "infrastructure-systems-network": 2,
+    "management-leadership": 4,
+    "project-management-pmo": 3
   },
   "Directeur des Programmes": {
     "core-engineering": 2,
@@ -95,8 +122,10 @@
     "observability-reliability": 2,
     "security-compliance": 3,
     "architecture-governance": 4,
-    "soft-skills": 5,
-    "domain-knowledge": 4
+    "soft-skills-delivery": 5,
+    "domain-knowledge": 4,
+    "management-leadership": 5,
+    "project-management-pmo": 4
   },
   "Business Analyst": {
     "analyse-fonctionnelle": 4,
@@ -110,21 +139,17 @@
     "domain-knowledge": 4
   },
   "Directeur": {
-    "core-engineering": 1,
-    "backend-integration": 1,
-    "frontend-ui": 1,
-    "platform-engineering": 1,
-    "observability-reliability": 1,
-    "security-compliance": 2,
+    "management-leadership": 5,
     "architecture-governance": 3,
-    "soft-skills": 5,
-    "domain-knowledge": 4
+    "soft-skills-delivery": 5,
+    "domain-knowledge": 4,
+    "project-management-pmo": 3
   },
   "Développeur Adélia": {
     "legacy-ibmi-adelia": 4,
     "core-engineering": 3,
     "architecture-governance": 2,
-    "soft-skills-delivery": 2,
+    "soft-skills-delivery": 3,
     "domain-knowledge": 4
   },
   "Directrice": {
