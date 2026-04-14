@@ -54,7 +54,7 @@ export default function LandingPage() {
       </div>
 
       {/* Overlay for readability */}
-      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm pointer-events-none" />
+      <div className="absolute inset-0 bg-background/80 backdrop-blur-sm pointer-events-none" />
 
       {/* Centered content */}
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center gap-6 px-4">
@@ -71,7 +71,7 @@ export default function LandingPage() {
           <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
             Radar des Compétences
           </h1>
-          <p className="mt-3 text-lg text-muted-foreground">
+          <p className="mt-3 text-lg text-foreground/70">
             Évaluez et visualisez les compétences de votre équipe
           </p>
         </div>
