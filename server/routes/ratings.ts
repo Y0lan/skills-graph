@@ -60,7 +60,7 @@ ratingsRouter.put('/:slug', requireAuth, requireOwnership, (req, res) => {
     return
   }
 
-  const { ratings, experience, skippedCategories } = req.body
+  const { ratings, experience, skippedCategories, declinedCategories } = req.body
 
   // Validate ratings
   if (!ratings || typeof ratings !== 'object' || Array.isArray(ratings)) {
@@ -96,7 +96,14 @@ ratingsRouter.put('/:slug', requireAuth, requireOwnership, (req, res) => {
     return
   }
 
-  const memberData = upsertEvaluation(slug, ratings, expObj, skipped)
+  // Validate declinedCategories (optional)
+  const declined = declinedCategories ?? []
+  if (!Array.isArray(declined)) {
+    res.status(400).json({ error: 'Catégories déclinées invalides : doit être un tableau' })
+    return
+  }
+
+  const memberData = upsertEvaluation(slug, ratings, expObj, skipped, declined)
 
   res.json(memberData)
 })
