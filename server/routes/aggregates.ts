@@ -23,7 +23,12 @@ aggregatesRouter.get('/:slug', (req, res) => {
     return
   }
 
-  res.json(result)
+  const categoryAverages = Object.fromEntries(result.categories.map((c) => [c.categoryId, c.avgRank]))
+  const ratedCategoryIds = Object.entries(categoryAverages)
+    .filter(([, avg]) => (avg as number) > 0)
+    .map(([catId]) => catId)
+
+  res.json({ ...result, ratedCategoryIds })
 })
 
 // POST /compare — AI comparison of two members
