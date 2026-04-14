@@ -437,7 +437,7 @@ export function initDatabase(): void {
       java_modernisation: [
         'core-engineering', 'backend-integration', 'frontend-ui',
         'platform-engineering', 'observability-reliability', 'security-compliance',
-        'ai-engineering', 'qa-test-engineering',
+        'ai-engineering', 'qa-test-engineering', 'infrastructure-systems-network',
         'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
       ],
       fonctionnel: [
@@ -453,6 +453,9 @@ export function initDatabase(): void {
       }
     })()
   }
+
+  // Migration: ensure infrastructure-systems-network is in java_modernisation pole
+  db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('java_modernisation', 'infrastructure-systems-network')").run()
 
   // Migration: add declined_categories column if missing
   const evalCols = db.prepare("PRAGMA table_info(evaluations)").all() as { name: string }[]

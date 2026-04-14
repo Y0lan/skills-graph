@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarSegment } from '@/components/visx-radar-chart'
@@ -7,7 +7,7 @@ import ChartViewToggle from '@/components/chart-view-toggle'
 import { useChartView } from '@/hooks/use-chart-view'
 import { useCatalog } from '@/hooks/use-catalog'
 import { shortLabel } from '@/lib/utils'
-import { POLE_CATEGORY_IDS, POLE_HEX, POLE_LABELS } from '@/lib/constants'
+import { POLE_HEX, POLE_LABELS } from '@/lib/constants'
 import type { TeamCategoryAggregateResponse } from '@/lib/types'
 
 interface TeamOverviewProps {
@@ -29,7 +29,18 @@ export default function TeamOverview({
   const { categories: skillCategories } = useCatalog()
   const [view, setView] = useChartView()
 
+  // Fetch pole→category mappings from API
+  const [poleMappings, setPoleMappings] = useState<Record<string, string[]> | null>(null)
+  useEffect(() => {
+    fetch('/api/catalog/pole-mappings')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setPoleMappings(d) })
+      .catch(() => {})
+  }, [])
+
   const { data, segments } = useMemo(() => {
+    const POLE_CATEGORY_IDS = poleMappings ?? {}
+
     if (poleFilter) {
       // Single pole selected — no segments, just show pole categories
       const poleCatIds = new Set(POLE_CATEGORY_IDS[poleFilter] ?? [])
@@ -121,7 +132,7 @@ export default function TeamOverview({
     }
 
     return { data: sortedData, segments: segs.length > 0 ? segs : undefined }
-  }, [poleFilter, skillCategories, categories])
+  }, [poleFilter, skillCategories, categories, poleMappings])
 
   return (
     <Card>

@@ -60,7 +60,7 @@ export const POLE_CATEGORY_IDS: Record<string, string[]> = {
   java_modernisation: [
     'core-engineering', 'backend-integration', 'frontend-ui',
     'platform-engineering', 'observability-reliability', 'security-compliance',
-    'ai-engineering', 'qa-test-engineering',
+    'ai-engineering', 'qa-test-engineering', 'infrastructure-systems-network',
     'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
   ],
   fonctionnel: [

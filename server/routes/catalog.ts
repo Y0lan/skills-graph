@@ -46,6 +46,19 @@ catalogRouter.get('/pole-categories/:pole', (req, res) => {
   res.json(rows.map(r => r.category_id))
 })
 
+// GET /pole-mappings — all pole→category mappings at once (for radar segments)
+catalogRouter.get('/pole-mappings', (_req, res) => {
+  const rows = getDb()
+    .prepare('SELECT pole, category_id FROM pole_categories ORDER BY pole, category_id')
+    .all() as { pole: string; category_id: string }[]
+  const result: Record<string, string[]> = {}
+  for (const row of rows) {
+    if (!result[row.pole]) result[row.pole] = []
+    result[row.pole].push(row.category_id)
+  }
+  res.json(result)
+})
+
 const POLE_LABELS: Record<string, string> = {
   legacy: 'Pôle Legacy (Adélia / IBMi)',
   java_modernisation: 'Pôle Java / Modernisation',
