@@ -1,6 +1,13 @@
 import { cn } from '@/lib/utils'
 import { Check, Lock, SkipForward } from 'lucide-react'
 
+const POLE_DOT_COLORS: Record<string, string> = {
+  legacy: 'bg-[#EC8C32]',
+  java_modernisation: 'bg-[#1B6179]',
+  fonctionnel: 'bg-[#F0B800]',
+  transverse: 'bg-muted-foreground/50',
+}
+
 export interface StepInfo {
   label: string
   emoji?: string
@@ -9,6 +16,7 @@ export interface StepInfo {
   isSkipped: boolean
   isRoleCategory?: boolean
   aiCount?: number
+  sourcePole?: string | null
 }
 
 interface ProgressBarProps {
@@ -79,6 +87,9 @@ export default function ProgressBar({
                         : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground',
               )}
             >
+              {stepInfo.sourcePole && !isActive && (
+                <span className={cn('h-2 w-2 shrink-0 rounded-full', POLE_DOT_COLORS[stepInfo.sourcePole] ?? 'bg-muted-foreground/50')} title={stepInfo.sourcePole} />
+              )}
               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-current/10 text-[10px] font-bold leading-none">{i + 1}</span>
               <span className="max-w-[5rem] truncate">{shortLabel}</span>
               {stepInfo.isRoleCategory === true && !isActive && (

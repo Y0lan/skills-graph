@@ -85,6 +85,19 @@ export default function SkillFormWizard({
     return roleCategories?.includes(categoryId) ?? true
   }, [roleCategories])
 
+  // Build reverse map: category id -> source pole (for non-role categories)
+  const categoryToPole = useMemo(() => {
+    const map = new Map<string, string>()
+    if (nonPoleGroups) {
+      for (const group of nonPoleGroups) {
+        for (const cat of group.categories) {
+          map.set(cat.id, group.pole)
+        }
+      }
+    }
+    return map
+  }, [nonPoleGroups])
+
   const TOTAL_CATEGORY_STEPS = orderedCategories.length
   const hasDiscovery = nonPoleGroups && nonPoleGroups.length > 0
   const DISCOVERY_STEP = hasDiscovery ? TOTAL_CATEGORY_STEPS : -1
@@ -157,6 +170,7 @@ export default function SkillFormWizard({
         isSkipped: isSkipped(cat.id),
         aiCount,
         isRoleCategory: roleCategories ? isRoleCategory(cat.id) : undefined,
+        sourcePole: !isRoleCategory(cat.id) ? categoryToPole.get(cat.id) ?? null : undefined,
       }
     }),
     ...(hasDiscovery
