@@ -447,15 +447,21 @@ export function initDatabase(): void {
       ],
     }
     const insertPoleCategory = db.prepare('INSERT INTO pole_categories (pole, category_id) VALUES (?, ?)')
+    const catExists = db.prepare('SELECT 1 FROM categories WHERE id = ?')
     db.transaction(() => {
       for (const [pole, cats] of Object.entries(poleMapping)) {
-        for (const catId of cats) insertPoleCategory.run(pole, catId)
+        for (const catId of cats) {
+          if (catExists.get(catId)) insertPoleCategory.run(pole, catId)
+        }
       }
     })()
   }
 
-  // Migration: ensure infrastructure-systems-network is in java_modernisation pole
-  db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('java_modernisation', 'infrastructure-systems-network')").run()
+  // Migration: ensure infrastructure-systems-network is in java_modernisation pole (if category exists)
+  const infraCat = db.prepare("SELECT 1 FROM categories WHERE id = 'infrastructure-systems-network'").get()
+  if (infraCat) {
+    db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('java_modernisation', 'infrastructure-systems-network')").run()
+  }
 
   // Migration: add declined_categories column if missing
   const evalCols = db.prepare("PRAGMA table_info(evaluations)").all() as { name: string }[]
