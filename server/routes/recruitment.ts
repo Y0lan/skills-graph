@@ -568,6 +568,39 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     }
   }
 
+  // Onboarding: convert hired candidate to team member
+  if (statut === 'embauche') {
+    const candidateInfo = getDb().prepare(`
+      SELECT cand.id, cand.name, cand.email, cand.role, cand.ratings, cand.ai_suggestions,
+             cand.experience, cand.skipped_categories
+      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.id = ?
+    `).get(candidatureId) as { id: string; name: string; email: string | null; role: string; ratings: string | null; ai_suggestions: string | null; experience: string | null; skipped_categories: string | null } | undefined
+
+    if (candidateInfo) {
+      const slug = candidateInfo.name.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+
+      // Merge AI suggestions with manual ratings (manual overrides AI)
+      const aiSuggestions = JSON.parse(candidateInfo.ai_suggestions || '{}')
+      const manualRatings = JSON.parse(candidateInfo.ratings || '{}')
+      const mergedRatings = { ...aiSuggestions, ...manualRatings }
+
+      // Insert into evaluations (team member data)
+      getDb().prepare(`INSERT OR IGNORE INTO evaluations (slug, ratings, experience, skipped_categories, submitted_at)
+        VALUES (?, ?, ?, ?, datetime('now'))`)
+        .run(slug, JSON.stringify(mergedRatings), candidateInfo.experience || '{}', candidateInfo.skipped_categories || '[]')
+
+      // Log the conversion
+      getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, 'onboarding', ?, ?)`)
+        .run(candidatureId, `Candidat converti en membre d'équipe (slug: ${slug})`, user.slug)
+
+      console.log(`[ONBOARDING] ${candidateInfo.name} → team member ${slug}`)
+    }
+  }
+
   res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip, emailSent })
 })
 
