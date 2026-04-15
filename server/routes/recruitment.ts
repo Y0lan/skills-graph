@@ -403,7 +403,7 @@ protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
 })
 
 // Change candidature status (with state machine validation)
-protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) => {
+protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req, res) => {
   const { statut, notes, skipReason, sendEmail, includeReasonInEmail } = req.body
 
   if (!statut || typeof statut !== 'string') {
@@ -468,21 +468,28 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) 
 
     if (candidateInfo?.email) {
       const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
-      sendCandidateInvite({
-        to: candidateInfo.email,
-        candidateName: candidateInfo.name,
-        role: candidateInfo.role,
-        evaluationUrl: `${baseUrl}/evaluate/${candidateInfo.candidate_id}`,
-      }).then(() => {
-        // Log email event
+      try {
+        const result = await sendCandidateInvite({
+          to: candidateInfo.email,
+          candidateName: candidateInfo.name,
+          role: candidateInfo.role,
+          evaluationUrl: `${baseUrl}/evaluate/${candidateInfo.candidate_id}`,
+        })
+        emailSent = result !== null
+        if (emailSent) {
+          getDb().prepare(`
+            INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+            VALUES (?, 'email_sent', ?, ?)
+          `).run(req.params.id, `Lien d'évaluation envoyé à ${candidateInfo.email}`, user.slug || 'unknown')
+        }
+      } catch (err) {
+        console.error('[Email] Failed to send evaluation link:', err)
+        emailSent = false
         getDb().prepare(`
           INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-          VALUES (?, 'email', ?, ?)
-        `).run(req.params.id, `Lien d'évaluation envoyé à ${candidateInfo.email}`, user.slug || 'unknown')
-      }).catch((err) => {
-        console.error('[Email] Failed to send evaluation link:', err)
-      })
-      emailSent = true
+          VALUES (?, 'email_failed', ?, ?)
+        `).run(req.params.id, `Échec envoi email à ${candidateInfo.email}`, user.slug || 'unknown')
+      }
     }
   }
 
@@ -497,20 +504,30 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, (req, res) 
     if (candidateInfo?.email) {
       const leadSlug = user.slug || 'unknown'
       const leadEmail = `${leadSlug.replaceAll('-', '.')}@sinapse.nc`
-      sendCandidateDeclined({
-        candidateName: candidateInfo.name,
-        role: candidateInfo.role,
-        candidateEmail: candidateInfo.email,
-        leadEmail,
-        reason: notes?.trim() || undefined,
-        includeReason: !!includeReasonInEmail,
-      }).catch(err => console.error('[Email] Failed to send decline:', err))
-      emailSent = true
-
-      getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-        VALUES (?, 'email', ?, ?)
-      `).run(req.params.id, `Email de refus envoyé à ${candidateInfo.email}${includeReasonInEmail ? ' (motif inclus)' : ''}`, user.slug || 'unknown')
+      try {
+        const result = await sendCandidateDeclined({
+          candidateName: candidateInfo.name,
+          role: candidateInfo.role,
+          candidateEmail: candidateInfo.email,
+          leadEmail,
+          reason: notes?.trim() || undefined,
+          includeReason: !!includeReasonInEmail,
+        })
+        emailSent = result !== null
+        if (emailSent) {
+          getDb().prepare(`
+            INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+            VALUES (?, 'email_sent', ?, ?)
+          `).run(req.params.id, `Email de refus envoyé à ${candidateInfo.email}${includeReasonInEmail ? ' (motif inclus)' : ''}`, user.slug || 'unknown')
+        }
+      } catch (err) {
+        console.error('[Email] Failed to send decline:', err)
+        emailSent = false
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'email_failed', ?, ?)
+        `).run(req.params.id, `Échec envoi email de refus à ${candidateInfo.email}`, user.slug || 'unknown')
+      }
     }
   }
 
