@@ -51,25 +51,26 @@ export async function processIntake(
     return { error: `Poste invalide: ${poste_vise}`, status: 400 }
   }
 
-  // Check idempotence: same email + same poste = update existing
-  const existingCandidature = getDb().prepare(`
-    SELECT c.id as candidature_id, c.candidate_id
-    FROM candidatures c
-    JOIN candidates cand ON cand.id = c.candidate_id
-    WHERE cand.email = ? AND c.poste_id = ?
-  `).get(email.trim(), poste_vise) as { candidature_id: string; candidate_id: string } | undefined
-
-  if (existingCandidature) {
-    return { ok: true, candidatureId: existingCandidature.candidature_id, updated: true }
-  }
-
   const fullName = prenom ? `${prenom.trim()} ${nom.trim()}` : nom.trim()
   const candidateId = crypto.randomUUID()
   const candidatureId = crypto.randomUUID()
   const resolvedCanal = canal?.trim() || 'site'
 
-  // Atomic creation: candidate + candidature + event
-  const createIntake = getDb().transaction(() => {
+  // Atomic creation: idempotence check + candidate + candidature + event in one transaction
+  // This prevents duplicate candidatures from parallel webhook deliveries
+  const intakeResult = getDb().transaction((): IntakeResult => {
+    // Check idempotence INSIDE transaction (case-insensitive email match)
+    const existingCandidature = getDb().prepare(`
+      SELECT c.id as candidature_id, c.candidate_id
+      FROM candidatures c
+      JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE LOWER(cand.email) = LOWER(?) AND c.poste_id = ?
+    `).get(email.trim(), poste_vise) as { candidature_id: string; candidate_id: string } | undefined
+
+    if (existingCandidature) {
+      return { ok: true, candidatureId: existingCandidature.candidature_id, updated: true }
+    }
+
     getDb().prepare(`
       INSERT INTO candidates (id, name, role, role_id, email, created_by, telephone, pays, linkedin_url, github_url, canal)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -88,8 +89,13 @@ export async function processIntake(
       INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
       VALUES (?, 'status_change', 'postule', ?, 'drupal-webhook')
     `).run(candidatureId, message?.trim() || null)
-  })
-  createIntake()
+
+    return { ok: true, candidatureId, candidateId, updated: false }
+  })()
+
+  if (intakeResult.updated) {
+    return intakeResult
+  }
 
   // Save message as candidate notes (visible in detail page)
   if (message?.trim()) {
@@ -161,5 +167,5 @@ export async function processIntake(
     }).catch(err => console.error('[Intake] Application email error:', err))
   }
 
-  return { ok: true, candidatureId, candidateId, updated: false }
+  return intakeResult
 }
