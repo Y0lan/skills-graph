@@ -22,7 +22,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3 } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3, Info } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
 
 interface Poste {
@@ -71,12 +72,32 @@ interface DashboardStats {
 }
 
 
+const SCORE_TOOLTIPS: Record<string, string> = {
+  Poste: 'Compatibilité technique entre les compétences du candidat et les exigences du poste visé',
+  Équipe: 'Complémentarité avec l\'équipe existante — mesure les compétences manquantes que le candidat pourrait combler',
+  Soft: 'Score comportemental issu de l\'évaluation Aboro (savoir-être, traits de personnalité)',
+  Global: 'Score pondéré combinant Poste, Équipe et Soft skills (poids configurables)',
+}
+
 function CompatibilityBar({ value, label }: { value: number | null; label: string }) {
   if (value == null) return <span className="text-xs text-muted-foreground">—</span>
   const color = value >= 70 ? 'bg-green-500' : value >= 40 ? 'bg-amber-500' : 'bg-red-500'
+  const tip = SCORE_TOOLTIPS[label]
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-muted-foreground w-12">{label}</span>
+      <span className="text-xs text-muted-foreground w-14 flex items-center gap-1">
+        {label}
+        {tip && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent side="left" className="max-w-[220px] text-xs">
+              {tip}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </span>
       <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden max-w-20">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
       </div>

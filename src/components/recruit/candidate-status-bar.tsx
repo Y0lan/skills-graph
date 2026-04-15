@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { GitBranch, ChevronRight, Upload } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { GitBranch, ChevronRight, Upload, Info } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import type { CandidatureInfo, CandidatureEvent, AllowedTransitions } from '@/hooks/use-candidate-data'
 
@@ -43,19 +44,37 @@ export default function CandidateStatusBar({
               <div className="flex items-center gap-3">
                 {c.tauxPoste != null && (
                   <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Poste</p>
+                    <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                      Poste
+                      <Tooltip>
+                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipContent className="max-w-[220px] text-xs">Compatibilité technique entre les compétences du candidat et les exigences du poste visé</TooltipContent>
+                      </Tooltip>
+                    </p>
                     <p className="text-sm font-bold">{c.tauxPoste}%</p>
                   </div>
                 )}
                 {c.tauxEquipe != null && (
                   <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Équipe</p>
+                    <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                      Équipe
+                      <Tooltip>
+                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipContent className="max-w-[220px] text-xs">Complémentarité avec l'équipe existante — mesure les compétences manquantes que le candidat pourrait combler</TooltipContent>
+                      </Tooltip>
+                    </p>
                     <p className="text-sm font-bold">{c.tauxEquipe}%</p>
                   </div>
                 )}
                 {c.tauxSoft != null && (
                   <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Soft</p>
+                    <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
+                      Soft
+                      <Tooltip>
+                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipContent className="max-w-[220px] text-xs">Score comportemental issu de l'évaluation Aboro (savoir-être, traits de personnalité)</TooltipContent>
+                      </Tooltip>
+                    </p>
                     <p className="text-sm font-bold">{c.tauxSoft}%</p>
                   </div>
                 )}
