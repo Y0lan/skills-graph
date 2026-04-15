@@ -170,6 +170,23 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     }).catch(() => {}) // non-blocking
   }
 
+  // Auto-create candidature if roleId maps to open postes
+  if (resolvedRoleId) {
+    const openPostes = getDb().prepare(
+      "SELECT id FROM postes WHERE role_id = ? AND statut = 'ouvert' ORDER BY created_at ASC"
+    ).all(resolvedRoleId) as { id: string }[]
+
+    for (const poste of openPostes) {
+      const candidatureId = crypto.randomUUID()
+      getDb().prepare(`INSERT OR IGNORE INTO candidatures (id, candidate_id, poste_id, statut, canal)
+        VALUES (?, ?, ?, 'postule', 'candidature_directe')`)
+        .run(candidatureId, id, poste.id)
+      getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
+        VALUES (?, 'status_change', 'postule', 'Création manuelle', ?)`)
+        .run(candidatureId, user?.slug ?? 'system')
+    }
+  }
+
   res.status(201).json({
     ...formatCandidate(candidate),
     evaluationLink: `/evaluate/${id}`,
