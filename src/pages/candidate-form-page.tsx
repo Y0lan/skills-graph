@@ -149,6 +149,7 @@ export default function CandidateFormPage() {
             <div className="mt-4 rounded-lg border bg-muted/50 p-4 text-sm">
               <p className="font-medium">Comment ça marche :</p>
               <ul className="mt-2 space-y-1 text-muted-foreground">
+                <li>• Durée estimée : environ 15 minutes</li>
                 <li>• Évaluez vos compétences sur une échelle de 0 (inconnu) à 5 (expert)</li>
                 <li>• Soyez honnête — il n'y a pas de mauvaise réponse</li>
                 <li>• Vous pouvez passer les catégories qui ne correspondent pas à votre profil</li>
