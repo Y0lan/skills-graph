@@ -110,11 +110,15 @@ const categories: Record<string, string[]> = {
     'change-management-legacy', 'multi-stakeholder-piloting', 'strategic-planning',
     'recruiting-onboarding', 'knowledge-transfer-run',
   ],
-  // Legacy pole category
+  // Legacy pole categories
   'legacy-ibmi-adelia': [
     'adelia-rpg-4gl', 'cl-control-language', 'db2-400',
     'legacy-diagnostic-mco', 'batch-scheduling-operations', 'legacy-batch-interfaces',
     'legacy-modernisation', 'ibmi-as400-platform', 'web-adelia',
+  ],
+  'javaee-jboss': [
+    'jboss-wildfly', 'ejb-javaee', 'jms-messaging-legacy', 'jndi-datasources',
+    'servlets-jsp', 'migration-legacy-moderne', 'api-wrapping-legacy',
   ],
   // Infrastructure (shared/transverse)
   'infrastructure-systems-network': [
@@ -264,6 +268,7 @@ const profiles: Record<string, Profile> = {
   // Legacy pole
   'legacy-dev': {
     'legacy-ibmi-adelia': 0.90,
+    'javaee-jboss': 0.65,
     'core-engineering': 0.55,
     'architecture-governance': 0.40,
     'soft-skills-delivery': 0.50,
@@ -440,6 +445,8 @@ const individualOverrides: Record<string, Record<string, number>> = {
     'ibmi-as400-platform': 5, 'web-adelia': 4,
     'legacy-diagnostic-mco': 4, 'batch-scheduling-operations': 4,
     'legacy-batch-interfaces': 4, 'legacy-modernisation': 3,
+    'jboss-wildfly': 3, 'ejb-javaee': 3, 'jms-messaging-legacy': 2,
+    'jndi-datasources': 3, 'servlets-jsp': 4, 'migration-legacy-moderne': 2,
     'sql': 4, 'bash-shell': 3,
     'reglementation-sociale': 4, 'processus-recouvrement': 3,
     'si-legacy': 5, 'comptabilite-paiements': 3,

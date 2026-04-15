@@ -54,7 +54,7 @@ export const POLE_HEX: Record<string, string> = {
 /** Category IDs belonging to each pole (mirrors server/lib/db.ts pole_categories) */
 export const POLE_CATEGORY_IDS: Record<string, string[]> = {
   legacy: [
-    'legacy-ibmi-adelia', 'core-engineering',
+    'legacy-ibmi-adelia', 'javaee-jboss', 'core-engineering',
     'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
   ],
   java_modernisation: [

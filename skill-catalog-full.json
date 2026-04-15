@@ -1970,6 +1970,97 @@
           }
         }
       ]
+    },
+    {
+      "id": "javaee-jboss",
+      "label": "Java EE / JBoss & Transition Legacy→Moderne",
+      "scenario": "Vous intervenez sur un applicatif métier critique déployé sur JBoss EAP avec des EJB, JMS et des datasources JNDI. Vous devez maintenir cet existant tout en planifiant sa migration progressive vers une stack moderne (Spring Boot, conteneurs). À quel point êtes-vous autonome sur chaque brique ?",
+      "skills": [
+        {
+          "id": "jboss-wildfly",
+          "label": "JBoss EAP / WildFly (administration, déploiement)",
+          "descriptors": {
+            "0": "N'a jamais utilisé JBoss ou WildFly",
+            "1": "Sait que JBoss est un serveur d'applications Java EE ; comprend la différence EAP vs WildFly",
+            "2": "Déploie des WAR/EAR avec de l'aide ; navigue dans la console d'administration",
+            "3": "Configure les datasources, les queues JMS, les security domains ; gère les mises à jour mineures de manière autonome",
+            "4": "Administre des clusters JBoss en production ; diagnostique les problèmes de mémoire, threads, connexions ; automatise les déploiements",
+            "5": "Référent JBoss de l'équipe ; planifie les montées de version EAP ; définit les standards de configuration"
+          }
+        },
+        {
+          "id": "ejb-javaee",
+          "label": "EJB & Java EE / Jakarta EE",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec Java EE ou EJB",
+            "1": "Connaît les concepts : Session Beans, Entity Beans, conteneur EJB",
+            "2": "Modifie des EJB existants avec de l'aide ; comprend les annotations @Stateless, @Stateful, @Singleton",
+            "3": "Développe des EJB avec injection de dépendances, intercepteurs, timers ; gère les transactions CMT/BMT",
+            "4": "Conçoit des architectures multi-modules EAR ; maîtrise les patterns de déploiement Java EE (CDI, JPA intégré, JTA)",
+            "5": "Expert Java EE complet ; guide l'équipe sur les choix EJB vs alternatives ; pilote les migrations Jakarta EE"
+          }
+        },
+        {
+          "id": "jms-messaging-legacy",
+          "label": "JMS & Messaging (HornetQ, ActiveMQ Artemis)",
+          "descriptors": {
+            "0": "N'a jamais utilisé JMS",
+            "1": "Comprend les concepts Queue vs Topic, producteur/consommateur",
+            "2": "Envoie et consomme des messages JMS avec de l'aide ; configure des queues dans JBoss",
+            "3": "Gère les dead-letter queues, le redelivery, les message selectors ; monitore les queues en production",
+            "4": "Conçoit des architectures messaging complexes avec garanties de livraison ; optimise le débit",
+            "5": "Référent messaging ; arbitre les choix JMS vs Kafka ; planifie les migrations de broker"
+          }
+        },
+        {
+          "id": "jndi-datasources",
+          "label": "JNDI, Datasources & Pools de connexions",
+          "descriptors": {
+            "0": "N'a jamais configuré de datasources JNDI",
+            "1": "Sait que JNDI est un annuaire de ressources ; comprend le concept de pool de connexions",
+            "2": "Configure des datasources simples dans JBoss avec de l'aide ; utilise les lookups JNDI",
+            "3": "Dimensionne les pools de connexions (min/max, timeout, validation) ; configure le XA pour les transactions distribuées",
+            "4": "Diagnostique les fuites de connexions, les contentions de pool ; optimise les performances d'accès données",
+            "5": "Définit les standards de configuration datasource de l'équipe ; maîtrise les patterns de résilience (circuit breaker, fallback)"
+          }
+        },
+        {
+          "id": "servlets-jsp",
+          "label": "Servlets, JSP & Frameworks web legacy (Struts, JSF)",
+          "descriptors": {
+            "0": "N'a jamais travaillé avec Servlets ou JSP",
+            "1": "Comprend le cycle requête/réponse HTTP ; sait ce qu'est une Servlet et une JSP",
+            "2": "Modifie des Servlets et JSP existantes avec de l'aide ; comprend les bases de Struts ou JSF",
+            "3": "Développe des fonctionnalités web complètes en Servlet/JSP/JSF ; gère les filtres, listeners, sessions",
+            "4": "Maîtrise les frameworks web legacy (Struts 2, JSF 2, PrimeFaces) ; conçoit des composants réutilisables",
+            "5": "Expert des stacks web Java EE ; guide la migration progressive vers des frameworks modernes (Angular, React)"
+          }
+        },
+        {
+          "id": "migration-legacy-moderne",
+          "label": "Stratégie de migration Legacy → Moderne",
+          "descriptors": {
+            "0": "N'a pas d'expérience en migration de systèmes legacy",
+            "1": "Comprend les enjeux de la modernisation ; connaît le concept de strangler fig pattern",
+            "2": "Participe à des projets de migration avec accompagnement ; identifie les composants à migrer en priorité",
+            "3": "Propose des stratégies de migration argumentées (big bang vs progressif, API wrapping, dual-run) ; rédige des études d'impact",
+            "4": "Pilote des chantiers de migration de bout en bout ; conçoit les couches d'abstraction legacy/moderne ; gère la co-existence",
+            "5": "Définit la roadmap de modernisation ; arbitre les compromis coût/risque/valeur ; référent stratégie de migration"
+          }
+        },
+        {
+          "id": "api-wrapping-legacy",
+          "label": "API Wrapping & Interfaces Legacy/Moderne",
+          "descriptors": {
+            "0": "N'a jamais exposé un système legacy via des APIs",
+            "1": "Comprend le concept d'encapsulation d'un système legacy derrière une API REST",
+            "2": "Implémente des wrappers API simples avec de l'aide ; utilise des adaptateurs pour convertir les formats de données",
+            "3": "Conçoit des couches anti-corruption (ACL) complètes ; gère le mapping bidirectionnel legacy↔moderne ; documente les contrats",
+            "4": "Architécte des passerelles complexes (batch-to-event, sync-to-async) ; gère les contraintes de performance et de volumétrie",
+            "5": "Expert en intégration legacy ; définit les patterns d'interopérabilité de l'équipe ; pilote la stratégie d'ouverture du SI"
+          }
+        }
+      ]
     }
   ]
 }

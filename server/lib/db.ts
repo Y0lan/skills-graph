@@ -431,7 +431,7 @@ export function initDatabase(): void {
   if (poleCatCount === 0) {
     const poleMapping: Record<string, string[]> = {
       legacy: [
-        'legacy-ibmi-adelia', 'core-engineering',
+        'legacy-ibmi-adelia', 'javaee-jboss', 'core-engineering',
         'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
       ],
       java_modernisation: [
@@ -461,6 +461,12 @@ export function initDatabase(): void {
   const infraCat = db.prepare("SELECT 1 FROM categories WHERE id = 'infrastructure-systems-network'").get()
   if (infraCat) {
     db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('java_modernisation', 'infrastructure-systems-network')").run()
+  }
+
+  // Migration: ensure javaee-jboss is in legacy pole (if category exists)
+  const javaEECat = db.prepare("SELECT 1 FROM categories WHERE id = 'javaee-jboss'").get()
+  if (javaEECat) {
+    db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('legacy', 'javaee-jboss')").run()
   }
 
   // Migration: add declined_categories column if missing
