@@ -1,0 +1,4 @@
+services:
+  sinapse_webhook.skill_radar_client:
+    class: Drupal\sinapse_webhook\SkillRadarClient
+    arguments: ['@http_client', '@config.factory', '@logger.factory']

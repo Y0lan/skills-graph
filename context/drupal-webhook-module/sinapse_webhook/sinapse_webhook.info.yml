@@ -1,0 +1,7 @@
+name: 'SINAPSE Webhook'
+type: module
+description: 'Forwards postuler webform submissions to Skill Radar API'
+core_version_requirement: ^10 || ^11
+package: Custom
+dependencies:
+  - webform:webform
