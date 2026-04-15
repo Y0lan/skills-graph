@@ -514,7 +514,8 @@ export default function CandidateDetailPage() {
             {/* Notes */}
             <CandidateNotesSection
               candidateId={candidate.id}
-              notes={notes}
+              candidatureId={candidatures[0]?.id}
+              notes={candidatures[0]?.notesDirecteur ?? notes}
               onNotesChange={setNotes}
             />
           </div>
