@@ -26,6 +26,13 @@ interface SkillDetailAccordionProps {
   onOpenChat?: (prefill: string) => void
 }
 
+const POLE_ORDER = ['java_modernisation', 'fonctionnel', 'legacy'] as const
+const POLE_DESCRIPTIONS: Record<string, string> = {
+  java_modernisation: 'Stack moderne : Java, Spring, Angular, Kubernetes, CI/CD, Cloud',
+  fonctionnel: 'Analyse métier, gestion de projet, conduite du changement, UX',
+  legacy: 'Systèmes IBMi, Adélia/RPG, AS/400, batch et interfaces legacy',
+}
+
 export default function SkillDetailAccordion({
   memberId, categories, teamMembers, teamCategories,
   comparedMember, isOwnProfile, onOpenChat,
@@ -86,14 +93,6 @@ export default function SkillDetailAccordion({
   const getRating = (skillId: string): number => {
     if (skillId in localOverrides) return localOverrides[skillId]
     return memberData?.skillRatings[skillId] ?? 0
-  }
-
-  // Group categories by primary pole
-  const POLE_ORDER = ['java_modernisation', 'fonctionnel', 'legacy'] as const
-  const POLE_DESCRIPTIONS: Record<string, string> = {
-    java_modernisation: 'Stack moderne : Java, Spring, Angular, Kubernetes, CI/CD, Cloud',
-    fonctionnel: 'Analyse métier, gestion de projet, conduite du changement, UX',
-    legacy: 'Systèmes IBMi, Adélia/RPG, AS/400, batch et interfaces legacy',
   }
 
   const groupedCategories = useMemo(() => {
