@@ -302,6 +302,17 @@ export function initDatabase(): void {
   `)
   db.exec("INSERT OR IGNORE INTO scoring_weights (id) VALUES ('default')")
 
+  // Per-skill target levels with requis/apprécié weighting for compatibility scoring
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS poste_skill_requirements (
+      poste_id TEXT NOT NULL REFERENCES postes(id) ON DELETE CASCADE,
+      skill_id TEXT NOT NULL REFERENCES skills(id),
+      target_level INTEGER NOT NULL DEFAULT 3 CHECK(target_level BETWEEN 1 AND 5),
+      importance TEXT NOT NULL DEFAULT 'requis' CHECK(importance IN ('requis', 'apprecie')),
+      PRIMARY KEY (poste_id, skill_id)
+    )
+  `)
+
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')

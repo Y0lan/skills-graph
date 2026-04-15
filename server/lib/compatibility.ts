@@ -6,16 +6,64 @@ const GAP_BONUS_MULTIPLIER = 10
 /**
  * Calculate compatibility score between a candidate and a poste.
  *
- * PHASE 1 SIMPLIFICATION: Uses category-average scoring rather than the
- * per-skill formula from the design doc. The design doc specifies:
- *   score = Σ(min(candidat, attendu) / attendu × poids) / Σ(poids) × 100
- * with requis=2, apprecie=1 weighting per skill.
+ * If per-skill requirements exist in `poste_skill_requirements` for this role's
+ * poste, uses the weighted formula:
+ *   score = Σ(min(candidate_level, target_level) / target_level × weight) / Σ(weight) × 100
+ *   where weight = 2 for 'requis', weight = 1 for 'apprecie'
  *
- * Phase 1 instead averages candidate scores per category and normalizes to 0-100.
- * Phase 2 will add a `poste_skill_requirements` table with per-skill target levels
- * and requis/apprecie weights to implement the exact formula.
+ * Fallback: if no requirements exist, uses the original category-average logic
+ * (backward compatibility).
  */
 export function calculatePosteCompatibility(
+  candidateRatings: Record<string, number>,
+  posteRoleId: string,
+): number {
+  const db = getDb()
+
+  // Check if any poste linked to this role has skill requirements
+  const posteRow = db.prepare('SELECT id FROM postes WHERE role_id = ?').get(posteRoleId) as { id: string } | undefined
+  if (posteRow) {
+    const requirements = db.prepare(
+      'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?'
+    ).all(posteRow.id) as { skill_id: string; target_level: number; importance: string }[]
+
+    if (requirements.length > 0) {
+      return calculateWeightedCompatibility(candidateRatings, requirements)
+    }
+  }
+
+  // Fallback: category-average scoring
+  return calculateCategoryAverageCompatibility(candidateRatings, posteRoleId)
+}
+
+/**
+ * Weighted per-skill compatibility scoring.
+ * score = Σ(min(candidate_level, target_level) / target_level × weight) / Σ(weight) × 100
+ * where weight = 2 for 'requis', weight = 1 for 'apprecie'
+ */
+function calculateWeightedCompatibility(
+  candidateRatings: Record<string, number>,
+  requirements: { skill_id: string; target_level: number; importance: string }[],
+): number {
+  let weightedSum = 0
+  let totalWeight = 0
+
+  for (const req of requirements) {
+    const weight = req.importance === 'requis' ? 2 : 1
+    const candidateLevel = candidateRatings[req.skill_id] ?? 0
+    const contribution = (Math.min(candidateLevel, req.target_level) / req.target_level) * weight
+    weightedSum += contribution
+    totalWeight += weight
+  }
+
+  return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) : 0
+}
+
+/**
+ * Original category-average compatibility scoring (Phase 1 fallback).
+ * Averages candidate scores per category and normalizes to 0-100.
+ */
+function calculateCategoryAverageCompatibility(
   candidateRatings: Record<string, number>,
   posteRoleId: string,
 ): number {

@@ -176,6 +176,33 @@ protectedRouter.get('/postes', (_req, res) => {
   })))
 })
 
+// List skill requirements for a poste
+protectedRouter.get('/postes/:posteId/requirements', (req, res) => {
+  const rows = getDb().prepare('SELECT * FROM poste_skill_requirements WHERE poste_id = ? ORDER BY skill_id')
+    .all(req.params.posteId)
+  res.json(rows)
+})
+
+// Bulk update skill requirements for a poste
+protectedRouter.put('/postes/:posteId/requirements', mutationRateLimit, (req, res) => {
+  const { requirements } = req.body // Array of { skill_id, target_level, importance }
+  if (!Array.isArray(requirements)) {
+    res.status(400).json({ error: 'requirements must be an array' })
+    return
+  }
+
+  const db = getDb()
+  db.transaction(() => {
+    db.prepare('DELETE FROM poste_skill_requirements WHERE poste_id = ?').run(req.params.posteId)
+    const insert = db.prepare('INSERT INTO poste_skill_requirements (poste_id, skill_id, target_level, importance) VALUES (?, ?, ?, ?)')
+    for (const r of requirements) {
+      insert.run(req.params.posteId, r.skill_id, r.target_level ?? 3, r.importance ?? 'requis')
+    }
+  })()
+
+  res.json({ ok: true, count: requirements.length })
+})
+
 // List candidatures with filters
 protectedRouter.get('/candidatures', (req, res) => {
   const { poste, pole, statut } = req.query
