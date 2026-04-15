@@ -3,8 +3,9 @@ import rateLimit from 'express-rate-limit'
 import { getDb, getRoleCategories } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
-import { safeJsonParse, type CandidateRow } from '../lib/types.js'
+import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from '../lib/compatibility.js'
+import { requireLead } from '../middleware/require-lead.js'
 
 export const evaluateRouter = Router()
 
@@ -178,4 +179,32 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   }
 
   res.json({ ok: true, submittedAt: now })
+})
+
+// Reopen a submitted evaluation (lead only)
+evaluateRouter.post('/:id/reopen', requireLead, (req, res) => {
+  const db = getDb()
+  const candidate = db.prepare('SELECT id, submitted_at, ratings FROM candidates WHERE id = ?')
+    .get(req.params.id) as { id: string; submitted_at: string | null; ratings: string } | undefined
+
+  if (!candidate) {
+    res.status(404).json({ error: 'Candidat introuvable' })
+    return
+  }
+  if (!candidate.submitted_at) {
+    res.status(400).json({ error: 'Évaluation pas encore soumise' })
+    return
+  }
+
+  // Snapshot current ratings before reopen
+  const user = getUser(req)
+  db.prepare(`INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+    SELECT c.id, 'evaluation_reopened', ?, ?
+    FROM candidatures c WHERE c.candidate_id = ?`)
+    .run(JSON.stringify({ ratings_snapshot: candidate.ratings, reopened_at: new Date().toISOString() }),
+      user.slug ?? 'system', req.params.id)
+
+  db.prepare('UPDATE candidates SET submitted_at = NULL WHERE id = ?').run(req.params.id)
+
+  res.json({ ok: true })
 })

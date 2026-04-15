@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useTransitionState } from '@/hooks/use-transition-state'
@@ -179,6 +179,28 @@ export default function CandidateDetailPage() {
           ) : (
             <Badge variant="default" className="ml-auto bg-primary">Soumis</Badge>
           )}
+          {candidate.submittedAt && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
+                  method: 'POST',
+                  credentials: 'include',
+                })
+                if (res.ok) {
+                  toast.success('Évaluation rouverte — le candidat peut modifier ses réponses')
+                  window.location.reload()
+                } else {
+                  toast.error('Erreur lors de la réouverture')
+                }
+              }}
+              className="gap-1.5"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Rouvrir l'évaluation
+            </Button>
+          )}
         </div>
 
         {/* Contact info */}
@@ -309,8 +331,8 @@ export default function CandidateDetailPage() {
                 </div>
               )}
 
-              {/* Email checkbox for skill_radar_envoye */}
-              {transitionDialog?.targetStatut === 'skill_radar_envoye' && (
+              {/* Email checkbox for transitions (all except skill_radar_complete) */}
+              {transitionDialog?.targetStatut && transitionDialog.targetStatut !== 'skill_radar_complete' && transitionDialog.targetStatut !== 'refuse' && (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -318,7 +340,11 @@ export default function CandidateDetailPage() {
                     onChange={(e) => setTransitionSendEmail(e.target.checked)}
                     className="rounded border-input"
                   />
-                  <span className="text-sm">Envoyer le lien d'évaluation par email au candidat</span>
+                  <span className="text-sm">
+                    {transitionDialog.targetStatut === 'skill_radar_envoye'
+                      ? "Envoyer le lien d'évaluation par email au candidat"
+                      : 'Envoyer un email de notification au candidat'}
+                  </span>
                 </label>
               )}
 
