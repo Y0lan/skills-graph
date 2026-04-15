@@ -14,12 +14,14 @@ import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type Candid
 interface ParsedIntake {
   fields: Record<string, string>
   files: Map<string, { buffer: Buffer; mimetype: string; filename: string }>
+  warnings: string[]
 }
 
 function parseMultipartIntake(req: import('express').Request): Promise<ParsedIntake> {
   return new Promise((resolve, reject) => {
     const fields: Record<string, string> = {}
     const files = new Map<string, { buffer: Buffer; mimetype: string; filename: string }>()
+    const warnings: string[] = []
     const bb = busboy({
       headers: req.headers,
       limits: { fileSize: 10 * 1024 * 1024, files: 2 }
@@ -28,20 +30,24 @@ function parseMultipartIntake(req: import('express').Request): Promise<ParsedInt
     const allowedMimes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']
     bb.on('file', (name: string, stream: Readable, info: { filename: string; mimeType: string }) => {
       if (!allowedMimes.includes(info.mimeType)) {
+        warnings.push(`Fichier ${info.filename} ignoré : type ${info.mimeType} non supporté`)
         stream.resume() // drain non-allowed file
         return
       }
       const chunks: Buffer[] = []
       let truncated = false
       stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-      stream.on('limit', () => { truncated = true })
+      stream.on('limit', () => {
+        truncated = true
+        warnings.push(`Fichier ${info.filename} tronqué : dépasse la taille maximale`)
+      })
       stream.on('end', () => {
         if (!truncated) {
           files.set(name, { buffer: Buffer.concat(chunks), mimetype: info.mimeType, filename: info.filename })
         }
       })
     })
-    bb.on('close', () => { clearTimeout(timer); resolve({ fields, files }) })
+    bb.on('close', () => { clearTimeout(timer); resolve({ fields, files, warnings }) })
     bb.on('error', (err: Error) => { clearTimeout(timer); reject(err) })
     const timer = setTimeout(() => { req.unpipe(bb); reject(new Error('Upload timeout')) }, 30000)
     req.pipe(bb)
@@ -110,10 +116,12 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
     let cvFile: { buffer: Buffer; mimetype: string; originalname?: string } | null = null
     let lettreFile: { buffer: Buffer; mimetype: string; originalname?: string } | null = null
 
+    let warnings: string[] = []
     const contentType = req.headers['content-type'] || ''
     if (contentType.startsWith('multipart/')) {
       const parsed = await parseMultipartIntake(req)
       fields = parsed.fields
+      warnings = parsed.warnings
       const cv = parsed.files.get('cv')
       if (cv) cvFile = { buffer: cv.buffer, mimetype: cv.mimetype, originalname: cv.filename }
       const lettre = parsed.files.get('lettre')
@@ -129,7 +137,7 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
       return
     }
 
-    res.status(result.updated ? 200 : 201).json(result)
+    res.status(result.updated ? 200 : 201).json({ ...result, warnings })
   } catch (err) {
     console.error('[Intake] Error:', err)
     res.status(500).json({ error: 'Erreur interne' })
