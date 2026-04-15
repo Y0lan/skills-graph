@@ -22,9 +22,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3, Info } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
+import KanbanBoard from '@/components/recruit/kanban-board'
 
 interface Poste {
   id: string
@@ -119,6 +121,9 @@ export default function RecruitPipelinePage() {
   const [weightEquipe, setWeightEquipe] = useState(20)
   const [weightSoft, setWeightSoft] = useState(30)
   const [savingWeights, setSavingWeights] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() =>
+    (localStorage.getItem('pipeline-view') as 'list' | 'kanban') ?? 'list'
+  )
 
   const fetchData = useCallback(async () => {
     try {
@@ -174,6 +179,37 @@ export default function RecruitPipelinePage() {
     } catch { /* silent */ }
     finally { setSavingWeights(false) }
   }, [weightPoste, weightEquipe, weightSoft, fetchData])
+
+  const changeView = useCallback((mode: 'list' | 'kanban') => {
+    setViewMode(mode)
+    localStorage.setItem('pipeline-view', mode)
+  }, [])
+
+  const handleKanbanTransition = useCallback(async (candidatureId: string, newStatut: string) => {
+    // Statuses that require notes go through the full dialog — snap back for now
+    if (newStatut === 'refuse' || newStatut === 'embauche') {
+      toast.info(`Utilisez la vue détail pour passer au statut « ${STATUT_LABELS[newStatut] ?? newStatut} »`)
+      return
+    }
+    try {
+      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ statut: newStatut }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erreur serveur' }))
+        throw new Error(err.error || 'Transition refusée')
+      }
+      toast.success(`Statut changé : ${STATUT_LABELS[newStatut] ?? newStatut}`)
+      fetchData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')
+      // Refetch to reset card positions
+      fetchData()
+    }
+  }, [fetchData])
 
   if (loading) {
     return (
@@ -387,12 +423,33 @@ export default function RecruitPipelinePage() {
             </Button>
           )}
 
-          <Link to="/recruit" className="text-sm text-muted-foreground ml-auto hover:text-foreground hover:underline">
+          <div className="inline-flex rounded-md border border-border ml-auto">
+            <Button
+              variant={viewMode === 'list' ? 'default' : 'ghost'}
+              size="sm"
+              className="gap-1.5 rounded-r-none text-xs"
+              onClick={() => changeView('list')}
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+              Liste
+            </Button>
+            <Button
+              variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+              size="sm"
+              className="gap-1.5 rounded-l-none text-xs"
+              onClick={() => changeView('kanban')}
+            >
+              <Kanban className="h-3.5 w-3.5" />
+              Kanban
+            </Button>
+          </div>
+
+          <Link to="/recruit" className="text-sm text-muted-foreground hover:text-foreground hover:underline">
             {filtered.length} candidature{filtered.length !== 1 ? 's' : ''}
           </Link>
         </div>
 
-        {/* Candidatures list */}
+        {/* Candidatures — list or kanban */}
         {filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -401,6 +458,19 @@ export default function RecruitPipelinePage() {
               <p className="text-xs mt-1">Les candidatures arrivent via sinapse.nc ou peuvent être créées manuellement.</p>
             </CardContent>
           </Card>
+        ) : viewMode === 'kanban' ? (
+          <KanbanBoard
+            candidatures={filtered.map(c => ({
+              id: c.id,
+              candidateId: c.candidateId,
+              candidateName: c.candidateName,
+              posteTitre: c.posteTitre,
+              statut: c.statut,
+              tauxPoste: c.tauxPoste,
+              tauxGlobal: c.tauxGlobal,
+            }))}
+            onTransition={handleKanbanTransition}
+          />
         ) : (
           <div className="space-y-2">
             {filtered.map(c => (
