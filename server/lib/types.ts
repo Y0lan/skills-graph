@@ -32,6 +32,7 @@ export interface CandidateRow {
   notes: string | null
   cv_text: string | null
   ai_suggestions: string | null
+  version: number
 }
 
 export interface RoleRow {

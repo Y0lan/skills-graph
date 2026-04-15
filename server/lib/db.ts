@@ -479,6 +479,12 @@ export function initDatabase(): void {
     db.exec("ALTER TABLE candidates ADD COLUMN declined_categories TEXT DEFAULT '[]'")
   }
 
+  // Migration: add version column to candidates
+  const candidateCols = db.prepare("PRAGMA table_info(candidates)").all() as { name: string }[]
+  if (!candidateCols.some(c => c.name === 'version')) {
+    db.exec("ALTER TABLE candidates ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+  }
+
   // One-time migration from ratings.json
   if (fs.existsSync(JSON_PATH)) {
     try {

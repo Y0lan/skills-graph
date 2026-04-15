@@ -21,7 +21,7 @@ evaluateRouter.use(publicRateLimit)
 // Shared guard: check candidate exists, not expired, not submitted
 function getCandidateGuard(id: string, res: import('express').Response, opts?: { allowSubmitted?: boolean }) {
   const row = getDb()
-    .prepare('SELECT id, name, role, role_id, created_by, expires_at, submitted_at, ratings, ai_suggestions FROM candidates WHERE id = ?')
+    .prepare('SELECT id, name, role, role_id, created_by, expires_at, submitted_at, ratings, ai_suggestions, version FROM candidates WHERE id = ?')
     .get(id) as CandidateRow | undefined
 
   if (!row) {
@@ -56,6 +56,7 @@ evaluateRouter.get('/:id/form', (req, res) => {
     submitted: !!row.submitted_at,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     roleCategories: row.role_id ? getRoleCategories(row.role_id) : null,
+    version: row.version,
   })
 })
 
@@ -64,7 +65,7 @@ evaluateRouter.put('/:id/ratings', (req, res) => {
   const row = getCandidateGuard(req.params.id, res)
   if (!row) return
 
-  const { ratings, experience, skippedCategories } = req.body
+  const { ratings, experience, skippedCategories, version } = req.body
 
   const ratingsError = validateRatings(ratings)
   if (ratingsError) {
@@ -72,8 +73,13 @@ evaluateRouter.put('/:id/ratings', (req, res) => {
     return
   }
 
+  if (version !== undefined && version < row.version) {
+    res.status(409).json({ error: 'Version obsolète' })
+    return
+  }
+
   getDb().prepare(
-    'UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ? WHERE id = ?'
+    'UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ?, version = version + 1 WHERE id = ?'
   ).run(
     JSON.stringify(ratings),
     JSON.stringify(experience ?? {}),
@@ -108,7 +114,7 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   const submitTransaction = db.transaction(() => {
     if (ratings && typeof ratings === 'object' && !Array.isArray(ratings)) {
       db.prepare(
-        'UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ? WHERE id = ?'
+        'UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ?, version = version + 1 WHERE id = ?'
       ).run(
         JSON.stringify(ratings),
         JSON.stringify(experience ?? {}),
