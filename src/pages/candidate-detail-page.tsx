@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import AppHeader from '@/components/app-header'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
@@ -14,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,8 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Input } from '@/components/ui/input'
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2 } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useTransitionState } from '@/hooks/use-transition-state'
@@ -47,6 +49,7 @@ export default function CandidateDetailPage() {
     multiPosteCompatibility,
     bonusSkills,
     notes, setNotes,
+    candidatureDataMap,
   } = useCandidateData(id)
 
   const {
@@ -57,12 +60,32 @@ export default function CandidateDetailPage() {
     transitionFile, setTransitionFile,
     transitionSendEmail, setTransitionSendEmail,
     transitionIncludeReason, setTransitionIncludeReason,
+    transitionEmailSubject,
+    transitionEmailBody, setTransitionEmailBody,
+    transitionEmailExpanded, setTransitionEmailExpanded,
+    transitionShowMarkdownPreview, setTransitionShowMarkdownPreview,
+    transitionAboroDate, setTransitionAboroDate,
+    transitionHasEmailTemplate,
+    transitionEmailLoading,
+    transitionFileError,
     openTransitionDialog,
     closeTransitionDialog,
     confirmTransition,
   } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions)
 
   const [analyzing, setAnalyzing] = useState(false)
+
+  // Wrap openTransitionDialog to inject candidate name & role
+  const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[]) => {
+    openTransitionDialog(
+      candidatureId,
+      targetStatut,
+      isSkip,
+      skipped,
+      candidate?.name ?? '',
+      candidate?.role ?? '',
+    )
+  }, [openTransitionDialog, candidate])
 
   // Fetch sibling candidates for prev/next navigation
   const [siblings, setSiblings] = useState<{ id: string; name: string }[]>([])
@@ -91,6 +114,18 @@ export default function CandidateDetailPage() {
       setAnalyzing(false)
     }
   }, [id, setCandidate])
+
+  // File drop handler for the transition dialog
+  const handleFileDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (file) setTransitionFile(file)
+  }, [setTransitionFile])
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) setTransitionFile(file)
+  }, [setTransitionFile])
 
   if (loading) {
     return (
@@ -155,6 +190,10 @@ export default function CandidateDetailPage() {
   ).sort((a, b) => (b?.gap ?? 0) - (a?.gap ?? 0))
 
   const isPending = !candidate.submittedAt
+
+  const showEmailSection = transitionDialog &&
+    transitionDialog.targetStatut !== 'skill_radar_complete' &&
+    (transitionHasEmailTemplate || transitionEmailLoading)
 
   return (
     <div className="min-h-screen bg-background">
@@ -243,7 +282,8 @@ export default function CandidateDetailPage() {
           events={events}
           allowedTransitions={allowedTransitions}
           changingStatus={changingStatus}
-          onOpenTransition={openTransitionDialog}
+          onOpenTransition={handleOpenTransition}
+          candidatureDataMap={candidatureDataMap}
         />
 
         {/* Prev/Next candidate navigation */}
@@ -277,7 +317,7 @@ export default function CandidateDetailPage() {
 
         {/* Transition confirmation dialog */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
-          <AlertDialogContent>
+          <AlertDialogContent className="max-w-lg">
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {transitionDialog?.targetStatut === 'refuse'
@@ -300,39 +340,76 @@ export default function CandidateDetailPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <div className="space-y-3 py-2">
-              {/* Notes */}
-              <div>
-                <label className="text-sm font-medium">
-                  Notes {transitionDialog?.notesRequired ? '(obligatoire)' : '(optionnel)'}
-                </label>
-                <Textarea
-                  value={transitionNotes}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionNotes(e.target.value)}
-                  placeholder={
-                    transitionDialog?.targetStatut === 'refuse' ? 'Raison du refus...' :
-                    transitionDialog?.targetStatut === 'embauche' ? 'Notes sur l\'embauche...' :
-                    'Notes sur cette étape...'
-                  }
-                  rows={3}
-                />
-              </div>
+            <div className="space-y-4 py-2">
+              {/* 1. Email preview section (first -- external consequence) */}
+              {showEmailSection && (
+                <div className="rounded-lg border">
+                  {transitionEmailLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Chargement du modèle d'email...
+                    </div>
+                  ) : transitionHasEmailTemplate && (
+                    <>
+                      {/* Collapsed header */}
+                      <button
+                        type="button"
+                        onClick={() => setTransitionEmailExpanded(!transitionEmailExpanded)}
+                        className="flex items-center gap-2 w-full px-3 py-2.5 text-sm hover:bg-muted/50 rounded-t-lg transition-colors"
+                      >
+                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="font-medium">Email au candidat</span>
+                        {transitionEmailSubject && (
+                          <span className="text-muted-foreground truncate ml-1 text-xs">— {transitionEmailSubject}</span>
+                        )}
+                        {transitionEmailExpanded
+                          ? <ChevronDown className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
+                          : <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
+                        }
+                      </button>
 
-              {/* Skip reason */}
-              {transitionDialog?.isSkip && (
-                <div>
-                  <label className="text-sm font-medium">Raison du saut (obligatoire)</label>
-                  <Textarea
-                    value={transitionSkipReason}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipReason(e.target.value)}
-                    placeholder="Pourquoi sauter cette étape ?"
-                    rows={2}
-                  />
+                      {/* Expanded content */}
+                      {transitionEmailExpanded && (
+                        <div className="px-3 pb-3 space-y-2 border-t">
+                          <div className="pt-2">
+                            <label className="text-xs font-medium text-muted-foreground">Objet</label>
+                            <Input
+                              value={transitionEmailSubject}
+                              readOnly
+                              className="mt-1 text-sm bg-muted/30"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Corps du message</label>
+                            <Textarea
+                              value={transitionEmailBody}
+                              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionEmailBody(e.target.value)}
+                              rows={6}
+                              className="mt-1 text-sm"
+                            />
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs text-muted-foreground gap-1.5"
+                            disabled
+                          >
+                            <Wand2 className="h-3 w-3" />
+                            Rédiger avec l'IA
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
-              {/* Email checkbox for transitions (all except skill_radar_complete) */}
-              {transitionDialog?.targetStatut && transitionDialog.targetStatut !== 'skill_radar_complete' && transitionDialog.targetStatut !== 'refuse' && (
+              {/* Email toggle for statuses without templates (non skill_radar_complete) */}
+              {transitionDialog?.targetStatut &&
+                transitionDialog.targetStatut !== 'skill_radar_complete' &&
+                !transitionHasEmailTemplate &&
+                !transitionEmailLoading &&
+                transitionDialog.targetStatut !== 'refuse' && (
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -361,21 +438,118 @@ export default function CandidateDetailPage() {
                 </label>
               )}
 
-              {/* Aboro file upload */}
-              {transitionDialog?.targetStatut === 'aboro' && (
+              {/* Skip reason */}
+              {transitionDialog?.isSkip && (
                 <div>
-                  <label className="text-sm font-medium">Rapport Âboro (PDF)</label>
-                  <Input
-                    type="file"
-                    accept=".pdf"
-                    onChange={(e) => setTransitionFile(e.target.files?.[0] ?? null)}
+                  <label className="text-sm font-medium">Raison du saut (obligatoire)</label>
+                  <Textarea
+                    value={transitionSkipReason}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipReason(e.target.value)}
+                    placeholder="Pourquoi sauter cette étape ?"
+                    rows={2}
                     className="mt-1"
                   />
-                  {!transitionFile && (
-                    <p className="text-xs text-muted-foreground mt-1">Optionnel. Vous pourrez l'ajouter plus tard.</p>
-                  )}
                 </div>
               )}
+
+              {/* 2. Notes section (markdown) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-medium">
+                    Notes internes{' '}
+                    {transitionDialog?.notesRequired && (
+                      <span className="text-muted-foreground font-normal">(obligatoire)</span>
+                    )}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setTransitionShowMarkdownPreview(!transitionShowMarkdownPreview)}
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {transitionShowMarkdownPreview ? 'Éditer' : 'Aperçu'}
+                  </button>
+                </div>
+                {transitionShowMarkdownPreview ? (
+                  <div className="rounded-md border px-3 py-2 min-h-[80px] prose prose-sm dark:prose-invert max-w-none text-sm [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1">
+                    {transitionNotes.trim() ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{transitionNotes}</ReactMarkdown>
+                    ) : (
+                      <p className="text-muted-foreground italic">Aucune note</p>
+                    )}
+                  </div>
+                ) : (
+                  <Textarea
+                    value={transitionNotes}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionNotes(e.target.value)}
+                    placeholder="Notes en markdown..."
+                    rows={3}
+                  />
+                )}
+              </div>
+
+              {/* 3. Files section */}
+              <div className="space-y-2">
+                {/* Aboro date picker */}
+                {transitionDialog?.targetStatut === 'aboro' && (
+                  <div>
+                    <label className="text-sm font-medium flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Date de passage Aboro
+                    </label>
+                    <Input
+                      type="date"
+                      value={transitionAboroDate}
+                      onChange={(e) => setTransitionAboroDate(e.target.value)}
+                      className="mt-1 w-auto"
+                    />
+                  </div>
+                )}
+
+                {/* File drop zone */}
+                <div>
+                  {transitionFile ? (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="gap-1.5 text-xs py-1 px-2">
+                        <FileText className="h-3 w-3" />
+                        {transitionFile.name}
+                        <button
+                          type="button"
+                          onClick={() => setTransitionFile(null)}
+                          className="ml-1 hover:text-foreground"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    </div>
+                  ) : (
+                    <div
+                      onDrop={handleFileDrop}
+                      onDragOver={(e) => e.preventDefault()}
+                      className="border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                      onClick={() => document.getElementById('transition-file-input')?.click()}
+                    >
+                      <Upload className="h-4 w-4 mx-auto text-muted-foreground" />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Glisser un fichier ou cliquer pour ajouter
+                      </p>
+                      <input
+                        id="transition-file-input"
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* File error */}
+                {transitionFileError && (
+                  <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{transitionFileError}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <AlertDialogFooter>
@@ -531,7 +705,7 @@ export default function CandidateDetailPage() {
                   </div>
                 ) : (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    Cliquez sur « Générer l'analyse » pour obtenir un rapport IA comparant ce candidat à l'équipe.
+                    Cliquez sur &laquo; Générer l'analyse &raquo; pour obtenir un rapport IA comparant ce candidat à l'équipe.
                   </p>
                 )}
               </CardContent>

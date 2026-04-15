@@ -228,10 +228,12 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
       type TEXT NOT NULL DEFAULT 'status_change'
-        CHECK(type IN ('status_change','note','entretien','document','email')),
+        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open')),
       statut_from TEXT,
       statut_to TEXT,
       notes TEXT,
+      content_md TEXT,
+      email_snapshot TEXT,
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -284,6 +286,43 @@ export function initDatabase(): void {
       ALTER TABLE candidature_documents_new RENAME TO candidature_documents;
     `)
   }
+
+  // Idempotent migration: widen candidature_events CHECK constraint + add content_md, email_snapshot columns
+  const hasOldEventCheck = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return tableInfo?.sql?.includes("'email')") && !tableInfo?.sql?.includes("'email_sent'")
+  })()
+
+  if (hasOldEventCheck) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS candidature_events_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'status_change'
+          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open')),
+        statut_from TEXT,
+        statut_to TEXT,
+        notes TEXT,
+        content_md TEXT,
+        email_snapshot TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at)
+        SELECT id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events;
+      DROP TABLE candidature_events;
+      ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
+    `)
+  }
+
+  // Idempotent: add content_md and email_snapshot if table has new CHECK but missing columns
+  try { db.exec('ALTER TABLE candidature_events ADD COLUMN content_md TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidature_events ADD COLUMN email_snapshot TEXT') } catch { /* already exists */ }
+
+  // Idempotent: add event_id FK to candidature_documents for linking files to transition events
+  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN event_id INTEGER REFERENCES candidature_events(id)') } catch { /* already exists */ }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_event ON candidature_documents(event_id)')
 
   // Idempotent column additions for soft skill scoring + global score
   try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }

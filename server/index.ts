@@ -121,6 +121,8 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/catalog' || req.path === '/catalog/') return next()
   if (req.path.startsWith('/evaluate/')) return next()
   if (req.path === '/recruitment/intake' || req.path === '/recruitment/intake/') return next()
+  if (req.path === '/recruitment/webhooks/resend' || req.path === '/recruitment/webhooks/resend/') return next()
+  if (req.path.startsWith('/webhooks/')) return next()
   if (req.method === 'GET' && (req.path === '/ratings/status' || req.path === '/ratings/status/')) return next()
   return requireAuth(req, res, next)
 })

@@ -3,6 +3,14 @@ import { getDb } from './db.js'
 import { computeTeamAggregate } from './aggregates.js'
 import { getSkillCategories } from './catalog.js'
 import { safeJsonParse, type CandidateRow } from './types.js'
+import type { AboroProfile } from './aboro-extraction.js'
+
+function stripPii(text: string | undefined | null): string {
+  if (!text) return ''
+  return text
+    .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[email masqué]')
+    .replace(/(\+?\d[\d\s.-]{7,})/g, '[téléphone masqué]')
+}
 
 export async function generateCandidateAnalysis(candidateId: string): Promise<string> {
   const db = getDb()
@@ -42,6 +50,32 @@ export async function generateCandidateAnalysis(candidateId: string): Promise<st
     }
   })
 
+  // Fetch Aboro profile if available
+  let aboroContext = ''
+  const aboroRow = db.prepare(
+    'SELECT profile_json FROM aboro_profiles WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).get(candidateId) as { profile_json: string } | undefined
+
+  if (aboroRow) {
+    const profile = safeJsonParse<AboroProfile | null>(aboroRow.profile_json, null)
+    if (profile) {
+      const traitSummary = Object.entries(profile.traits).map(([axis, traits]) => {
+        const items = Object.entries(traits as Record<string, number>)
+          .map(([k, v]) => `${k}: ${v}/10`)
+          .join(', ')
+        return `  ${axis}: ${items}`
+      }).join('\n')
+      const talents = profile.talents?.length ? `Talents: ${profile.talents.join(', ')}` : ''
+      const axes = profile.axes_developpement?.length ? `Axes de développement: ${profile.axes_developpement.join(', ')}` : ''
+      aboroContext = `\nPROFIL COMPORTEMENTAL ÂBORO :\n${traitSummary}${talents ? `\n${talents}` : ''}${axes ? `\n${axes}` : ''}\n`
+    }
+  }
+
+  // Include CV text if available (sanitized)
+  const cvContext = candidate.cv_text
+    ? `\nEXTRAIT CV :\n${stripPii(candidate.cv_text).slice(0, 3000)}\n`
+    : ''
+
   // Sanitize inputs for prompt injection protection
   const safeName = candidate.name.replace(/[<>&]/g, '').slice(0, 100)
   const safeRole = candidate.role.replace(/[<>&]/g, '').slice(0, 100)
@@ -57,7 +91,7 @@ ${teamByCategory.map(c => `- ${c.category}: ${c.average}/5 (${c.memberCount} mem
 
 CANDIDAT : <candidate_name>${safeName}</candidate_name>, poste visé : <candidate_role>${safeRole}</candidate_role>
 ${candidateByCategory.map(c => `- ${c.category}: ${c.average}/5 (${c.skills.map(s => `${s.label}: ${s.score}`).join(', ')})`).join('\n')}
-
+${aboroContext}${cvContext}
 Génère un rapport structuré :
 
 1. **Compétences comblées** — Quels gaps de l'équipe ce candidat comble-t-il ? Cite les compétences spécifiques avec les niveaux.
@@ -68,7 +102,8 @@ Génère un rapport structuré :
 
 4. **Complémentarité** — Comment ce candidat s'intègre-t-il ? Est-il un doublon d'un profil existant ou apporte-t-il quelque chose de nouveau ?
 
-5. **Verdict** — Évaluation initiale : Match fort / Match partiel / Match faible. Justifie en 2 phrases. Rappelle que ces résultats sont basés sur l'auto-évaluation et doivent être confirmés en entretien.`
+5. **Verdict** — Évaluation initiale : Match fort / Match partiel / Match faible. Justifie en 2 phrases. Rappelle que ces résultats sont basés sur l'auto-évaluation et doivent être confirmés en entretien.
+${aboroContext ? '\n6. **Profil comportemental** — Analyse les traits Âboro. Points forts comportementaux, points de vigilance, adéquation avec le poste et l\'équipe.' : ''}`
 
   const client = new Anthropic()
   const message = await client.messages.create({

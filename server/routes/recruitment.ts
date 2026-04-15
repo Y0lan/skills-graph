@@ -2,9 +2,11 @@ import { Router } from 'express'
 import { Readable } from 'stream'
 import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
+import Anthropic from '@anthropic-ai/sdk'
+import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { sendCandidateInvite, sendCandidateDeclined, sendTransitionNotification } from '../lib/email.js'
+import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
@@ -437,9 +439,32 @@ protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
   })
 })
 
+// Get default email template for a given status
+protectedRouter.get('/email-template/:statut', (req, res) => {
+  const { candidateName, role, evaluationUrl } = req.query
+
+  if (!candidateName || !role || typeof candidateName !== 'string' || typeof role !== 'string') {
+    res.status(400).json({ error: 'candidateName and role query params required' })
+    return
+  }
+
+  const template = getEmailTemplate(req.params.statut, {
+    candidateName,
+    role,
+    evaluationUrl: typeof evaluationUrl === 'string' ? evaluationUrl : undefined,
+  })
+
+  if (!template) {
+    res.json({ error: 'no_template' })
+    return
+  }
+
+  res.json(template)
+})
+
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req, res) => {
-  const { statut, notes, skipReason, sendEmail, includeReasonInEmail } = req.body
+  const { statut, notes, skipReason, sendEmail, includeReasonInEmail, customBody } = req.body
 
   if (!statut || typeof statut !== 'string') {
     res.status(400).json({ error: 'Statut requis' })
@@ -492,105 +517,81 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
   })()
 
-  // Send evaluation email if transitioning to skill_radar_envoye and sendEmail is true
+  // Unified email dispatch for all transition types
   let emailSent = false
-  if (statut === 'skill_radar_envoye' && sendEmail) {
+  const candidatureId = req.params.id
+  const shouldSendEmail = statut === 'refuse' || sendEmail
+  const isEmailableStatus = statut !== 'skill_radar_complete'
+
+  if (shouldSendEmail && isEmailableStatus) {
     const candidateInfo = getDb().prepare(`
       SELECT cand.name, cand.email, cand.role, cand.id as candidate_id
       FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
       WHERE c.id = ?
-    `).get(req.params.id) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
+    `).get(candidatureId) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
 
     if (candidateInfo?.email) {
       const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
+      const userSlug = user.slug || 'unknown'
+
       try {
-        const result = await sendCandidateInvite({
-          to: candidateInfo.email,
-          candidateName: candidateInfo.name,
-          role: candidateInfo.role,
-          evaluationUrl: `${baseUrl}/evaluate/${candidateInfo.candidate_id}`,
-        })
-        emailSent = result !== null
-        if (emailSent) {
-          getDb().prepare(`
-            INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-            VALUES (?, 'email_sent', ?, ?)
-          `).run(req.params.id, `Lien d'évaluation envoyé à ${candidateInfo.email}`, user.slug || 'unknown')
-        }
-      } catch (err) {
-        console.error('[Email] Failed to send evaluation link:', err)
-        emailSent = false
-        getDb().prepare(`
-          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-          VALUES (?, 'email_failed', ?, ?)
-        `).run(req.params.id, `Échec envoi email à ${candidateInfo.email}`, user.slug || 'unknown')
-      }
-    }
-  }
-
-  // Send decline emails when transitioning to refuse
-  if (statut === 'refuse') {
-    const candidateInfo = getDb().prepare(`
-      SELECT cand.name, cand.email, cand.role, c.candidate_id
-      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE c.id = ?
-    `).get(req.params.id) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
-
-    if (candidateInfo?.email) {
-      const leadSlug = user.slug || 'unknown'
-      const leadEmail = `${leadSlug.replaceAll('-', '.')}@sinapse.nc`
-      try {
-        const result = await sendCandidateDeclined({
-          candidateName: candidateInfo.name,
-          role: candidateInfo.role,
-          candidateEmail: candidateInfo.email,
-          leadEmail,
-          reason: notes?.trim() || undefined,
-          includeReason: !!includeReasonInEmail,
-        })
-        emailSent = result !== null
-        if (emailSent) {
-          getDb().prepare(`
-            INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-            VALUES (?, 'email_sent', ?, ?)
-          `).run(req.params.id, `Email de refus envoyé à ${candidateInfo.email}${includeReasonInEmail ? ' (motif inclus)' : ''}`, user.slug || 'unknown')
-        }
-      } catch (err) {
-        console.error('[Email] Failed to send decline:', err)
-        emailSent = false
-        getDb().prepare(`
-          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-          VALUES (?, 'email_failed', ?, ?)
-        `).run(req.params.id, `Échec envoi email de refus à ${candidateInfo.email}`, user.slug || 'unknown')
-      }
-    }
-  }
-
-  // Send transition notification for statuses not already handled above
-  const candidatureId = req.params.id
-  if (!['skill_radar_envoye', 'refuse', 'skill_radar_complete'].includes(statut)) {
-    const candidateInfo = getDb().prepare(`
-      SELECT cand.email, cand.name, cand.role
-      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE c.id = ?
-    `).get(candidatureId) as { email: string | null; name: string; role: string } | undefined
-
-    if (candidateInfo?.email && sendEmail !== false) {
-      try {
-        const result = await sendTransitionNotification({
+        const emailResult = await sendTransitionEmail({
           to: candidateInfo.email,
           candidateName: candidateInfo.name,
           role: candidateInfo.role,
           statut,
+          notes: notes?.trim() || undefined,
+          customBody: customBody || undefined,
+          includeReasonInEmail: !!includeReasonInEmail,
+          evaluationUrl: statut === 'skill_radar_envoye'
+            ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
+            : undefined,
         })
-        if (result) {
-          emailSent = true
-          getDb().prepare('INSERT INTO candidature_events (candidature_id, type, notes, created_by) VALUES (?, ?, ?, ?)')
-            .run(candidatureId, 'email_sent', `Email transition ${statut} envoyé`, user.slug)
+
+        emailSent = emailResult.sent
+        if (emailResult.sent) {
+          // Get template info for the snapshot
+          const template = getEmailTemplate(statut, {
+            candidateName: candidateInfo.name,
+            role: candidateInfo.role,
+            notes: notes?.trim() || undefined,
+            evaluationUrl: statut === 'skill_radar_envoye'
+              ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
+              : undefined,
+          })
+
+          getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+            VALUES (?, 'email_sent', ?, ?, ?)`).run(
+            candidatureId,
+            `Email transition ${statut} envoyé à ${candidateInfo.email}`,
+            JSON.stringify({ subject: template?.subject, body: customBody || template?.body, messageId: emailResult.messageId }),
+            userSlug
+          )
         }
-      } catch {
-        getDb().prepare('INSERT INTO candidature_events (candidature_id, type, notes, created_by) VALUES (?, ?, ?, ?)')
-          .run(candidatureId, 'email_failed', `Échec email transition ${statut}`, user.slug)
+      } catch (err) {
+        console.error(`[Email] Failed to send ${statut} email:`, err)
+        emailSent = false
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'email_failed', ?, ?)
+        `).run(candidatureId, `Échec envoi email ${statut} à ${candidateInfo.email}`, userSlug)
+      }
+
+      // For refuse, also notify the lead (existing behavior)
+      if (statut === 'refuse') {
+        const leadEmail = `${userSlug.replaceAll('-', '.')}@sinapse.nc`
+        try {
+          await sendCandidateDeclined({
+            candidateName: candidateInfo.name,
+            role: candidateInfo.role,
+            candidateEmail: candidateInfo.email,
+            leadEmail,
+            reason: notes?.trim() || undefined,
+            includeReason: !!includeReasonInEmail,
+          })
+        } catch (err) {
+          console.error('[Email] Failed to send decline notification to lead:', err)
+        }
       }
     }
   }
@@ -915,5 +916,283 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
   }
 })
 
+// ─── AI Email Draft ─────────────────────────────────────────────────
+
+const AI_EMAIL_SYSTEM_PROMPT = `Tu es un recruteur professionnel chez SINAPSE, une ESN basée en Nouvelle-Calédonie. Rédige des emails professionnels en français. Sois chaleureux mais professionnel. Ne fabrique pas de détails sur le candidat qui ne sont pas dans le contexte fourni.
+
+Réponds au format suivant exactement :
+SUJET: <sujet de l'email>
+CORPS:
+<corps de l'email en texte simple>`
+
+function stripPii(text: string | undefined | null): string {
+  if (!text) return ''
+  return text
+    .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[email masqué]')
+    .replace(/(\+?\d[\d\s.-]{7,})/g, '[téléphone masqué]')
+}
+
+function getEmailPrompt(statut: string, candidateName: string, role: string, candidateContext?: string): string {
+  const contextBlock = candidateContext
+    ? `\n\nContexte candidat :\n${stripPii(candidateContext).slice(0, 4000)}`
+    : ''
+
+  switch (statut) {
+    case 'refuse':
+      return `Rédige un email de refus poli pour ${candidateName}, candidat(e) au poste de ${role}. Remercie pour le temps consacré, sois empathique mais clair.${contextBlock}`
+    case 'embauche':
+      return `Rédige un email de bienvenue/offre pour ${candidateName}, recruté(e) au poste de ${role}. Félicite et montre l'enthousiasme de l'équipe.${contextBlock}`
+    case 'proposition':
+      return `Rédige un email de proposition d'embauche pour ${candidateName} au poste de ${role}. Exprime l'intérêt et invite à discuter des modalités.${contextBlock}`
+    case 'preselectionne':
+      return `Rédige un email informant ${candidateName} que sa candidature au poste de ${role} a été présélectionnée. Bonne nouvelle, prochaines étapes à venir.${contextBlock}`
+    case 'entretien_1':
+    case 'entretien_2':
+      return `Rédige un email de convocation à un entretien pour ${candidateName}, candidat(e) au poste de ${role}. Invite à proposer des créneaux.${contextBlock}`
+    default:
+      return `Rédige un email de mise à jour de statut pour ${candidateName}, candidat(e) au poste de ${role}. Le statut passe à "${statut}".${contextBlock}`
+  }
+}
+
+protectedRouter.post('/ai-email-draft', heavyRateLimit, async (req, res) => {
+  const { statut, candidateName, role, candidateContext } = req.body
+
+  if (!statut || !candidateName || !role) {
+    res.status(400).json({ error: 'statut, candidateName et role sont requis' })
+    return
+  }
+
+  try {
+    const client = new Anthropic()
+    const prompt = getEmailPrompt(statut, candidateName, role, candidateContext)
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      messages: [{ role: 'user', content: prompt }],
+      system: AI_EMAIL_SYSTEM_PROMPT,
+    })
+
+    const rawText = message.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+
+    // Parse subject and body from the structured response
+    const subjectMatch = rawText.match(/SUJET:\s*(.+?)(?:\n|$)/)
+    const bodyMatch = rawText.match(/CORPS:\s*\n?([\s\S]+)/)
+
+    const subject = subjectMatch?.[1]?.trim() || `${candidateName} — ${role}`
+    const body = bodyMatch?.[1]?.trim() || rawText
+
+    res.json({ subject, body })
+  } catch (err) {
+    console.error('[AI Email] Error generating draft:', err)
+    const isTimeout = err instanceof Error && (err.message.includes('timeout') || err.message.includes('ETIMEDOUT'))
+    res.status(503).json({ error: 'ai_unavailable', detail: isTimeout ? 'Claude timeout' : 'Claude API error' })
+  }
+})
+
+// ─── Batch ZIP Download ─────────────────────────────────────────────
+
+protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res) => {
+  const { candidatureIds } = req.body
+
+  if (!Array.isArray(candidatureIds) || candidatureIds.length === 0) {
+    res.status(400).json({ error: 'candidatureIds requis (tableau non vide)' })
+    return
+  }
+
+  if (candidatureIds.length > 20) {
+    res.status(400).json({ error: 'Maximum 20 candidatures par téléchargement' })
+    return
+  }
+
+  // Validate all IDs are strings
+  if (!candidatureIds.every((id: unknown) => typeof id === 'string')) {
+    res.status(400).json({ error: 'Tous les IDs doivent être des chaînes' })
+    return
+  }
+
+  try {
+    const fs = await import('fs')
+
+    // Fetch all candidatures with their data
+    const candidatures = candidatureIds.map(id => {
+      const row = getDb().prepare(`
+        SELECT c.id, c.statut, c.canal, c.taux_compatibilite_poste, c.taux_compatibilite_equipe,
+          cand.name, cand.email, cand.telephone, cand.pays,
+          p.titre AS poste_titre, p.pole AS poste_pole
+        FROM candidatures c
+        JOIN candidates cand ON cand.id = c.candidate_id
+        JOIN postes p ON p.id = c.poste_id
+        WHERE c.id = ?
+      `).get(id) as { id: string; statut: string; canal: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null; name: string; email: string | null; telephone: string | null; pays: string | null; poste_titre: string; poste_pole: string } | undefined
+      return row ?? null
+    }).filter((r): r is NonNullable<typeof r> => r !== null)
+
+    if (candidatures.length === 0) {
+      res.status(404).json({ error: 'Aucune candidature trouvée' })
+      return
+    }
+
+    // Track folder name collisions
+    const folderNames = new Map<string, number>()
+
+    function makeFolderName(candidateName: string, posteTitre: string): string {
+      const safeName = (candidateName as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Candidat'
+      const safePoste = (posteTitre as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Poste'
+      let base = `${safeName}_${safePoste}`
+      const count = folderNames.get(base) ?? 0
+      folderNames.set(base, count + 1)
+      if (count > 0) base = `${base}_${count + 1}`
+      return base
+    }
+
+    const { STATUT_LABELS: statusLabels } = await import('../lib/constants.js')
+
+    // Create combined archive
+    const archive = archiver('zip', { zlib: { level: 6 } })
+    archive.on('error', (err) => {
+      console.error('[Batch ZIP] Archive error:', err)
+    })
+
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename="Dossiers_candidats_${candidatures.length}.zip"`)
+    archive.pipe(res)
+
+    for (const cand of candidatures) {
+      const folderName = makeFolderName(cand.name as string, cand.poste_titre as string)
+
+      // Get documents
+      const docs = getDb().prepare(
+        'SELECT id, type, filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
+      ).all(cand.id as string) as { id: string; type: string; filename: string; path: string }[]
+
+      // Get events
+      const events = getDb().prepare(
+        'SELECT type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events WHERE candidature_id = ? ORDER BY created_at ASC'
+      ).all(cand.id as string) as { type: string; statut_from: string | null; statut_to: string | null; notes: string | null; created_by: string; created_at: string }[]
+
+      // Add documents
+      let idx = 1
+      for (const doc of docs) {
+        if (fs.existsSync(doc.path)) {
+          const ext = doc.filename.split('.').pop() ?? 'pdf'
+          const prefix = String(idx).padStart(2, '0')
+          const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
+          const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
+          const safeCandName = (cand.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Candidat'
+          archive.file(doc.path, { name: `${folderName}/${prefix}_${typeName}_${safeCandName}.${ext}` })
+          idx++
+        }
+      }
+
+      // Add resume.txt
+      let resume = `DOSSIER CANDIDAT — ${cand.name}\n`
+      resume += `${'='.repeat(50)}\n\n`
+      resume += `Poste : ${cand.poste_titre}\n`
+      resume += `Pôle : ${cand.poste_pole}\n`
+      resume += `Statut : ${statusLabels[cand.statut as string] ?? cand.statut}\n`
+      resume += `Canal : ${cand.canal}\n`
+      resume += `Email : ${cand.email ?? '—'}\n`
+      resume += `Téléphone : ${cand.telephone ?? '—'}\n`
+      resume += `Pays : ${cand.pays ?? '—'}\n`
+      resume += `\nCompatibilité poste : ${cand.taux_compatibilite_poste ?? '—'}%\n`
+      resume += `Compatibilité équipe : ${cand.taux_compatibilite_equipe ?? '—'}%\n`
+      resume += `\nHISTORIQUE\n${'-'.repeat(30)}\n`
+      for (const e of events) {
+        const date = e.created_at.substring(0, 10)
+        if (e.statut_to) {
+          resume += `${date} | ${statusLabels[e.statut_to] ?? e.statut_to}`
+          if (e.notes) resume += ` — ${e.notes}`
+          resume += `\n`
+        } else if (e.notes) {
+          resume += `${date} | ${e.type} — ${e.notes}\n`
+        }
+      }
+      resume += `\nDOCUMENTS (${docs.length})\n${'-'.repeat(30)}\n`
+      for (const doc of docs) {
+        resume += `• ${doc.type}: ${doc.filename}\n`
+      }
+      resume += `\n---\nGénéré par Skill Radar — GIE SINAPSE\n`
+
+      archive.append(resume, { name: `${folderName}/_resume.txt` })
+    }
+
+    await archive.finalize()
+  } catch (err) {
+    console.error('[Batch ZIP] Error:', err)
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erreur lors de la génération du ZIP' })
+    }
+  }
+})
+
 // Mount protected routes
 recruitmentRouter.use('/', protectedRouter)
+
+// ─── Resend Webhook (unauthenticated, verified by secret) ──────────
+
+const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET
+
+recruitmentRouter.post('/webhooks/resend', (req, res) => {
+  // Quick 200 response first, then process
+  const secret = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '')
+  if (!RESEND_WEBHOOK_SECRET || !secret || secret !== RESEND_WEBHOOK_SECRET) {
+    res.status(401).json({ error: 'Invalid webhook secret' })
+    return
+  }
+
+  const payload = req.body
+  if (!payload?.type || !payload?.data) {
+    res.status(200).json({ ok: true }) // Resend expects 200 even for unhandled events
+    return
+  }
+
+  // Return 200 immediately, process async
+  res.status(200).json({ ok: true })
+
+  // Process email.opened events
+  if (payload.type === 'email.opened') {
+    try {
+      const emailId = payload.data.email_id
+      if (!emailId) return
+
+      // Find the candidature_event with matching messageId
+      const event = getDb().prepare(`
+        SELECT ce.candidature_id, ce.email_snapshot
+        FROM candidature_events ce
+        WHERE ce.type = 'email_sent'
+        AND json_extract(ce.email_snapshot, '$.messageId') = ?
+      `).get(emailId) as { candidature_id: string; email_snapshot: string } | undefined
+
+      if (!event) {
+        console.log(`[Webhook] No matching event for email_id: ${emailId}`)
+        return
+      }
+
+      // Idempotency: check if email_open event already exists for this messageId
+      const existing = getDb().prepare(`
+        SELECT id FROM candidature_events
+        WHERE candidature_id = ? AND type = 'email_open'
+        AND notes LIKE ?
+      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
+
+      if (existing) {
+        console.log(`[Webhook] Duplicate email_open for ${emailId}, skipping`)
+        return
+      }
+
+      // Insert email_open event
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, 'email_open', ?, 'system')
+      `).run(event.candidature_id, `Email ouvert par le candidat (messageId: ${emailId})`)
+
+      console.log(`[Webhook] Recorded email_open for candidature ${event.candidature_id}`)
+    } catch (err) {
+      console.error('[Webhook] Error processing email.opened:', err)
+    }
+  }
+})

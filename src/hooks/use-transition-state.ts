@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { STATUT_LABELS } from '@/lib/constants'
 import type { AllowedTransitions, CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -9,6 +9,8 @@ export interface TransitionDialog {
   isSkip: boolean
   skipped: string[]
   notesRequired: boolean
+  candidateName: string
+  role: string
 }
 
 export interface UseTransitionStateReturn {
@@ -24,7 +26,20 @@ export interface UseTransitionStateReturn {
   setTransitionSendEmail: React.Dispatch<React.SetStateAction<boolean>>
   transitionIncludeReason: boolean
   setTransitionIncludeReason: React.Dispatch<React.SetStateAction<boolean>>
-  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[]) => void
+  transitionEmailSubject: string
+  setTransitionEmailSubject: React.Dispatch<React.SetStateAction<string>>
+  transitionEmailBody: string
+  setTransitionEmailBody: React.Dispatch<React.SetStateAction<string>>
+  transitionEmailExpanded: boolean
+  setTransitionEmailExpanded: React.Dispatch<React.SetStateAction<boolean>>
+  transitionShowMarkdownPreview: boolean
+  setTransitionShowMarkdownPreview: React.Dispatch<React.SetStateAction<boolean>>
+  transitionAboroDate: string
+  setTransitionAboroDate: React.Dispatch<React.SetStateAction<string>>
+  transitionHasEmailTemplate: boolean
+  transitionEmailLoading: boolean
+  transitionFileError: string | null
+  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string) => void
   closeTransitionDialog: () => void
   confirmTransition: () => Promise<void>
 }
@@ -42,19 +57,76 @@ export function useTransitionState(
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
   const [transitionSendEmail, setTransitionSendEmail] = useState(true)
   const [transitionIncludeReason, setTransitionIncludeReason] = useState(false)
+  const [transitionEmailSubject, setTransitionEmailSubject] = useState('')
+  const [transitionEmailBody, setTransitionEmailBody] = useState('')
+  const [transitionEmailExpanded, setTransitionEmailExpanded] = useState(false)
+  const [transitionShowMarkdownPreview, setTransitionShowMarkdownPreview] = useState(false)
+  const [transitionAboroDate, setTransitionAboroDate] = useState('')
+  const [transitionHasEmailTemplate, setTransitionHasEmailTemplate] = useState(false)
+  const [transitionEmailLoading, setTransitionEmailLoading] = useState(false)
+  const [transitionFileError, setTransitionFileError] = useState<string | null>(null)
 
-  const openTransitionDialog = useCallback((candidatureId: string, targetStatut: string, isSkip = false, skipped: string[] = []) => {
+  // Fetch email template when dialog opens
+  useEffect(() => {
+    if (!transitionDialog) return
+    const { targetStatut, candidateName, role } = transitionDialog
+
+    // No email for skill_radar_complete
+    if (targetStatut === 'skill_radar_complete') {
+      setTransitionHasEmailTemplate(false)
+      return
+    }
+
+    setTransitionEmailLoading(true)
+    fetch(`/api/recruitment/email-template/${targetStatut}?candidateName=${encodeURIComponent(candidateName)}&role=${encodeURIComponent(role)}`, {
+      credentials: 'include',
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data !== 'no_template' && data.subject) {
+          setTransitionEmailSubject(data.subject)
+          setTransitionEmailBody(data.body ?? '')
+          setTransitionHasEmailTemplate(true)
+        } else {
+          setTransitionHasEmailTemplate(false)
+        }
+      })
+      .catch(() => {
+        setTransitionHasEmailTemplate(false)
+      })
+      .finally(() => {
+        setTransitionEmailLoading(false)
+      })
+  }, [transitionDialog])
+
+  const openTransitionDialog = useCallback((
+    candidatureId: string,
+    targetStatut: string,
+    isSkip = false,
+    skipped: string[] = [],
+    candidateName = '',
+    role = '',
+  ) => {
     const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
-    setTransitionDialog({ candidatureId, targetStatut, isSkip, skipped, notesRequired })
+    setTransitionDialog({ candidatureId, targetStatut, isSkip, skipped, notesRequired, candidateName, role })
     setTransitionNotes('')
     setTransitionSkipReason('')
     setTransitionFile(null)
     setTransitionSendEmail(true)
     setTransitionIncludeReason(false)
+    setTransitionEmailSubject('')
+    setTransitionEmailBody('')
+    setTransitionEmailExpanded(false)
+    setTransitionShowMarkdownPreview(false)
+    setTransitionAboroDate('')
+    setTransitionHasEmailTemplate(false)
+    setTransitionEmailLoading(false)
+    setTransitionFileError(null)
   }, [allowedTransitions])
 
   const closeTransitionDialog = useCallback(() => {
     setTransitionDialog(null)
+    setTransitionFileError(null)
   }, [])
 
   const confirmTransition = useCallback(async () => {
@@ -71,17 +143,26 @@ export function useTransitionState(
     }
 
     setChangingStatus(true)
+    setTransitionFileError(null)
     try {
-      // Upload Aboro document if transitioning to aboro with a file
-      if (targetStatut === 'aboro' && transitionFile) {
-        const formData = new FormData()
-        formData.append('file', transitionFile)
-        formData.append('type', 'aboro')
-        await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        })
+      // Upload file if present (for aboro or any transition with attachment)
+      let fileUploadFailed = false
+      if (transitionFile) {
+        try {
+          const formData = new FormData()
+          formData.append('file', transitionFile)
+          formData.append('type', targetStatut === 'aboro' ? 'aboro' : 'document')
+          const fileRes = await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+          })
+          if (!fileRes.ok) {
+            fileUploadFailed = true
+          }
+        } catch {
+          fileUploadFailed = true
+        }
       }
 
       const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
@@ -91,9 +172,12 @@ export function useTransitionState(
         body: JSON.stringify({
           statut: targetStatut,
           notes: transitionNotes.trim() || undefined,
+          contentMd: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
           sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
           includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
+          customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
+          aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
         }),
       })
 
@@ -114,6 +198,14 @@ export function useTransitionState(
       if (detail?.events) setEvents(detail.events)
       if (transitions) setAllowedTransitions(transitions)
 
+      // If file upload failed but transition succeeded, keep dialog open with error
+      if (fileUploadFailed) {
+        setTransitionFileError('Le fichier n\'a pas pu être uploadé. Vous pouvez réessayer ou fermer la boîte de dialogue.')
+        toast.warning('Statut changé, mais l\'upload du fichier a échoué')
+        setChangingStatus(false)
+        return
+      }
+
       toast.success(`Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
       setTransitionDialog(null)
     } catch (err) {
@@ -121,7 +213,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionIncludeReason, setCandidatures, setEvents, setAllowedTransitions])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions])
 
   return {
     changingStatus,
@@ -136,6 +228,19 @@ export function useTransitionState(
     setTransitionSendEmail,
     transitionIncludeReason,
     setTransitionIncludeReason,
+    transitionEmailSubject,
+    setTransitionEmailSubject,
+    transitionEmailBody,
+    setTransitionEmailBody,
+    transitionEmailExpanded,
+    setTransitionEmailExpanded,
+    transitionShowMarkdownPreview,
+    setTransitionShowMarkdownPreview,
+    transitionAboroDate,
+    setTransitionAboroDate,
+    transitionHasEmailTemplate,
+    transitionEmailLoading,
+    transitionFileError,
     openTransitionDialog,
     closeTransitionDialog,
     confirmTransition,

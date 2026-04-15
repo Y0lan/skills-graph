@@ -480,7 +480,11 @@ export default function RecruitPage() {
               <tbody>
                 {candidates.map(c => (
                   <tr key={c.id} className="border-b last:border-0">
-                    <td className="py-3 font-medium">{c.name}</td>
+                    <td className="py-3">
+                      <Link to={`/recruit/${c.id}`} className="hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                        {c.name}
+                      </Link>
+                    </td>
                     <td className="py-3 text-muted-foreground">{c.role}</td>
                     <td className="py-3">{statusBadge(c)}</td>
                     <td className="py-3 text-muted-foreground">

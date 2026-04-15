@@ -21,8 +21,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertCircle, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
@@ -124,6 +125,48 @@ export default function RecruitPipelinePage() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() =>
     (localStorage.getItem('pipeline-view') as 'list' | 'kanban') ?? 'list'
   )
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [downloadingZip, setDownloadingZip] = useState(false)
+
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const downloadBatchZip = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    setDownloadingZip(true)
+    try {
+      const res = await fetch('/api/recruitment/candidatures/batch-zip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ candidatureIds: Array.from(selectedIds) }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Erreur serveur' }))
+        throw new Error(err.error || 'Erreur lors du téléchargement')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Dossiers_candidats_${selectedIds.size}.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success(`ZIP téléchargé (${selectedIds.size} dossier${selectedIds.size > 1 ? 's' : ''})`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors du téléchargement')
+    } finally {
+      setDownloadingZip(false)
+    }
+  }, [selectedIds])
 
   const fetchData = useCallback(async () => {
     try {
@@ -474,18 +517,27 @@ export default function RecruitPipelinePage() {
         ) : (
           <div className="space-y-2">
             {filtered.map(c => (
-              <Link
-                key={c.id}
-                to={`/recruit/${c.candidateId}`}
-                className="block"
-              >
-                <Card className="hover:bg-muted/30 transition-colors">
+              <div key={c.id} className="flex items-center gap-2">
+                <div
+                  className="shrink-0"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                >
+                  <Checkbox
+                    checked={selectedIds.has(c.id)}
+                    onCheckedChange={() => toggleSelection(c.id)}
+                  />
+                </div>
+                <Link
+                  to={`/recruit/${c.candidateId}`}
+                  className="block flex-1 min-w-0"
+                >
+                <Card className={`hover:bg-muted/30 transition-colors ${selectedIds.has(c.id) ? 'ring-1 ring-primary/50' : ''}`}>
                   <CardContent className="py-3 px-4">
                     <div className="flex items-center gap-4">
                       {/* Name + meta */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-sm truncate">{c.candidateName}</span>
+                          <span className="hover:underline font-medium text-sm truncate">{c.candidateName}</span>
                           <Badge variant="secondary" className={STATUT_COLORS[c.statut] ?? ''}>
                             {STATUT_LABELS[c.statut] ?? c.statut}
                           </Badge>
@@ -527,8 +579,40 @@ export default function RecruitPipelinePage() {
                     </div>
                   </CardContent>
                 </Card>
-              </Link>
+                </Link>
+              </div>
             ))}
+          </div>
+        )}
+
+        {/* Floating action bar for batch selection */}
+        {selectedIds.size > 0 && viewMode === 'list' && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-full bg-primary px-6 py-3 text-primary-foreground shadow-lg">
+            <span className="text-sm font-medium">
+              {selectedIds.size} sélectionné{selectedIds.size > 1 ? 's' : ''}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="rounded-full"
+              onClick={downloadBatchZip}
+              disabled={downloadingZip}
+            >
+              {downloadingZip ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+              ) : (
+                <Download className="h-4 w-4 mr-1" />
+              )}
+              Télécharger ZIP
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-full text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Annuler
+            </Button>
           </div>
         )}
       </main>

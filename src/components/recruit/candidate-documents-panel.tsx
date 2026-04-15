@@ -17,11 +17,26 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   other: 'Autre',
 }
 
+const EXPECTED_DOCUMENTS: Record<string, string[]> = {
+  cv: ['cv'],
+  lettre: ['cv', 'lettre'],
+  postule: ['cv'],
+  preselectionne: ['cv'],
+  skill_radar_envoye: ['cv'],
+  skill_radar_complete: ['cv'],
+  entretien_1: ['cv', 'lettre'],
+  aboro: ['cv', 'lettre', 'aboro'],
+  entretien_2: ['cv', 'lettre', 'aboro', 'entretien'],
+  proposition: ['cv', 'lettre', 'aboro', 'entretien', 'proposition'],
+  embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
+}
+
 export interface CandidateDocumentsPanelProps {
   candidatureId: string
   documents: CandidatureDocument[]
   setDocuments: React.Dispatch<React.SetStateAction<CandidatureDocument[]>>
   setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>
+  currentStatut?: string
 }
 
 export default function CandidateDocumentsPanel({
@@ -29,13 +44,22 @@ export default function CandidateDocumentsPanel({
   documents,
   setDocuments,
   setEvents,
+  currentStatut,
 }: CandidateDocumentsPanelProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
+
+  const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
+  const uploadedTypes = new Set(documents.map(d => d.type))
 
   return (
     <Card className="lg:col-span-2">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-base">Documents</CardTitle>
+        <CardTitle className="text-base">
+          Documents
+          <span className="text-xs font-normal text-muted-foreground ml-2">
+            {documents.length}/{expectedTypes.length} attendus
+          </span>
+        </CardTitle>
         <div className="flex items-center gap-2">
           {documents.length > 0 && (
             <Button
@@ -52,6 +76,22 @@ export default function CandidateDocumentsPanel({
         </div>
       </CardHeader>
       <CardContent>
+        {/* Expected documents checklist */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {expectedTypes.map(type => {
+            const uploaded = uploadedTypes.has(type)
+            return (
+              <Badge
+                key={type}
+                variant={uploaded ? 'default' : 'outline'}
+                className={uploaded ? 'bg-green-600 hover:bg-green-700 text-[10px]' : 'text-[10px] border-dashed'}
+              >
+                {uploaded ? '✓' : '○'} {DOC_TYPE_LABELS[type] ?? type}
+              </Badge>
+            )
+          })}
+        </div>
+
         {/* Upload form */}
         <div className="flex items-center gap-2 mb-4">
           <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>

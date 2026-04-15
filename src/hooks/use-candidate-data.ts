@@ -56,6 +56,8 @@ export interface CandidatureEvent {
   statutFrom: string | null
   statutTo: string | null
   notes: string | null
+  contentMd: string | null
+  emailSnapshot: string | null
   createdBy: string
   createdAt: string
 }
@@ -95,6 +97,13 @@ export interface MultiPosteEntry {
   tauxPoste: number
 }
 
+/** Per-candidature data: events, transitions, documents */
+export interface CandidatureData {
+  events: CandidatureEvent[]
+  allowedTransitions: AllowedTransitions | null
+  documents: CandidatureDocument[]
+}
+
 export interface UseCandidateDataReturn {
   candidate: CandidateDetail | null
   setCandidate: React.Dispatch<React.SetStateAction<CandidateDetail | null>>
@@ -103,6 +112,7 @@ export interface UseCandidateDataReturn {
   loading: boolean
   candidatures: CandidatureInfo[]
   setCandidatures: React.Dispatch<React.SetStateAction<CandidatureInfo[]>>
+  /** @deprecated Use candidatureDataMap instead for per-candidature events */
   events: CandidatureEvent[]
   setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>
   documents: CandidatureDocument[]
@@ -115,6 +125,8 @@ export interface UseCandidateDataReturn {
   bonusSkills: BonusSkill[]
   notes: string
   setNotes: React.Dispatch<React.SetStateAction<string>>
+  candidatureDataMap: Record<string, CandidatureData>
+  setCandidatureDataMap: React.Dispatch<React.SetStateAction<Record<string, CandidatureData>>>
 }
 
 export function useCandidateData(candidateId: string | undefined): UseCandidateDataReturn {
@@ -130,6 +142,7 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
   const [documents, setDocuments] = useState<CandidatureDocument[]>([])
   const [multiPosteCompatibility, setMultiPosteCompatibility] = useState<MultiPosteEntry[]>([])
   const [bonusSkills, setBonusSkills] = useState<BonusSkill[]>([])
+  const [candidatureDataMap, setCandidatureDataMap] = useState<Record<string, CandidatureData>>({})
 
   useEffect(() => {
     if (!candidateId) return
@@ -160,17 +173,40 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
         const mine = all.filter((c: CandidatureInfo) => c.candidateId === candidateId)
         setCandidatures(mine)
         if (mine.length > 0) {
-          // Fetch events + allowed transitions + documents for the first candidature
-          Promise.all([
-            fetch(`/api/recruitment/candidatures/${mine[0].id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
-            fetch(`/api/recruitment/candidatures/${mine[0].id}/transitions`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
-            fetch(`/api/recruitment/candidatures/${mine[0].id}/documents`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
-          ]).then(([detail, transitions, docs]) => {
-            if (detail?.events) setEvents(detail.events)
-            if (detail?.multiPosteCompatibility) setMultiPosteCompatibility(detail.multiPosteCompatibility)
-            if (detail?.bonusSkills) setBonusSkills(detail.bonusSkills)
-            if (transitions) setAllowedTransitions(transitions)
-            setDocuments(docs ?? [])
+          // Fetch events + transitions + documents for ALL candidatures
+          Promise.all(
+            mine.map(c =>
+              Promise.all([
+                fetch(`/api/recruitment/candidatures/${c.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+                fetch(`/api/recruitment/candidatures/${c.id}/transitions`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+                fetch(`/api/recruitment/candidatures/${c.id}/documents`, { credentials: 'include' }).then(r => r.ok ? r.json() : []),
+              ]).then(([detail, transitions, docs]) => ({
+                candidatureId: c.id,
+                detail,
+                transitions,
+                docs,
+              }))
+            )
+          ).then(results => {
+            const dataMap: Record<string, CandidatureData> = {}
+            for (const r of results) {
+              dataMap[r.candidatureId] = {
+                events: r.detail?.events ?? [],
+                allowedTransitions: r.transitions ?? null,
+                documents: r.docs ?? [],
+              }
+            }
+            setCandidatureDataMap(dataMap)
+
+            // Keep backward-compat: set flat state from first candidature
+            const first = results[0]
+            if (first) {
+              if (first.detail?.events) setEvents(first.detail.events)
+              if (first.detail?.multiPosteCompatibility) setMultiPosteCompatibility(first.detail.multiPosteCompatibility)
+              if (first.detail?.bonusSkills) setBonusSkills(first.detail.bonusSkills)
+              if (first.transitions) setAllowedTransitions(first.transitions)
+              setDocuments(first.docs ?? [])
+            }
           })
         }
       })
@@ -200,5 +236,7 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
     bonusSkills,
     notes,
     setNotes,
+    candidatureDataMap,
+    setCandidatureDataMap,
   }
 }

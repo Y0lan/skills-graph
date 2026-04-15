@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   DndContext,
   DragOverlay,
@@ -84,7 +85,14 @@ function KanbanCard({ item, isDragOverlay }: { item: KanbanCandidature; isDragOv
         ${isDragOverlay ? 'shadow-lg ring-2 ring-primary/30' : 'hover:bg-muted/30'}
         transition-colors`}
     >
-      <p className="text-sm font-medium truncate">{item.candidateName}</p>
+      <Link
+        to={`/recruit/${item.candidateId}`}
+        className="hover:underline font-medium text-sm truncate block"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {item.candidateName}
+      </Link>
       <p className="text-xs text-muted-foreground truncate mt-0.5">{item.posteTitre}</p>
       {item.tauxPoste != null && (
         <p className={`text-xs font-medium mt-1 ${scoreColor(item.tauxPoste)}`}>
