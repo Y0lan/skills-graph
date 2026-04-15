@@ -92,7 +92,7 @@ export function useTransitionState(
           statut: targetStatut,
           notes: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
-          sendEmail: targetStatut === 'skill_radar_envoye' ? transitionSendEmail : undefined,
+          sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
           includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
         }),
       })

@@ -4,7 +4,7 @@ import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { sendCandidateInvite, sendCandidateDeclined } from '../lib/email.js'
+import { sendCandidateInvite, sendCandidateDeclined, sendTransitionNotification } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
@@ -535,6 +535,35 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
           INSERT INTO candidature_events (candidature_id, type, notes, created_by)
           VALUES (?, 'email_failed', ?, ?)
         `).run(req.params.id, `Échec envoi email de refus à ${candidateInfo.email}`, user.slug || 'unknown')
+      }
+    }
+  }
+
+  // Send transition notification for statuses not already handled above
+  const candidatureId = req.params.id
+  if (!['skill_radar_envoye', 'refuse', 'skill_radar_complete'].includes(statut)) {
+    const candidateInfo = getDb().prepare(`
+      SELECT cand.email, cand.name, cand.role
+      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.id = ?
+    `).get(candidatureId) as { email: string | null; name: string; role: string } | undefined
+
+    if (candidateInfo?.email && sendEmail !== false) {
+      try {
+        const result = await sendTransitionNotification({
+          to: candidateInfo.email,
+          candidateName: candidateInfo.name,
+          role: candidateInfo.role,
+          statut,
+        })
+        if (result) {
+          emailSent = true
+          getDb().prepare('INSERT INTO candidature_events (candidature_id, type, notes, created_by) VALUES (?, ?, ?, ?)')
+            .run(candidatureId, 'email_sent', `Email transition ${statut} envoyé`, user.slug)
+        }
+      } catch {
+        getDb().prepare('INSERT INTO candidature_events (candidature_id, type, notes, created_by) VALUES (?, ?, ?, ?)')
+          .run(candidatureId, 'email_failed', `Échec email transition ${statut}`, user.slug)
       }
     }
   }

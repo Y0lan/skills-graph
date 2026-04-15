@@ -271,6 +271,78 @@ export async function sendCandidateDeclined(opts: {
   }
 }
 
+export async function sendTransitionNotification(opts: {
+  to: string
+  candidateName: string
+  role: string
+  statut: string
+  notes?: string
+}) {
+  if (!process.env.RESEND_API_KEY) return null
+
+  let subject: string
+  let body: string
+
+  switch (opts.statut) {
+    case 'preselectionne':
+      subject = `Votre candidature a été retenue — ${opts.role}`
+      body = `Bonne nouvelle ! Votre profil a retenu notre attention pour le poste de <strong>${escapeHtml(opts.role)}</strong>. Nous reviendrons vers vous pour la suite.`
+      break
+    case 'entretien_1':
+    case 'entretien_2':
+      subject = `Convocation entretien — ${opts.role}`
+      body = `Nous souhaitons vous rencontrer pour le poste de <strong>${escapeHtml(opts.role)}</strong>. Un membre de notre équipe vous contactera pour fixer un créneau.`
+      break
+    case 'proposition':
+      subject = `Proposition — ${opts.role} chez SINAPSE`
+      body = `Nous avons le plaisir de vous informer que nous souhaitons vous faire une proposition pour le poste de <strong>${escapeHtml(opts.role)}</strong>.`
+      break
+    case 'embauche':
+      subject = 'Bienvenue chez SINAPSE ! 🎉'
+      body = `Félicitations ! Vous rejoignez l'équipe SINAPSE au poste de <strong>${escapeHtml(opts.role)}</strong>. Bienvenue !`
+      break
+    default:
+      return null
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: FROM_EMAIL,
+      to: opts.to,
+      subject,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
+          <h1 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;">
+            Bonjour ${escapeHtml(opts.candidateName)},
+          </h1>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            ${body}
+          </p>
+          <p style="color: #555; font-size: 14px; line-height: 1.6; margin-top: 24px;">
+            Cordialement,<br>
+            L'équipe SINAPSE
+          </p>
+          <p style="color: #999; font-size: 12px; line-height: 1.5; margin-top: 32px;">
+            Cet email est envoyé automatiquement — merci de ne pas y répondre.<br>
+            Si vous avez des questions, contactez l'équipe SINAPSE.
+          </p>
+        </div>
+      `,
+    })
+
+    if (error) {
+      console.error('[EMAIL] Resend error:', error)
+      return null
+    }
+
+    console.log(`[EMAIL] Transition notification (${opts.statut}) sent to ${opts.to} (id: ${data?.id})`)
+    return data
+  } catch (err) {
+    console.error('[EMAIL] Failed to send transition notification:', err)
+    return null
+  }
+}
+
 function escapeHtml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
