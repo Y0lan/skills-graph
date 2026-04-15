@@ -24,15 +24,15 @@ export function calculateSoftSkillScore(profile: AboroProfile): SoftSkillResult 
     }
   }
 
-  const collab = avg(COLLABORATION_TRAITS.map(t => allTraits[t] ?? 5))
-  const adapt = avg(ADAPTABILITY_TRAITS.map(t => allTraits[t] ?? 5))
-  const lead = avg(LEADERSHIP_TRAITS.map(t => allTraits[t] ?? 5))
+  const collab = avg(COLLABORATION_TRAITS.map(t => allTraits[t] ?? 1))
+  const adapt = avg(ADAPTABILITY_TRAITS.map(t => allTraits[t] ?? 1))
+  const lead = avg(LEADERSHIP_TRAITS.map(t => allTraits[t] ?? 1))
   const score = Math.round((collab * 0.4 + adapt * 0.3 + lead * 0.3) * 10)
 
   // Check thresholds on collaboration + adaptability traits
   for (const t of [...COLLABORATION_TRAITS, ...ADAPTABILITY_TRAITS]) {
-    if ((allTraits[t] ?? 5) < ALERT_THRESHOLD) {
-      alerts.push({ trait: t, value: allTraits[t] ?? 5, threshold: ALERT_THRESHOLD,
+    if ((allTraits[t] ?? 1) < ALERT_THRESHOLD) {
+      alerts.push({ trait: t, value: allTraits[t] ?? 1, threshold: ALERT_THRESHOLD,
         message: `${t}: ${allTraits[t]}/10 (seuil: ${ALERT_THRESHOLD})` })
     }
   }

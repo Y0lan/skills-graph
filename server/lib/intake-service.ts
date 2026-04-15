@@ -54,7 +54,11 @@ export async function processIntake(
   const fullName = prenom ? `${prenom.trim()} ${nom.trim()}` : nom.trim()
   const candidateId = crypto.randomUUID()
   const candidatureId = crypto.randomUUID()
+  const VALID_CANALS = ['cabinet', 'site', 'candidature_directe', 'reseau']
   const resolvedCanal = canal?.trim() || 'site'
+  if (!VALID_CANALS.includes(resolvedCanal)) {
+    return { error: `Canal invalide: ${resolvedCanal}. Valeurs acceptées: ${VALID_CANALS.join(', ')}`, status: 400 }
+  }
 
   // Atomic creation: idempotence check + candidate + candidature + event in one transaction
   // This prevents duplicate candidatures from parallel webhook deliveries

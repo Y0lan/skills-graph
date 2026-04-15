@@ -788,6 +788,27 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
         }
       }
     }
+    const REQUIRED_TRAITS = [
+      'ascendant', 'conviction', 'sociabilite', 'diplomatie',
+      'implication', 'ouverture', 'critique', 'consultation',
+      'taches_variees', 'abstraction', 'inventivite', 'changement',
+      'methode', 'details', 'perseverance', 'initiative',
+      'detente', 'positivite', 'controle', 'stabilite',
+    ]
+    const flatTraits: Record<string, unknown> = {}
+    for (const axis of Object.values(traits as Record<string, Record<string, unknown>>)) {
+      for (const [key, val] of Object.entries(axis)) {
+        flatTraits[key] = val
+      }
+    }
+    const missing = REQUIRED_TRAITS.filter(t => !(t in flatTraits))
+    if (missing.length > 0) {
+      res.status(400).json({
+        error: `Traits manquants (${missing.length}/${REQUIRED_TRAITS.length})`,
+        missing,
+      })
+      return
+    }
 
     const result = saveManualAboroProfile({
       candidateId: req.params.candidateId,
