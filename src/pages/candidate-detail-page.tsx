@@ -160,38 +160,9 @@ export default function CandidateDetailPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
-        <div className="mb-4 flex items-center justify-between">
-          <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> Retour
-          </Link>
-          {siblings.length > 1 && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!prevCandidate}
-                onClick={() => prevCandidate && navigate(`/recruit/${prevCandidate.id}`)}
-                className="gap-1 h-7 px-2"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline text-xs">Précédent</span>
-              </Button>
-              <span className="text-xs text-muted-foreground tabular-nums px-1">
-                {currentIndex + 1}/{siblings.length}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!nextCandidate}
-                onClick={() => nextCandidate && navigate(`/recruit/${nextCandidate.id}`)}
-                className="gap-1 h-7 px-2"
-              >
-                <span className="hidden sm:inline text-xs">Suivant</span>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          )}
-        </div>
+        <Link to="/recruit" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Retour
+        </Link>
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -252,6 +223,35 @@ export default function CandidateDetailPage() {
           changingStatus={changingStatus}
           onOpenTransition={openTransitionDialog}
         />
+
+        {/* Prev/Next candidate navigation */}
+        {siblings.length > 1 && (
+          <div className="mt-4 flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-2.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!prevCandidate}
+              onClick={() => prevCandidate && navigate(`/recruit/${prevCandidate.id}`)}
+              className="gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              <span className="text-sm">{prevCandidate?.name ?? 'Précédent'}</span>
+            </Button>
+            <span className="text-sm font-medium text-muted-foreground tabular-nums">
+              {currentIndex + 1} / {siblings.length}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!nextCandidate}
+              onClick={() => nextCandidate && navigate(`/recruit/${nextCandidate.id}`)}
+              className="gap-2"
+            >
+              <span className="text-sm">{nextCandidate?.name ?? 'Suivant'}</span>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
 
         {/* Transition confirmation dialog */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
