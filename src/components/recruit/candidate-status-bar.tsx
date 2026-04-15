@@ -47,7 +47,7 @@ export default function CandidateStatusBar({
                     <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
                       Poste
                       <Tooltip>
-                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipTrigger className="cursor-help"><Info className="h-3 w-3 text-muted-foreground/50" /></TooltipTrigger>
                         <TooltipContent className="max-w-[220px] text-xs">Compatibilité technique entre les compétences du candidat et les exigences du poste visé</TooltipContent>
                       </Tooltip>
                     </p>
@@ -59,7 +59,7 @@ export default function CandidateStatusBar({
                     <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
                       Équipe
                       <Tooltip>
-                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipTrigger className="cursor-help"><Info className="h-3 w-3 text-muted-foreground/50" /></TooltipTrigger>
                         <TooltipContent className="max-w-[220px] text-xs">Complémentarité avec l'équipe existante — mesure les compétences manquantes que le candidat pourrait combler</TooltipContent>
                       </Tooltip>
                     </p>
@@ -71,7 +71,7 @@ export default function CandidateStatusBar({
                     <p className="text-xs text-muted-foreground flex items-center justify-end gap-1">
                       Soft
                       <Tooltip>
-                        <TooltipTrigger asChild><Info className="h-3 w-3 text-muted-foreground/50 cursor-help" /></TooltipTrigger>
+                        <TooltipTrigger className="cursor-help"><Info className="h-3 w-3 text-muted-foreground/50" /></TooltipTrigger>
                         <TooltipContent className="max-w-[220px] text-xs">Score comportemental issu de l'évaluation Aboro (savoir-être, traits de personnalité)</TooltipContent>
                       </Tooltip>
                     </p>
@@ -146,8 +146,8 @@ export default function CandidateStatusBar({
                 <p className="text-xs text-muted-foreground mb-2">Historique :</p>
                 <div className="space-y-1.5">
                   {events.map(e => (
-                    <div key={e.id} className="flex items-start gap-2 text-xs">
-                      <span className="text-muted-foreground shrink-0 w-12">{formatDateTime(e.createdAt)}</span>
+                    <div key={e.id} className="flex items-start gap-3 text-xs">
+                      <span className="text-muted-foreground shrink-0 w-28 tabular-nums">{formatDateTime(e.createdAt)}</span>
                       {e.statutTo && (
                         <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
                           {STATUT_LABELS[e.statutTo] ?? e.statutTo}

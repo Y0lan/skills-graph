@@ -89,8 +89,8 @@ function CompatibilityBar({ value, label }: { value: number | null; label: strin
         {label}
         {tip && (
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+            <TooltipTrigger className="cursor-help">
+              <Info className="h-3 w-3 text-muted-foreground/50" />
             </TooltipTrigger>
             <TooltipContent side="left" className="max-w-[220px] text-xs">
               {tip}

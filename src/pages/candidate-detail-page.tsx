@@ -25,13 +25,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useTransitionState } from '@/hooks/use-transition-state'
+import { useNavigate } from 'react-router-dom'
 
 export default function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const {
     candidate, setCandidate,
     teamData,
@@ -61,6 +63,18 @@ export default function CandidateDetailPage() {
   } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions)
 
   const [analyzing, setAnalyzing] = useState(false)
+
+  // Fetch sibling candidates for prev/next navigation
+  const [siblings, setSiblings] = useState<{ id: string; name: string }[]>([])
+  useState(() => {
+    fetch('/api/candidates', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((all: { id: string; name: string }[]) => setSiblings(all))
+      .catch(() => {})
+  })
+  const currentIndex = siblings.findIndex(c => c.id === id)
+  const prevCandidate = currentIndex > 0 ? siblings[currentIndex - 1] : null
+  const nextCandidate = currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null
 
   const generateAnalysis = useCallback(async () => {
     if (!id) return
@@ -146,9 +160,38 @@ export default function CandidateDetailPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
-        <Link to="/recruit" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Retour
-        </Link>
+        <div className="mb-4 flex items-center justify-between">
+          <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Retour
+          </Link>
+          {siblings.length > 1 && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!prevCandidate}
+                onClick={() => prevCandidate && navigate(`/recruit/${prevCandidate.id}`)}
+                className="gap-1 h-7 px-2"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline text-xs">Précédent</span>
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums px-1">
+                {currentIndex + 1}/{siblings.length}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!nextCandidate}
+                onClick={() => nextCandidate && navigate(`/recruit/${nextCandidate.id}`)}
+                className="gap-1 h-7 px-2"
+              >
+                <span className="hidden sm:inline text-xs">Suivant</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
 
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -363,19 +406,19 @@ export default function CandidateDetailPage() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-card">
                       <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 font-medium">Compétence</th>
-                        <th className="pb-2 font-medium text-center">Candidat</th>
-                        <th className="pb-2 font-medium text-center">Équipe</th>
-                        <th className="pb-2 font-medium text-center">Écart</th>
+                        <th className="pb-2 pr-4 font-medium">Compétence</th>
+                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-20">Candidat</th>
+                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-16">Équipe</th>
+                        <th className="pb-2 pl-3 font-medium text-center whitespace-nowrap w-14">Écart</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gapAnalysis.slice(0, 20).map((g, i) => (
                         <tr key={i} className="border-b last:border-0">
-                          <td className="py-2">{g!.skill}</td>
-                          <td className="py-2 text-center font-mono">{g!.candidateScore}</td>
-                          <td className="py-2 text-center font-mono text-muted-foreground">{g!.teamAvg}</td>
-                          <td className="py-2 text-center">
+                          <td className="py-2 pr-4">{g!.skill}</td>
+                          <td className="py-2 px-3 text-center font-mono">{g!.candidateScore}</td>
+                          <td className="py-2 px-3 text-center font-mono text-muted-foreground">{g!.teamAvg}</td>
+                          <td className="py-2 pl-3 text-center">
                             <span className={g!.gap > 0 ? 'text-green-600 font-medium' : g!.gap < 0 ? 'text-amber-600' : 'text-muted-foreground'}>
                               {g!.gap > 0 ? '+' : ''}{g!.gap}
                             </span>
