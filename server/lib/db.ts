@@ -424,11 +424,12 @@ export function initDatabase(): void {
       { id: 'candidature-libre', roleId: 'candidature-libre', titre: 'Candidature Libre', pole: 'java_modernisation', headcount: 99, flexible: true, expMin: 0, cigref: '' },
     ]
 
+    const catExistsCheck = db.prepare('SELECT 1 FROM categories WHERE id = ?')
     const seedPostes = db.transaction(() => {
       for (const role of recruitmentRoles) {
         insertRole.run(role.id, role.label, 'system')
         for (const catId of role.categories) {
-          insertCat.run(role.id, catId)
+          if (catExistsCheck.get(catId)) insertCat.run(role.id, catId)
         }
       }
       for (const p of postes) {
@@ -440,12 +441,14 @@ export function initDatabase(): void {
 
   // Idempotent: add candidature-libre role + poste (for candidates who don't target a specific job)
   const allCatIds = (db.prepare('SELECT id FROM categories').all() as { id: string }[]).map(r => r.id)
-  db.prepare("INSERT OR IGNORE INTO roles (id, label, created_by) VALUES ('candidature-libre', 'Candidature Libre', 'system')").run()
-  for (const catId of allCatIds) {
-    db.prepare("INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES ('candidature-libre', ?)").run(catId)
+  if (allCatIds.length > 0) {
+    db.prepare("INSERT OR IGNORE INTO roles (id, label, created_by) VALUES ('candidature-libre', 'Candidature Libre', 'system')").run()
+    for (const catId of allCatIds) {
+      db.prepare("INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES ('candidature-libre', ?)").run(catId)
+    }
+    db.prepare(`INSERT OR IGNORE INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
+      VALUES ('candidature-libre', 'candidature-libre', 'Candidature Libre', 'java_modernisation', 99, 1, 0, '', 'CDIC')`).run()
   }
-  db.prepare(`INSERT OR IGNORE INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
-    VALUES ('candidature-libre', 'candidature-libre', 'Candidature Libre', 'java_modernisation', 99, 1, 0, '', 'CDIC')`).run()
 
   // Idempotent: add legacy-ibmi-adelia category to legacy roles (roles already exist in prod)
   const legacyRoleIds = ['tech-lead-adelia', 'dev-senior-adelia']
