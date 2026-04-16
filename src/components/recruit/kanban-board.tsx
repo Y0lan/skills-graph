@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
+import { scoreColor } from '@/lib/score-utils'
 
 /** Pipeline column order (refuse excluded — filtered out) */
 const COLUMN_ORDER = [
@@ -64,9 +65,6 @@ export interface KanbanBoardProps {
 // ---------------------------------------------------------------------------
 
 function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: number; onDelete?: (candidateId: string, candidateName: string) => void }) {
-  const scoreColor = (v: number | null) =>
-    v == null ? '' : v >= 70 ? 'text-green-500' : v >= 40 ? 'text-amber-500' : 'text-red-500'
-
   const daysInStatus = item.lastStatusChange
     ? Math.floor((now - new Date(item.lastStatusChange).getTime()) / 86_400_000)
     : null

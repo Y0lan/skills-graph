@@ -1,46 +1,12 @@
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Badge } from '@/components/ui/badge'
 import { Info } from 'lucide-react'
+import { scoreColor, scoreBg, verdictFromScores } from '@/lib/score-utils'
 
 export interface CandidateScoreSummaryProps {
   tauxPoste: number | null
   tauxEquipe: number | null
   tauxSoft: number | null
-}
-
-function scoreColor(v: number | null): string {
-  if (v == null) return 'text-muted-foreground'
-  if (v >= 70) return 'text-green-500'
-  if (v >= 40) return 'text-amber-500'
-  return 'text-red-500'
-}
-
-function scoreBg(v: number | null): string {
-  if (v == null) return 'bg-muted/30'
-  if (v >= 70) return 'bg-green-500/10'
-  if (v >= 40) return 'bg-amber-500/10'
-  return 'bg-red-500/10'
-}
-
-function getVerdict(poste: number | null, equipe: number | null): string | null {
-  if (poste == null && equipe == null) return null
-  const avg = [poste, equipe].filter((v): v is number => v != null)
-  if (avg.length === 0) return null
-  const mean = avg.reduce((a, b) => a + b, 0) / avg.length
-  if (mean >= 80) return 'Excellent fit'
-  if (mean >= 65) return 'Bon potentiel'
-  if (mean >= 45) return 'A creuser'
-  return 'Risque'
-}
-
-function verdictColor(verdict: string): string {
-  switch (verdict) {
-    case 'Excellent fit': return 'bg-green-600 text-white'
-    case 'Bon potentiel': return 'bg-sky-600 text-white'
-    case 'A creuser': return 'bg-amber-600 text-white'
-    case 'Risque': return 'bg-red-600 text-white'
-    default: return ''
-  }
 }
 
 const TOOLTIPS: Record<string, string> = {
@@ -56,15 +22,15 @@ export default function CandidateScoreSummary({ tauxPoste, tauxEquipe, tauxSoft 
     { label: 'Soft', value: tauxSoft },
   ]
 
-  const verdict = getVerdict(tauxPoste, tauxEquipe)
+  const verdict = verdictFromScores(tauxPoste, tauxEquipe)
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scores</p>
         {verdict && (
-          <Badge className={`text-[10px] ${verdictColor(verdict)}`}>
-            {verdict}
+          <Badge className={`text-[10px] ${verdict.color}`}>
+            {verdict.label}
           </Badge>
         )}
       </div>
