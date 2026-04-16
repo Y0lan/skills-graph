@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Users } from 'lucide-react'
+import { Users, Maximize2 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { StatusIcon } from '@/components/status-icon'
@@ -27,10 +27,21 @@ export function TeamPopover({ currentSlug }: TeamPopoverProps) {
         Équipe
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-0">
-        <div className="border-b px-3 py-2">
+        <div className="border-b px-3 py-2 flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             {submittedCount}/{teamMembers.length} évaluations soumises
           </p>
+          <button
+            type="button"
+            onClick={() => {
+              navigate('/equipe')
+              setOpen(false)
+            }}
+            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+            title="Vue complète"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
           {[...teamMembers].sort((a, b) => {

@@ -129,6 +129,7 @@ app.use('/api', (req, res, next) => {
   if (/^\/evaluate\/[^/]+\/(form|ratings|submit)\/?$/.test(req.path)) return next()
   if (req.path === '/recruitment/intake' || req.path === '/recruitment/intake/') return next()
   if (req.path === '/recruitment/webhooks/resend' || req.path === '/recruitment/webhooks/resend/') return next()
+  if (req.path === '/recruitment/pipeline-health' || req.path === '/recruitment/pipeline-health/') return next()
   if (req.path.startsWith('/webhooks/')) return next()
   if (req.method === 'GET' && (req.path === '/ratings/status' || req.path === '/ratings/status/')) return next()
   return requireAuth(req, res, next)

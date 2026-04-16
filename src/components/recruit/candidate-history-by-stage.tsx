@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort } from '@/lib/constants'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
@@ -92,6 +93,64 @@ function computeSummary(events: CandidatureEvent[]): string {
   return parts.join(' — ')
 }
 
+/** Extract messageId from an emailSnapshot JSON string */
+function extractMessageId(snapshot: string | null): string | null {
+  if (!snapshot) return null
+  try {
+    const parsed = JSON.parse(snapshot)
+    return parsed.messageId ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Build a map of messageId → delivery statuses from all events */
+function buildDeliveryStatusMap(events: CandidatureEvent[]): Map<string, Set<string>> {
+  const statusMap = new Map<string, Set<string>>()
+
+  for (const e of events) {
+    if (e.type === 'email_open' || e.type === 'email_failed' || e.type === 'email_clicked') {
+      // Extract messageId from notes (format: "... (messageId: xxx)")
+      const match = e.notes?.match(/messageId:\s*([^\s)]+)/)
+      if (match) {
+        const msgId = match[1]
+        if (!statusMap.has(msgId)) statusMap.set(msgId, new Set())
+        statusMap.get(msgId)!.add(e.type)
+      }
+    }
+  }
+
+  return statusMap
+}
+
+function EmailDeliveryBadges({ messageId, deliveryMap }: { messageId: string | null; deliveryMap: Map<string, Set<string>> }) {
+  if (!messageId) return null
+  const statuses = deliveryMap.get(messageId)
+
+  return (
+    <span className="inline-flex items-center gap-1 ml-1">
+      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+        Envoye
+      </Badge>
+      {statuses?.has('email_open') && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+          Ouvert
+        </Badge>
+      )}
+      {statuses?.has('email_failed') && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+          Rebondi
+        </Badge>
+      )}
+      {statuses?.has('email_clicked') && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">
+          Lien clique
+        </Badge>
+      )}
+    </span>
+  )
+}
+
 function EmailInlinePreview({ snapshot }: { snapshot: string }) {
   let parsed: { subject?: string; body?: string } | null = null
   try {
@@ -160,14 +219,35 @@ function NoteContent({ content }: { content: string }) {
   )
 }
 
-function EventRow({ event }: { event: CandidatureEvent }) {
+function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap: Map<string, Set<string>> }) {
   const isDocument = event.type === 'document'
+  const isEmailSent = event.type === 'email_sent' || (event.emailSnapshot && event.type !== 'email_open' && event.type !== 'email_failed' && event.type !== 'email_clicked')
+  const messageId = extractMessageId(event.emailSnapshot)
+
+  // Skip rendering email_open / email_failed / email_clicked rows (shown as badges on the email_sent row)
+  if (event.type === 'email_open' || event.type === 'email_failed' || event.type === 'email_clicked') {
+    return null
+  }
+
+  const absoluteTimestamp = event.createdAt
+    ? new Date(event.createdAt.includes('T') ? event.createdAt : event.createdAt.replace(' ', 'T') + 'Z').toLocaleString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      })
+    : ''
 
   return (
     <div className="py-2 px-1">
-      <div className="flex items-start gap-2.5 text-xs">
+      <div className="flex items-start gap-2.5 text-xs flex-wrap">
         <span className="mt-0.5 text-muted-foreground shrink-0">{eventIcon(event)}</span>
-        <span className="text-muted-foreground shrink-0 w-24 tabular-nums">{formatDateTime(event.createdAt)}</span>
+        <Tooltip>
+          <TooltipTrigger render={<span className="text-muted-foreground shrink-0 w-24 tabular-nums cursor-default" />}>
+            {formatDateTime(event.createdAt)}
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-[10px]">
+            {absoluteTimestamp}
+          </TooltipContent>
+        </Tooltip>
         {event.createdBy && (
           <span className="text-muted-foreground shrink-0">{event.createdBy}</span>
         )}
@@ -176,6 +256,7 @@ function EventRow({ event }: { event: CandidatureEvent }) {
             {STATUT_LABELS[event.statutTo] ?? event.statutTo}
           </Badge>
         )}
+        {isEmailSent && <EmailDeliveryBadges messageId={messageId} deliveryMap={deliveryMap} />}
         {event.notes && <span className="text-foreground">{event.notes}</span>}
         {isDocument && (
           <span className="text-muted-foreground flex items-center gap-1">
@@ -210,6 +291,7 @@ export default function CandidateHistoryByStage({ events, currentStatut }: Candi
 
   const groups = groupEventsByStage(events)
   const summary = computeSummary(events)
+  const deliveryMap = buildDeliveryStatusMap(events)
 
   // Default open: current stage + previous stage
   const currentGroupIndex = groups.findIndex(g => g.statut === currentStatut)
@@ -251,7 +333,7 @@ export default function CandidateHistoryByStage({ events, currentStatut }: Candi
             <AccordionContent className="px-2">
               <div className="divide-y">
                 {group.events.map(e => (
-                  <EventRow key={e.id} event={e} />
+                  <EventRow key={e.id} event={e} deliveryMap={deliveryMap} />
                 ))}
               </div>
             </AccordionContent>

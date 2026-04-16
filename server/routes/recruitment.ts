@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import express, { Router } from 'express'
 import { Readable } from 'stream'
 import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
@@ -11,7 +11,9 @@ import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalys
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
+import { Webhook } from 'svix'
 import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
+import { TRANSITION_MAP, NOTES_REQUIRED, getAllowedTransitions, isSkipTransition, getSkippedSteps } from '../lib/state-machine.js'
 
 interface ParsedIntake {
   fields: Record<string, string>
@@ -359,55 +361,7 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
   })
 })
 
-// ─── State machine ──────────────────────────────────────────────────
-const TRANSITION_MAP: Record<string, string[]> = {
-  postule: ['preselectionne', 'refuse'],
-  preselectionne: ['skill_radar_envoye', 'entretien_1', 'refuse'],
-  skill_radar_envoye: ['skill_radar_complete', 'refuse'],
-  skill_radar_complete: ['entretien_1', 'refuse'],
-  entretien_1: ['aboro', 'entretien_2', 'refuse'],
-  aboro: ['entretien_2', 'refuse'],
-  entretien_2: ['proposition', 'refuse'],
-  proposition: ['embauche', 'refuse'],
-  embauche: [],
-  refuse: [],
-}
-
-// Steps that can be skipped (with a logged reason)
-const SKIPPABLE_STEPS = new Set(['aboro', 'entretien_2', 'skill_radar_envoye'])
-
-// Notes required for these transitions
-const NOTES_REQUIRED = new Set(['refuse', 'embauche'])
-
-function getAllowedTransitions(currentStatut: string): string[] {
-  return TRANSITION_MAP[currentStatut] ?? []
-}
-
-function isSkipTransition(from: string, to: string): boolean {
-  const directAllowed = TRANSITION_MAP[from] ?? []
-  if (directAllowed.includes(to)) return false
-  // Check if we're skipping intermediate steps
-  const allStatuts = Object.keys(TRANSITION_MAP)
-  const fromIdx = allStatuts.indexOf(from)
-  const toIdx = allStatuts.indexOf(to)
-  if (toIdx <= fromIdx || to === 'refuse') return false
-  // Find skipped steps between from and to
-  for (let i = fromIdx + 1; i < toIdx; i++) {
-    if (!SKIPPABLE_STEPS.has(allStatuts[i])) return false
-  }
-  return true
-}
-
-function getSkippedSteps(from: string, to: string): string[] {
-  const allStatuts = Object.keys(TRANSITION_MAP)
-  const fromIdx = allStatuts.indexOf(from)
-  const toIdx = allStatuts.indexOf(to)
-  const skipped: string[] = []
-  for (let i = fromIdx + 1; i < toIdx; i++) {
-    skipped.push(allStatuts[i])
-  }
-  return skipped
-}
+// ─── State machine (imported from server/lib/state-machine.ts) ──────
 
 // Get allowed transitions for a candidature (includes skip targets)
 protectedRouter.get('/candidatures/:id/transitions', (req, res) => {
@@ -1191,19 +1145,46 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
   }
 })
 
-// ─── Resend Webhook (unauthenticated, verified by secret) ──────────
+// ─── Resend Webhook (unauthenticated, verified by Svix or plain secret) ──
 
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET
 
-recruitmentRouter.post('/webhooks/resend', (req, res) => {
-  // Quick 200 response first, then process
-  const secret = req.headers['x-webhook-secret'] || req.headers['authorization']?.replace('Bearer ', '')
-  if (!RESEND_WEBHOOK_SECRET || !secret || secret !== RESEND_WEBHOOK_SECRET) {
-    res.status(401).json({ error: 'Invalid webhook secret' })
+recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json' }), (req, res) => {
+  if (!RESEND_WEBHOOK_SECRET) {
+    res.status(500).json({ error: 'Webhook secret not configured' })
     return
   }
 
-  const payload = req.body
+  let payload: Record<string, unknown>
+
+  // Try Svix signature verification first (Resend's default mode)
+  const svixId = req.headers['svix-id'] as string | undefined
+  const svixTimestamp = req.headers['svix-timestamp'] as string | undefined
+  const svixSignature = req.headers['svix-signature'] as string | undefined
+
+  if (svixId && svixTimestamp && svixSignature) {
+    try {
+      const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : JSON.stringify(req.body)
+      const wh = new Webhook(RESEND_WEBHOOK_SECRET)
+      payload = wh.verify(rawBody, {
+        'svix-id': svixId,
+        'svix-timestamp': svixTimestamp,
+        'svix-signature': svixSignature,
+      }) as Record<string, unknown>
+    } catch (err) {
+      console.error('[Webhook] Svix verification failed:', err)
+      res.status(401).json({ error: 'Invalid webhook signature' })
+      return
+    }
+  } else {
+    // Fallback: plain x-webhook-secret header (basic mode)
+    const secret = req.headers['x-webhook-secret'] || (req.headers['authorization'] as string | undefined)?.replace('Bearer ', '')
+    if (!secret || secret !== RESEND_WEBHOOK_SECRET) {
+      res.status(401).json({ error: 'Invalid webhook secret' })
+      return
+    }
+    payload = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString('utf-8')) : req.body
+  }
   if (!payload?.type || !payload?.data) {
     res.status(200).json({ ok: true }) // Resend expects 200 even for unhandled events
     return
@@ -1253,6 +1234,123 @@ recruitmentRouter.post('/webhooks/resend', (req, res) => {
     } catch (err) {
       console.error('[Webhook] Error processing email.opened:', err)
     }
+  }
+
+  // Process email.bounced events
+  if (payload.type === 'email.bounced') {
+    try {
+      const data = payload.data as Record<string, unknown>
+      const emailId = data.email_id as string | undefined
+      if (!emailId) return
+
+      const event = getDb().prepare(`
+        SELECT ce.candidature_id
+        FROM candidature_events ce
+        WHERE ce.type = 'email_sent'
+        AND json_extract(ce.email_snapshot, '$.messageId') = ?
+      `).get(emailId) as { candidature_id: string } | undefined
+
+      if (!event) return
+
+      // Idempotency check
+      const existing = getDb().prepare(`
+        SELECT id FROM candidature_events
+        WHERE candidature_id = ? AND type = 'email_failed'
+        AND notes LIKE ?
+      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
+
+      if (!existing) {
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'email_failed', ?, 'system')
+        `).run(event.candidature_id, `Email rebondi (messageId: ${emailId})`)
+        console.log(`[Webhook] Recorded email_failed for candidature ${event.candidature_id}`)
+      }
+    } catch (err) {
+      console.error('[Webhook] Error processing email.bounced:', err)
+    }
+  }
+
+  // Process email.clicked events
+  if (payload.type === 'email.clicked') {
+    try {
+      const data = payload.data as Record<string, unknown>
+      const emailId = data.email_id as string | undefined
+      if (!emailId) return
+
+      const event = getDb().prepare(`
+        SELECT ce.candidature_id
+        FROM candidature_events ce
+        WHERE ce.type = 'email_sent'
+        AND json_extract(ce.email_snapshot, '$.messageId') = ?
+      `).get(emailId) as { candidature_id: string } | undefined
+
+      if (!event) return
+
+      // Idempotency check
+      const existing = getDb().prepare(`
+        SELECT id FROM candidature_events
+        WHERE candidature_id = ? AND type = 'email_clicked'
+        AND notes LIKE ?
+      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
+
+      if (!existing) {
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'email_clicked', ?, 'system')
+        `).run(event.candidature_id, `Lien cliqué dans l'email (messageId: ${emailId})`)
+        console.log(`[Webhook] Recorded email_clicked for candidature ${event.candidature_id}`)
+      }
+    } catch (err) {
+      console.error('[Webhook] Error processing email.clicked:', err)
+    }
+  }
+})
+
+// ─── Pipeline Health Check ──────────────────────────────────────────
+
+recruitmentRouter.get('/pipeline-health', (_req, res) => {
+  try {
+    const db = getDb()
+
+    // Last intake event timestamp
+    const lastIntake = db.prepare(`
+      SELECT created_at FROM candidature_events
+      WHERE type = 'transition' AND statut_to = 'postule'
+      ORDER BY created_at DESC LIMIT 1
+    `).get() as { created_at: string } | undefined
+
+    // Candidates received in last 24 hours
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const recentCount = db.prepare(`
+      SELECT COUNT(*) as count FROM candidatures
+      WHERE created_at >= ?
+    `).get(twentyFourHoursAgo) as { count: number }
+
+    // Service statuses
+    const emailServiceStatus = !!process.env.RESEND_API_KEY
+    const virusTotalConfigured = !!process.env.VIRUSTOTAL_API_KEY
+    // ClamAV is optional — check if clamdscan or clamscan would be available
+    const clamAvConfigured = !!process.env.CLAMAV_HOST || !!process.env.CLAMDSCAN_PATH
+
+    // Determine overall status
+    let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy'
+    if (!emailServiceStatus) status = 'degraded'
+    if (!lastIntake) status = 'degraded'
+
+    res.json({
+      drupalWebhookLastReceived: lastIntake?.created_at ?? null,
+      emailServiceStatus: emailServiceStatus ? 'configured' : 'not_configured',
+      scannerStatus: {
+        virustotal: virusTotalConfigured ? 'configured' : 'not_configured',
+        clamav: clamAvConfigured ? 'configured' : 'not_configured',
+      },
+      candidatesLast24h: recentCount.count,
+      status,
+    })
+  } catch (err) {
+    console.error('[Pipeline Health] Error:', err)
+    res.status(500).json({ status: 'unhealthy', error: 'Health check failed' })
   }
 })
 
