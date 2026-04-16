@@ -239,7 +239,7 @@ export default function DashboardPage() {
                     <span className="text-sm text-muted-foreground">Pôle :</span>
                     <Select value={poleFilter ?? 'all'} onValueChange={v => setPoleFilter(v === 'all' ? null : v)}>
                       <SelectTrigger className="w-[200px]" size="sm">
-                        <SelectValue />
+                        <SelectValue>{poleFilter && POLE_LABELS[poleFilter] ? POLE_LABELS[poleFilter] : 'Tous les pôles'}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Tous les pôles</SelectItem>
