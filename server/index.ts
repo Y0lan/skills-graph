@@ -87,14 +87,10 @@ app.all('/api/auth/{*splat}', async (req, res, _next) => {
 
 app.use(express.json({ limit: '1mb' }))
 
-// Request timeout — no single request can run longer than 30s
-app.use((req, res, next) => {
-  res.setTimeout(30_000, () => {
-    if (!res.headersSent) {
-      console.error(`[TIMEOUT] ${req.method} ${req.path} exceeded 30s`)
-      res.status(408).json({ error: 'Requête expirée (30s)' })
-    }
-  })
+// Server-level timeout: 120s (generous for CV extraction via Anthropic API)
+// This prevents truly hung connections, not normal long operations
+app.use((_req, res, next) => {
+  res.setTimeout(120_000)
   next()
 })
 
@@ -185,11 +181,15 @@ function shutdown() {
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
 
-// --- Crash protection: never let a single error kill the process ---
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught exception (keeping process alive):', err)
+// --- Crash protection ---
+// Log unhandled rejections but keep running (these are async errors that
+// missed a .catch() — the request already failed, no state corruption)
+process.on('unhandledRejection', (reason) => {
+  console.error('[WARN] Unhandled rejection:', reason)
 })
 
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled rejection (keeping process alive):', reason)
+// Uncaught exceptions mean unknown state — log, close server, let k8s restart
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception — shutting down:', err)
+  shutdown()
 })
