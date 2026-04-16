@@ -633,6 +633,29 @@ export default function RecruitPipelinePage() {
         )}
       </main>
 
+      {/* Delete candidate confirmation dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer ce candidat ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Le candidat <strong>{deleteTarget?.name}</strong> et toutes ses candidatures seront supprim{'\u00e9'}s d{'\u00e9'}finitivement.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCandidate}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Scoring weights settings dialog */}
       <AlertDialog open={weightsOpen} onOpenChange={setWeightsOpen}>
         <AlertDialogContent>
