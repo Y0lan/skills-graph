@@ -1,18 +1,4 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  closestCenter,
-  type DragStartEvent,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Badge } from '@/components/ui/badge'
 import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
 
@@ -42,6 +28,19 @@ const COLUMN_BG: Record<string, string> = {
   embauche: 'bg-green-500/5',
 }
 
+/** One-line descriptions for each pipeline stage */
+const COLUMN_DESCRIPTIONS: Record<string, string> = {
+  postule: 'En attente de tri initial',
+  preselectionne: 'Profil retenu pour évaluation',
+  skill_radar_envoye: 'Lien d\'évaluation envoyé au candidat',
+  skill_radar_complete: 'Évaluation complétée par le candidat',
+  entretien_1: 'Premier entretien planifié ou réalisé',
+  aboro: 'Test comportemental en cours',
+  entretien_2: 'Second entretien planifié ou réalisé',
+  proposition: 'Offre en cours ou transmise',
+  embauche: 'Candidat embauché',
+}
+
 export interface KanbanCandidature {
   id: string
   candidateId: string
@@ -50,91 +49,82 @@ export interface KanbanCandidature {
   statut: string
   tauxPoste: number | null
   tauxGlobal: number | null
+  lastStatusChange?: string
 }
 
 export interface KanbanBoardProps {
   candidatures: KanbanCandidature[]
-  onTransition: (candidatureId: string, newStatut: string) => void
 }
 
 // ---------------------------------------------------------------------------
-// Sortable Card
+// Card (read-only, clickable link to candidate detail)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ item, isDragOverlay }: { item: KanbanCandidature; isDragOverlay?: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-  })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  }
-
+function KanbanCard({ item }: { item: KanbanCandidature }) {
   const scoreColor = (v: number | null) =>
     v == null ? '' : v >= 70 ? 'text-green-500' : v >= 40 ? 'text-amber-500' : 'text-red-500'
 
-  const card = (
-    <div
-      ref={isDragOverlay ? undefined : setNodeRef}
-      style={isDragOverlay ? undefined : style}
-      {...(isDragOverlay ? {} : attributes)}
-      {...(isDragOverlay ? {} : listeners)}
-      className={`rounded-lg border bg-card p-2.5 cursor-grab active:cursor-grabbing select-none
-        ${isDragOverlay ? 'shadow-lg ring-2 ring-primary/30' : 'hover:bg-muted/30'}
-        transition-colors`}
-    >
-      <Link
-        to={`/recruit/${item.candidateId}`}
-        className="hover:underline font-medium text-sm truncate block"
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {item.candidateName}
-      </Link>
-      <p className="text-xs text-muted-foreground truncate mt-0.5">{item.posteTitre}</p>
-      {item.tauxPoste != null && (
-        <p className={`text-xs font-medium mt-1 ${scoreColor(item.tauxPoste)}`}>
-          Poste {item.tauxPoste}%
-        </p>
-      )}
-    </div>
-  )
+  const daysInStatus = item.lastStatusChange
+    ? Math.floor((Date.now() - new Date(item.lastStatusChange).getTime()) / 86_400_000)
+    : null
 
-  return card
+  return (
+    <Link
+      to={`/recruit/${item.candidateId}`}
+      className="block rounded-lg border bg-card p-2.5 cursor-pointer hover:bg-muted/30 hover:border-primary/30 transition-colors group"
+    >
+      <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
+        {item.candidateName}
+      </p>
+      <p className="text-xs text-muted-foreground truncate mt-0.5">{item.posteTitre}</p>
+      <div className="flex items-center gap-2 mt-1">
+        {item.tauxPoste != null && (
+          <span className={`text-xs font-medium ${scoreColor(item.tauxPoste)}`}>
+            {item.tauxPoste}%
+          </span>
+        )}
+        {daysInStatus != null && daysInStatus > 0 && (
+          <span className="text-[10px] text-muted-foreground/60 ml-auto">
+            {daysInStatus}j
+          </span>
+        )}
+      </div>
+      <p className="text-[10px] text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors mt-1">
+        → Voir le profil
+      </p>
+    </Link>
+  )
 }
 
 // ---------------------------------------------------------------------------
-// Droppable Column
+// Column (read-only)
 // ---------------------------------------------------------------------------
 
 function KanbanColumn({ statut, items }: { statut: string; items: KanbanCandidature[] }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `column-${statut}` })
-
   return (
-    <div
-      ref={setNodeRef}
-      className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'}
-        ${isOver ? 'ring-2 ring-primary/40' : ''} min-w-[220px] w-[220px] shrink-0`}
-    >
+    <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0`}>
       {/* Column header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b">
-        <Badge variant="secondary" className={`text-[11px] px-1.5 py-0 ${STATUT_COLORS[statut] ?? ''}`}>
-          {STATUT_LABELS[statut] ?? statut}
-        </Badge>
-        <span className="text-xs text-muted-foreground ml-auto tabular-nums">{items.length}</span>
+      <div className="px-3 py-2.5 border-b">
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className={`text-[11px] px-1.5 py-0 ${STATUT_COLORS[statut] ?? ''}`}>
+            {STATUT_LABELS[statut] ?? statut}
+          </Badge>
+          <span className="text-xs font-medium text-muted-foreground ml-auto tabular-nums">{items.length}</span>
+        </div>
+        {COLUMN_DESCRIPTIONS[statut] && (
+          <p className="text-[10px] text-muted-foreground/60 mt-1 leading-tight">
+            {COLUMN_DESCRIPTIONS[statut]}
+          </p>
+        )}
       </div>
 
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px]">
-        <SortableContext items={items.map(i => i.id)} strategy={verticalListSortingStrategy}>
-          {items.map(item => (
-            <KanbanCard key={item.id} item={item} />
-          ))}
-        </SortableContext>
+        {items.map(item => (
+          <KanbanCard key={item.id} item={item} />
+        ))}
         {items.length === 0 && (
-          <p className="text-[11px] text-muted-foreground/50 text-center pt-8">Aucun</p>
+          <p className="text-[11px] text-muted-foreground/40 text-center pt-8">Aucun candidat</p>
         )}
       </div>
     </div>
@@ -142,16 +132,10 @@ function KanbanColumn({ statut, items }: { statut: string; items: KanbanCandidat
 }
 
 // ---------------------------------------------------------------------------
-// Board
+// Board (read-only visualization)
 // ---------------------------------------------------------------------------
 
-export default function KanbanBoard({ candidatures, onTransition }: KanbanBoardProps) {
-  const [activeId, setActiveId] = useState<string | null>(null)
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  )
-
+export default function KanbanBoard({ candidatures }: KanbanBoardProps) {
   // Group candidatures by status, excluding refuse
   const columns = new Map<string, KanbanCandidature[]>()
   for (const s of COLUMN_ORDER) {
@@ -163,62 +147,15 @@ export default function KanbanBoard({ candidatures, onTransition }: KanbanBoardP
     if (col) col.push(c)
   }
 
-  const activeItem = activeId ? candidatures.find(c => c.id === activeId) : null
-
-  // Resolve which column a droppable id belongs to
-  function resolveColumn(droppableId: string | undefined): string | null {
-    if (!droppableId) return null
-    // Direct column drop zone
-    if (droppableId.startsWith('column-')) return droppableId.replace('column-', '')
-    // Dropped on a card — find that card's column
-    const target = candidatures.find(c => c.id === droppableId)
-    return target?.statut ?? null
-  }
-
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string)
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    setActiveId(null)
-
-    if (!over) return
-
-    const draggedItem = candidatures.find(c => c.id === active.id)
-    if (!draggedItem) return
-
-    const targetColumn = resolveColumn(over.id as string)
-    if (!targetColumn || targetColumn === draggedItem.statut) return
-
-    onTransition(draggedItem.id, targetColumn)
-  }
-
-  function handleDragCancel() {
-    setActiveId(null)
-  }
-
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
-    >
-      <div className="flex gap-3 overflow-x-auto pb-4">
-        {COLUMN_ORDER.map(statut => (
-          <KanbanColumn
-            key={statut}
-            statut={statut}
-            items={columns.get(statut) ?? []}
-          />
-        ))}
-      </div>
-
-      <DragOverlay dropAnimation={null}>
-        {activeItem ? <KanbanCard item={activeItem} isDragOverlay /> : null}
-      </DragOverlay>
-    </DndContext>
+    <div className="flex gap-3 overflow-x-auto pb-4">
+      {COLUMN_ORDER.map(statut => (
+        <KanbanColumn
+          key={statut}
+          statut={statut}
+          items={columns.get(statut) ?? []}
+        />
+      ))}
+    </div>
   )
 }

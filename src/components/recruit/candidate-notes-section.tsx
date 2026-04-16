@@ -75,7 +75,7 @@ export default function CandidateNotesSection({
   }
 
   return (
-    <Card className="lg:col-span-2">
+    <Card>
       <CardHeader>
         <CardTitle className="text-base">Notes d'entretien</CardTitle>
       </CardHeader>

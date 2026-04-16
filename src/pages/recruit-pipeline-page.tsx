@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AppHeader from '@/components/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -127,6 +127,14 @@ export default function RecruitPipelinePage() {
   )
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [downloadingZip, setDownloadingZip] = useState(false)
+  const [scrollTrigger, setScrollTrigger] = useState(0)
+  const candidaturesRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollTrigger > 0) {
+      candidaturesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [scrollTrigger])
 
   const toggleSelection = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -228,31 +236,7 @@ export default function RecruitPipelinePage() {
     localStorage.setItem('pipeline-view', mode)
   }, [])
 
-  const handleKanbanTransition = useCallback(async (candidatureId: string, newStatut: string) => {
-    // Statuses that require notes go through the full dialog — snap back for now
-    if (newStatut === 'refuse' || newStatut === 'embauche') {
-      toast.info(`Utilisez la vue détail pour passer au statut « ${STATUT_LABELS[newStatut] ?? newStatut} »`)
-      return
-    }
-    try {
-      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ statut: newStatut }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Erreur serveur' }))
-        throw new Error(err.error || 'Transition refusée')
-      }
-      toast.success(`Statut changé : ${STATUT_LABELS[newStatut] ?? newStatut}`)
-      fetchData()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')
-      // Refetch to reset card positions
-      fetchData()
-    }
-  }, [fetchData])
+  // Kanban is read-only — transitions happen on the candidate detail page
 
   if (loading) {
     return (
@@ -372,6 +356,7 @@ export default function RecruitPipelinePage() {
                           setFilterPole(pole)
                           setFilterPoste(p.id)
                           setFilterStatut('all')
+                          setScrollTrigger(n => n + 1)
                         }}
                         className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left"
                       >
@@ -382,18 +367,27 @@ export default function RecruitPipelinePage() {
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <Link
-                            to="/recruit"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Badge variant="outline" className="text-xs hover:bg-accent cursor-pointer">
-                              {p.candidateCount} candidat{p.candidateCount !== 1 ? 's' : ''}
-                            </Badge>
-                          </Link>
+                          <Tooltip>
+                            <TooltipTrigger className="cursor-help">
+                              <Badge variant="outline" className="text-xs">
+                                {p.candidateCount} candidat{p.candidateCount !== 1 ? 's' : ''}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[260px] text-xs">
+                              Nombre total de candidatures pour ce poste
+                            </TooltipContent>
+                          </Tooltip>
                           {p.activeCount > 0 && (
-                            <Badge className="text-xs bg-primary">
-                              {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
-                            </Badge>
+                            <Tooltip>
+                              <TooltipTrigger className="cursor-help">
+                                <Badge className="text-xs bg-primary">
+                                  {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[260px] text-xs">
+                                Candidatures en cours de traitement (hors refusés et embauchés)
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                           <a
                             href={`/recruit/reports/comparison/${p.id}`}
@@ -493,6 +487,7 @@ export default function RecruitPipelinePage() {
         </div>
 
         {/* Candidatures — list or kanban */}
+        <div ref={candidaturesRef} className="scroll-mt-16" />
         {filtered.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
@@ -512,7 +507,6 @@ export default function RecruitPipelinePage() {
               tauxPoste: c.tauxPoste,
               tauxGlobal: c.tauxGlobal,
             }))}
-            onTransition={handleKanbanTransition}
           />
         ) : (
           <div className="space-y-2">

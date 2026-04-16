@@ -286,6 +286,24 @@ export default function CandidateDetailPage() {
           candidatureDataMap={candidatureDataMap}
         />
 
+        {/* Notes d'entretien (collapsible) */}
+        {candidatures[0]?.id && (
+          <details className="mt-4 rounded-lg border bg-card">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Notes d&apos;entretien
+            </summary>
+            <div className="px-4 pb-4">
+              <CandidateNotesSection
+                candidateId={candidate.id}
+                candidatureId={candidatures[0].id}
+                notes={candidatures[0]?.notesDirecteur ?? notes}
+                onNotesChange={setNotes}
+              />
+            </div>
+          </details>
+        )}
+
         {/* Prev/Next candidate navigation */}
         {siblings.length > 1 && (
           <div className="mt-4 flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-2.5">
@@ -711,13 +729,6 @@ export default function CandidateDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Notes */}
-            <CandidateNotesSection
-              candidateId={candidate.id}
-              candidatureId={candidatures[0]?.id}
-              notes={candidatures[0]?.notesDirecteur ?? notes}
-              onNotesChange={setNotes}
-            />
           </div>
         )}
       </div>

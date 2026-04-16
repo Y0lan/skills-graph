@@ -228,7 +228,7 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
       type TEXT NOT NULL DEFAULT 'status_change'
-        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open')),
+        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','evaluation_reopened','onboarding')),
       statut_from TEXT,
       statut_to TEXT,
       notes TEXT,
@@ -310,6 +310,34 @@ export function initDatabase(): void {
       );
       INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at)
         SELECT id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events;
+      DROP TABLE candidature_events;
+      ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
+    `)
+  }
+
+  // Idempotent migration: add 'evaluation_reopened' and 'onboarding' to candidature_events CHECK
+  const missingNewEventTypes = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return tableInfo?.sql?.includes("'email_open'") && !tableInfo?.sql?.includes("'evaluation_reopened'")
+  })()
+
+  if (missingNewEventTypes) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS candidature_events_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'status_change'
+          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','evaluation_reopened','onboarding')),
+        statut_from TEXT,
+        statut_to TEXT,
+        notes TEXT,
+        content_md TEXT,
+        email_snapshot TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO candidature_events_new SELECT * FROM candidature_events;
       DROP TABLE candidature_events;
       ALTER TABLE candidature_events_new RENAME TO candidature_events;
       CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
