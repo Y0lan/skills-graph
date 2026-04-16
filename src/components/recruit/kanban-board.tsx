@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
@@ -60,12 +61,12 @@ export interface KanbanBoardProps {
 // Card (read-only, clickable link to candidate detail)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ item }: { item: KanbanCandidature }) {
+function KanbanCard({ item, now }: { item: KanbanCandidature; now: number }) {
   const scoreColor = (v: number | null) =>
     v == null ? '' : v >= 70 ? 'text-green-500' : v >= 40 ? 'text-amber-500' : 'text-red-500'
 
   const daysInStatus = item.lastStatusChange
-    ? Math.floor((Date.now() - new Date(item.lastStatusChange).getTime()) / 86_400_000)
+    ? Math.floor((now - new Date(item.lastStatusChange).getTime()) / 86_400_000)
     : null
 
   return (
@@ -100,7 +101,7 @@ function KanbanCard({ item }: { item: KanbanCandidature }) {
 // Column (read-only)
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ statut, items }: { statut: string; items: KanbanCandidature[] }) {
+function KanbanColumn({ statut, items, now }: { statut: string; items: KanbanCandidature[]; now: number }) {
   return (
     <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0`}>
       {/* Column header */}
@@ -121,7 +122,7 @@ function KanbanColumn({ statut, items }: { statut: string; items: KanbanCandidat
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px]">
         {items.map(item => (
-          <KanbanCard key={item.id} item={item} />
+          <KanbanCard key={item.id} item={item} now={now} />
         ))}
         {items.length === 0 && (
           <p className="text-[11px] text-muted-foreground/40 text-center pt-8">Aucun candidat</p>
@@ -136,6 +137,8 @@ function KanbanColumn({ statut, items }: { statut: string; items: KanbanCandidat
 // ---------------------------------------------------------------------------
 
 export default function KanbanBoard({ candidatures }: KanbanBoardProps) {
+  const [now] = useState(() => Date.now())
+
   // Group candidatures by status, excluding refuse
   const columns = new Map<string, KanbanCandidature[]>()
   for (const s of COLUMN_ORDER) {
@@ -154,6 +157,7 @@ export default function KanbanBoard({ candidatures }: KanbanBoardProps) {
           key={statut}
           statut={statut}
           items={columns.get(statut) ?? []}
+          now={now}
         />
       ))}
     </div>
