@@ -28,11 +28,6 @@ const members = [
   // Direction (no pole)
   { slug: 'olivier-faivre', role: 'direction', team: 'direction' },
   { slug: 'guillaume-benoit', role: 'direction', team: 'direction' },
-  // Demo users
-  { slug: 'demo_ba', role: 'ba', team: 'fonctionnel' },
-  { slug: 'demo_legacy', role: 'legacy-dev', team: 'dev' },
-  { slug: 'demo_modern', role: 'fullstack', team: 'dev' },
-  { slug: 'demo_direction', role: 'direction', team: 'direction' },
 ]
 
 // ─── Categories and their skills (full catalog) ─────────
@@ -427,49 +422,6 @@ const individualOverrides: Record<string, Record<string, number>> = {
     'mentoring': 5, 'agile-scrum': 3,
     'reglementation-sociale': 3, 'si-legacy': 3,
     'risk-management': 3, 'scope-change-control': 3,
-  },
-  // Demo users — distinctive profiles for cross-pole testing
-  'demo_ba': {
-    'functional-specifications': 5, 'requirements-elicitation': 5,
-    'process-modeling': 4, 'regulatory-interpretation': 4,
-    'cross-domain-coordination': 4, 'gap-analysis-legacy': 4,
-    'stakeholder-engagement': 4, 'change-communication': 4,
-    'stakeholder-communication': 4, 'agile-scrum': 3,
-    // Cross-pole transverse skills for comparison
-    'api-design': 2, 'data-modeling': 3, 'technical-documentation': 3,
-    'reglementation-sociale': 5, 'processus-recouvrement': 4,
-    'travailleurs-independants': 3, 'sante-ruamm': 4,
-  },
-  'demo_legacy': {
-    'adelia-rpg-4gl': 5, 'cl-control-language': 5, 'db2-400': 5,
-    'ibmi-as400-platform': 5, 'web-adelia': 4,
-    'legacy-diagnostic-mco': 4, 'batch-scheduling-operations': 4,
-    'legacy-batch-interfaces': 4, 'legacy-modernisation': 3,
-    'jboss-wildfly': 3, 'ejb-javaee': 3, 'jms-messaging-legacy': 2,
-    'jndi-datasources': 3, 'servlets-jsp': 4, 'migration-legacy-moderne': 2,
-    'sql': 4, 'bash-shell': 3,
-    'reglementation-sociale': 4, 'processus-recouvrement': 3,
-    'si-legacy': 5, 'comptabilite-paiements': 3,
-    // Cross-pole transverse
-    'technical-documentation': 2, 'agile-scrum': 2,
-    'code-review': 3, 'problem-solving-debugging': 4,
-  },
-  'demo_modern': {
-    'java': 4, 'typescript': 4, 'angular': 4, 'spring-boot': 4,
-    'html-css-scss': 3, 'rxjs': 3, 'postgresql': 3,
-    'docker-podman': 2, 'gitlab-ci': 2,
-    'agile-scrum': 3, 'code-review': 3,
-  },
-  'demo_direction': {
-    'team-management': 5, 'strategic-planning': 5,
-    'multi-stakeholder-piloting': 5, 'coaching-development': 4,
-    'management-communication': 5, 'recruiting-onboarding': 4,
-    'knowledge-transfer-run': 4, 'change-management-legacy': 3,
-    'stakeholder-communication': 5, 'cross-team-communication': 5,
-    'mentoring': 4, 'agile-scrum': 3,
-    'reglementation-sociale': 3, 'processus-recouvrement': 3,
-    'domain-knowledge': 4,
-    'urbanisation-si': 3, 'archimate': 2,
   },
 }
 

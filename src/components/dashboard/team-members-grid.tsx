@@ -1,9 +1,14 @@
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown } from 'lucide-react'
+import { ArrowUp, ArrowDown, Search, ArrowUpDown, X } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { teamOrder } from '@/data/team-roster'
 import { cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
+import { POLE_LABELS } from '@/lib/constants'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
 import VisxRadarChart from '@/components/visx-radar-chart'
 import { useCatalog } from '@/hooks/use-catalog'
@@ -16,11 +21,48 @@ interface TeamMembersGridProps {
 
 export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMembersGridProps) {
   const { categories: skillCategories } = useCatalog()
-  const sorted = [...members].sort((a, b) => {
-    const aIndex = teamOrder.indexOf(a.team)
-    const bIndex = teamOrder.indexOf(b.team)
-    return aIndex - bIndex
-  })
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterTeam, setFilterTeam] = useState('all')
+  const [filterPole, setFilterPole] = useState('all')
+  const [sortKey, setSortKey] = useState<'name' | 'role' | 'team'>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const uniqueTeams = useMemo(() => [...new Set(members.map(m => m.team))].sort(), [members])
+  const uniquePoles = useMemo(() => [...new Set(members.map(m => m.pole).filter(Boolean) as string[])].sort(), [members])
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  const filtered = useMemo(() => {
+    let result = members
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(m => m.name.toLowerCase().includes(q))
+    }
+    if (filterTeam !== 'all') result = result.filter(m => m.team === filterTeam)
+    if (filterPole !== 'all') result = result.filter(m => m.pole === filterPole)
+
+    result = [...result].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name, 'fr'); break
+        case 'role': cmp = a.role.localeCompare(b.role, 'fr'); break
+        case 'team': {
+          const aIdx = teamOrder.indexOf(a.team)
+          const bIdx = teamOrder.indexOf(b.team)
+          cmp = aIdx - bIdx
+          break
+        }
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [members, searchQuery, filterTeam, filterPole, sortKey, sortDir])
+
+  const hasActiveFilter = searchQuery || filterTeam !== 'all' || filterPole !== 'all'
 
   return (
     <Card>
@@ -28,8 +70,68 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
         <CardTitle>Membres de l'équipe</CardTitle>
       </CardHeader>
       <CardContent>
+        {/* Search + Filters */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher par nom..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={filterTeam} onValueChange={v => setFilterTeam(v ?? 'all')}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Toutes les équipes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les équipes</SelectItem>
+              {uniqueTeams.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {uniquePoles.length > 0 && (
+            <Select value={filterPole} onValueChange={v => setFilterPole(v ?? 'all')}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Tous les pôles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les pôles</SelectItem>
+                {uniquePoles.map(p => <SelectItem key={p} value={p}>{POLE_LABELS[p] ?? p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          <Button variant="ghost" size="sm" onClick={() => toggleSort(sortKey)} className="flex items-center gap-1">
+            <ArrowUpDown className="h-3 w-3" />
+            {sortKey === 'name' ? 'Nom' : sortKey === 'role' ? 'Rôle' : 'Équipe'}
+            <span className="text-xs text-muted-foreground">({sortDir === 'asc' ? 'A-Z' : 'Z-A'})</span>
+          </Button>
+          <Select value={sortKey} onValueChange={v => { setSortKey(v as typeof sortKey); setSortDir('asc') }}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="Trier par" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Nom</SelectItem>
+              <SelectItem value="role">Rôle</SelectItem>
+              <SelectItem value="team">Équipe</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasActiveFilter && (
+            <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setFilterTeam('all'); setFilterPole('all') }}>
+              <X className="mr-1 h-3 w-3" /> Réinitialiser
+            </Button>
+          )}
+        </div>
+
+        {/* Count */}
+        <p className="mt-3 mb-4 text-sm text-muted-foreground">
+          {filtered.length === members.length
+            ? `${members.length} membre${members.length !== 1 ? 's' : ''}`
+            : `${filtered.length} / ${members.length} membre${members.length !== 1 ? 's' : ''}`}
+        </p>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {sorted.map((member) => {
+          {filtered.map((member) => {
             const hasSubmitted = member.submittedAt !== null
             const radarData = hasSubmitted
               ? skillCategories

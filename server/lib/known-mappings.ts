@@ -23,9 +23,4 @@ export const KNOWN_MAPPINGS: Record<string, string> = {
   'sonalie.taconet@sinapse.nc': 'sonalie-taconet',
   'amine.bouali@sinapse.nc': 'amine-bouali',
   'audrey.queau@sinapse.nc': 'audrey-queau',
-  // Test users — all point to yolan's email, slug selected at login
-  'test.ba@sinapse.nc': 'test-ba',
-  'test.legacy@sinapse.nc': 'test-legacy',
-  'test.modern@sinapse.nc': 'test-modern',
-  'test.direction@sinapse.nc': 'test-direction',
 }

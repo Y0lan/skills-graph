@@ -138,36 +138,6 @@ export const teamMembers: TeamMember[] = [
     pole: null,
   },
 
-  // Test users
-  {
-    slug: 'test-ba',
-    name: 'Marie TEST-BA',
-    role: 'Business Analyst',
-    team: 'Analyse Fonctionnelle',
-    pole: 'fonctionnel',
-  },
-  {
-    slug: 'test-legacy',
-    name: 'Jean TEST-LEGACY',
-    role: 'Développeur Adélia',
-    team: 'Développement',
-    pole: 'legacy',
-  },
-  {
-    slug: 'test-modern',
-    name: 'Pierre TEST-MODERN',
-    role: 'Développeur Full Stack',
-    team: 'Développement',
-    pole: 'java_modernisation',
-  },
-  {
-    slug: 'test-direction',
-    name: 'Claire TEST-DIRECTION',
-    role: 'Directrice',
-    team: 'Direction',
-    pole: null,
-  },
-
   // Direction
   {
     slug: 'olivier-faivre',
@@ -187,15 +157,7 @@ export const teamMembers: TeamMember[] = [
 
 export const teamMembersBySlug = new Map(teamMembers.map((m) => [m.slug, m]))
 
-const TEST_EMAIL_OVERRIDES: Record<string, string> = {
-  'test-ba': 'yolan.maldonado@sinapse.nc',
-  'test-legacy': 'yolan.maldonado@sinapse.nc',
-  'test-modern': 'yolan.maldonado@sinapse.nc',
-  'test-direction': 'yolan.maldonado@sinapse.nc',
-}
-
 export function slugToEmail(slug: string): string {
-  if (TEST_EMAIL_OVERRIDES[slug]) return TEST_EMAIL_OVERRIDES[slug]
   const i = slug.lastIndexOf('-')
   return slug.slice(0, i) + '.' + slug.slice(i + 1) + '@sinapse.nc'
 }
