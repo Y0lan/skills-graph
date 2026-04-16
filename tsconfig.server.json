@@ -10,7 +10,8 @@
     "strict": true,
     "esModuleInterop": true,
     "declaration": false,
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx"
   },
-  "include": ["server/**/*.ts", "scripts/**/*.ts", "src/data/team-roster.ts"]
+  "include": ["server/**/*.ts", "server/**/*.tsx", "scripts/**/*.ts", "src/data/team-roster.ts"]
 }
