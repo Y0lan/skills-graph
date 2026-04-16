@@ -19,6 +19,6 @@
 
 - [x] **Content-Disposition header injection** — Fixed: RFC 5987 encoding + ASCII fallback in `server/routes/recruitment.ts`.
 
-- [x] **Dev/prod share GKE namespace + GCP identity** — Fixed (partial): all k8s-dev manifests and deploy-dev.yml updated to use `public-webapp-dev` namespace. External prerequisites remain: create GCP service account, bind workload identity, separate Litestream bucket access.
+- [ ] **Dev/prod share GKE namespace + GCP identity** — Manifests ready but reverted (deploy failed without GCP prerequisites). Before re-applying: 1) create namespace `public-webapp-dev`, 2) create GCP SA `skill-radar-dev@premier-socle-sinapse.iam.gserviceaccount.com`, 3) bind workload identity, 4) copy secrets to new namespace, 5) separate Litestream bucket prefix.
 
 - [x] **Intake retries abandon failed side effects** — Fixed: redelivered webhooks now check and retry missing document uploads, CV extraction, and candidate notes in `server/lib/intake-service.ts`. Email intentionally not retried.
