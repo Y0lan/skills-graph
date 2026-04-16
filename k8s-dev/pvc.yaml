@@ -2,7 +2,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: skill-radar-dev-data
-  namespace: public-webapp
+  namespace: public-webapp-dev
 spec:
   accessModes:
     - ReadWriteOnce

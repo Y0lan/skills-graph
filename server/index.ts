@@ -119,7 +119,7 @@ app.get('/health/backup', (_req, res) => {
 app.use('/api', (req, res, next) => {
   if (req.path.startsWith('/auth/')) return next()
   if (req.path === '/catalog' || req.path === '/catalog/') return next()
-  if (req.path.startsWith('/evaluate/')) return next()
+  if (/^\/evaluate\/[^/]+\/(form|ratings|submit)\/?$/.test(req.path)) return next()
   if (req.path === '/recruitment/intake' || req.path === '/recruitment/intake/') return next()
   if (req.path === '/recruitment/webhooks/resend' || req.path === '/recruitment/webhooks/resend/') return next()
   if (req.path.startsWith('/webhooks/')) return next()

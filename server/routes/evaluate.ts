@@ -74,21 +74,24 @@ evaluateRouter.put('/:id/ratings', (req, res) => {
     return
   }
 
-  if (version !== undefined && version < row.version) {
-    res.status(409).json({ error: 'Version obsolète' })
-    return
-  }
-
-  getDb().prepare(
-    'UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ?, version = version + 1 WHERE id = ?'
+  const result = getDb().prepare(
+    `UPDATE candidates SET ratings = ?, experience = ?, skipped_categories = ?, version = version + 1
+     WHERE id = ? AND submitted_at IS NULL${version !== undefined ? ' AND version = ?' : ''}`
   ).run(
     JSON.stringify(ratings),
     JSON.stringify(experience ?? {}),
     JSON.stringify(Array.isArray(skippedCategories) ? skippedCategories : []),
     req.params.id,
+    ...(version !== undefined ? [version] : []),
   )
 
-  res.json({ ok: true })
+  if (result.changes === 0) {
+    res.status(409).json({ error: 'Version obsolète ou évaluation déjà soumise' })
+    return
+  }
+
+  const updated = getDb().prepare('SELECT version FROM candidates WHERE id = ?').get(req.params.id) as { version: number }
+  res.json({ ok: true, version: updated.version })
 })
 
 // Submit candidate evaluation (public — one-time, atomic with final ratings)
@@ -123,10 +126,21 @@ evaluateRouter.post('/:id/submit', (req, res) => {
         req.params.id,
       )
     }
-    db.prepare('UPDATE candidates SET submitted_at = ? WHERE id = ?').run(now, req.params.id)
+    const submitResult = db.prepare('UPDATE candidates SET submitted_at = ? WHERE id = ? AND submitted_at IS NULL').run(now, req.params.id)
+    if (submitResult.changes === 0) {
+      throw new Error('ALREADY_SUBMITTED')
+    }
   })
 
-  submitTransaction()
+  try {
+    submitTransaction()
+  } catch (err) {
+    if (err instanceof Error && err.message === 'ALREADY_SUBMITTED') {
+      res.status(409).json({ error: 'Évaluation déjà soumise' })
+      return
+    }
+    throw err
+  }
 
   // Recalculate compatibility for any linked candidatures
   const candidateRatings = ratings ?? safeJsonParse<Record<string, number>>(row.ratings, {})
@@ -153,11 +167,10 @@ evaluateRouter.post('/:id/submit', (req, res) => {
       'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
     ).run(tauxPoste, tauxEquipe, tauxGlobal, cand.id)
 
-    // Auto-advance to skill_radar_complete if currently at skill_radar_envoye
-    const currentStatut = db.prepare('SELECT statut FROM candidatures WHERE id = ?').get(cand.id) as { statut: string } | undefined
-    if (currentStatut?.statut === 'skill_radar_envoye') {
-      db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run('skill_radar_complete', cand.id)
+    // Auto-advance to skill_radar_complete if currently at skill_radar_envoye (atomic CAS)
+    const advanceResult = db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?')
+      .run('skill_radar_complete', cand.id, 'skill_radar_envoye')
+    if (advanceResult.changes > 0) {
       db.prepare(`
         INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
         VALUES (?, 'status_change', 'skill_radar_envoye', 'skill_radar_complete', 'Auto: évaluation soumise par le candidat', 'system')

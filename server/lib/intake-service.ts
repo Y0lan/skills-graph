@@ -98,6 +98,95 @@ export async function processIntake(
   })()
 
   if (intakeResult.updated) {
+    // Redelivered webhook — retry any missing side effects
+    const cid = intakeResult.candidatureId
+    const existingCandidate = getDb().prepare(
+      'SELECT candidate_id FROM candidatures WHERE id = ?'
+    ).get(cid) as { candidate_id: string } | undefined
+
+    if (existingCandidate) {
+      const candId = existingCandidate.candidate_id
+
+      // Retry candidate notes if blank
+      if (message?.trim()) {
+        const current = getDb().prepare('SELECT notes FROM candidates WHERE id = ?').get(candId) as { notes: string | null } | undefined
+        if (!current?.notes) {
+          getDb().prepare('UPDATE candidates SET notes = ? WHERE id = ?').run(message.trim(), candId)
+        }
+      }
+
+      // Retry CV upload if missing
+      if (cvFile) {
+        const cvExists = getDb().prepare(
+          "SELECT COUNT(*) as c FROM candidature_documents WHERE candidature_id = ? AND type = 'cv'"
+        ).get(cid) as { c: number }
+        if (cvExists.c === 0) {
+          try {
+            await uploadDocument({
+              candidatureId: cid,
+              file: { buffer: cvFile.buffer, mimetype: cvFile.mimetype, filename: cvFile.originalname || 'cv.pdf' },
+              docType: 'cv',
+              userSlug: 'drupal-webhook',
+            })
+          } catch (err) {
+            console.error('[Intake retry] CV file save error:', err)
+          }
+        }
+      }
+
+      // Retry lettre upload if missing
+      if (lettreFile) {
+        const lettreExists = getDb().prepare(
+          "SELECT COUNT(*) as c FROM candidature_documents WHERE candidature_id = ? AND type = 'lettre'"
+        ).get(cid) as { c: number }
+        if (lettreExists.c === 0) {
+          try {
+            await uploadDocument({
+              candidatureId: cid,
+              file: { buffer: lettreFile.buffer, mimetype: lettreFile.mimetype, filename: lettreFile.originalname || 'lettre.pdf' },
+              docType: 'lettre',
+              userSlug: 'drupal-webhook',
+            })
+          } catch (err) {
+            console.error('[Intake retry] Lettre file save error:', err)
+          }
+        }
+      }
+
+      // Retry CV extraction if missing
+      if (cvFile) {
+        const candidate = getDb().prepare('SELECT cv_text FROM candidates WHERE id = ?').get(candId) as { cv_text: string | null } | undefined
+        if (!candidate?.cv_text) {
+          try {
+            const cvText = await extractCvText(cvFile.buffer)
+            const catalog = getSkillCategories()
+            const result = await extractSkillsFromCv(cvText, catalog)
+            const suggestions = result?.ratings ?? null
+            getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
+              .run(cvText, suggestions ? JSON.stringify(suggestions) : null, candId)
+
+            if (suggestions && Object.keys(suggestions).length > 0) {
+              const posteInfo = getDb().prepare(
+                'SELECT p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.id = ?'
+              ).get(cid) as { role_id: string } | undefined
+              if (posteInfo) {
+                const tauxPoste = calculatePosteCompatibility(suggestions, posteInfo.role_id)
+                const tauxEquipe = calculateEquipeCompatibility(suggestions, posteInfo.role_id)
+                const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
+                getDb().prepare(
+                  'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+                ).run(tauxPoste, tauxEquipe, tauxGlobal, cid)
+              }
+            }
+          } catch (err) {
+            console.error('[Intake retry] CV processing error:', err)
+          }
+        }
+      }
+
+      // Do NOT retry confirmation email (risk of delayed duplicate)
+    }
+
     return intakeResult
   }
 

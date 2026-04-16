@@ -504,18 +504,32 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
 
   const user = getUser(req)
 
-  getDb().transaction(() => {
-    getDb().prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ?').run(statut, req.params.id)
+  try {
+    getDb().transaction(() => {
+      const result = getDb().prepare(
+        'UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?'
+      ).run(statut, req.params.id, current.statut)
 
-    const eventNotes = isSkip
-      ? `[Saut: ${getSkippedSteps(current.statut, statut).join(' → ')}] ${skipReason?.trim() ?? ''}\n${notes?.trim() ?? ''}`.trim()
-      : notes?.trim() || null
+      if (result.changes === 0) {
+        throw new Error('STATUS_CONFLICT')
+      }
 
-    getDb().prepare(`
-      INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
-      VALUES (?, 'status_change', ?, ?, ?, ?)
-    `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
-  })()
+      const eventNotes = isSkip
+        ? `[Saut: ${getSkippedSteps(current.statut, statut).join(' → ')}] ${skipReason?.trim() ?? ''}\n${notes?.trim() ?? ''}`.trim()
+        : notes?.trim() || null
+
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
+        VALUES (?, 'status_change', ?, ?, ?, ?)
+      `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
+    })()
+  } catch (err) {
+    if ((err as Error).message === 'STATUS_CONFLICT') {
+      res.status(409).json({ error: 'Le statut a été modifié par un autre utilisateur. Veuillez rafraîchir.' })
+      return
+    }
+    throw err
+  }
 
   // Unified email dispatch for all transition types
   let emailSent = false
@@ -577,21 +591,32 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         `).run(candidatureId, `Échec envoi email ${statut} à ${candidateInfo.email}`, userSlug)
       }
 
-      // For refuse, also notify the lead (existing behavior)
-      if (statut === 'refuse') {
-        const leadEmail = `${userSlug.replaceAll('-', '.')}@sinapse.nc`
-        try {
-          await sendCandidateDeclined({
-            candidateName: candidateInfo.name,
-            role: candidateInfo.role,
-            candidateEmail: candidateInfo.email,
-            leadEmail,
-            reason: notes?.trim() || undefined,
-            includeReason: !!includeReasonInEmail,
-          })
-        } catch (err) {
-          console.error('[Email] Failed to send decline notification to lead:', err)
-        }
+    }
+  }
+
+  // For refuse, notify the lead regardless of whether the candidate has an email
+  if (statut === 'refuse') {
+    const declineInfo = getDb().prepare(`
+      SELECT cand.name, cand.email, cand.role
+      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.id = ?
+    `).get(candidatureId) as { name: string; email: string | null; role: string } | undefined
+
+    if (declineInfo) {
+      const leadSlug = user.slug || 'unknown'
+      const leadEmail = `${leadSlug.replaceAll('-', '.')}@sinapse.nc`
+      try {
+        await sendCandidateDeclined({
+          candidateName: declineInfo.name,
+          role: declineInfo.role,
+          candidateEmail: declineInfo.email || '',
+          leadEmail,
+          reason: notes?.trim() || undefined,
+          includeReason: !!includeReasonInEmail,
+          skipCandidateEmail: true,
+        })
+      } catch (err) {
+        console.error('[Email] Failed to send decline notification to lead:', err)
       }
     }
   }
@@ -753,7 +778,8 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   }
 
   const fs = await import('fs')
-  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`)
+  const safeFilename = result.filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"')
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
   res.setHeader('Content-Type', result.contentType)
   fs.createReadStream(result.filePath).pipe(res)
 })
@@ -1129,9 +1155,6 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
   }
 })
 
-// Mount protected routes
-recruitmentRouter.use('/', protectedRouter)
-
 // ─── Resend Webhook (unauthenticated, verified by secret) ──────────
 
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET
@@ -1196,3 +1219,6 @@ recruitmentRouter.post('/webhooks/resend', (req, res) => {
     }
   }
 })
+
+// Mount protected routes
+recruitmentRouter.use('/', protectedRouter)

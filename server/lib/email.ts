@@ -198,50 +198,53 @@ export async function sendCandidateDeclined(opts: {
   leadEmail: string
   reason?: string
   includeReason?: boolean
+  skipCandidateEmail?: boolean
 }) {
   if (!process.env.RESEND_API_KEY) return null
 
   // Email to candidate
-  const reasonBlock = opts.includeReason && opts.reason
-    ? `
-      <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 3px solid #d1d5db;">
-        <p style="color: #555; font-size: 14px; line-height: 1.6; margin: 0;">
-          ${escapeHtml(opts.reason)}
-        </p>
-      </div>
-    `
-    : ''
-
-  try {
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: opts.candidateEmail,
-      subject: `Votre candidature — ${opts.role} chez SINAPSE`,
-      html: `
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
-          <h1 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;">
-            Bonjour ${escapeHtml(opts.candidateName)},
-          </h1>
-          <p style="color: #555; font-size: 16px; line-height: 1.6;">
-            Nous avons étudié avec attention votre candidature pour le poste de
-            <strong>${escapeHtml(opts.role)}</strong> et nous avons décidé de ne pas
-            poursuivre le processus.
-          </p>
-          ${reasonBlock}
-          <p style="color: #555; font-size: 14px; line-height: 1.6;">
-            Nous vous remercions pour le temps consacré et vous souhaitons
-            le meilleur dans la suite de vos démarches.
-          </p>
-          <p style="color: #555; font-size: 14px; line-height: 1.6;">
-            Cordialement,<br>
-            L'équipe SINAPSE
+  if (!opts.skipCandidateEmail) {
+    const reasonBlock = opts.includeReason && opts.reason
+      ? `
+        <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 8px; border-left: 3px solid #d1d5db;">
+          <p style="color: #555; font-size: 14px; line-height: 1.6; margin: 0;">
+            ${escapeHtml(opts.reason)}
           </p>
         </div>
-      `,
-    })
-    console.log(`[EMAIL] Decline sent to candidate ${opts.candidateEmail}`)
-  } catch (err) {
-    console.error('[EMAIL] Failed to send decline (candidate):', err)
+      `
+      : ''
+
+    try {
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: opts.candidateEmail,
+        subject: `Votre candidature — ${opts.role} chez SINAPSE`,
+        html: `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
+            <h1 style="font-size: 24px; font-weight: 700; color: #1a1a1a; margin-bottom: 8px;">
+              Bonjour ${escapeHtml(opts.candidateName)},
+            </h1>
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">
+              Nous avons étudié avec attention votre candidature pour le poste de
+              <strong>${escapeHtml(opts.role)}</strong> et nous avons décidé de ne pas
+              poursuivre le processus.
+            </p>
+            ${reasonBlock}
+            <p style="color: #555; font-size: 14px; line-height: 1.6;">
+              Nous vous remercions pour le temps consacré et vous souhaitons
+              le meilleur dans la suite de vos démarches.
+            </p>
+            <p style="color: #555; font-size: 14px; line-height: 1.6;">
+              Cordialement,<br>
+              L'équipe SINAPSE
+            </p>
+          </div>
+        `,
+      })
+      console.log(`[EMAIL] Decline sent to candidate ${opts.candidateEmail}`)
+    } catch (err) {
+      console.error('[EMAIL] Failed to send decline (candidate):', err)
+    }
   }
 
   // Email to lead

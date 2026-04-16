@@ -35,7 +35,8 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
 
   // Save file
   const safeFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
-  const filePath = resolveSafePath(docDir, safeFilename)
+  const uniqueFilename = `${crypto.randomUUID().slice(0, 8)}-${safeFilename}`
+  const filePath = resolveSafePath(docDir, uniqueFilename)
   fs.writeFileSync(filePath, file.buffer)
 
   // Save metadata

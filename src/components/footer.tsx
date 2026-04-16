@@ -120,6 +120,10 @@ export default function Footer() {
               Politique de confidentialité
             </Link>
           </div>
+          <span className="hidden sm:inline text-muted-foreground/60">
+            Déployé le {new Date(__BUILD_TIME__).toLocaleDateString('fr-FR', { timeZone: 'Pacific/Noumea' })} à{' '}
+            {new Date(__BUILD_TIME__).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Pacific/Noumea' })}
+          </span>
           <span>&copy; 2026 GIE SINAPSE. Tous droits réservés.</span>
         </div>
       </div>

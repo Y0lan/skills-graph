@@ -85,11 +85,11 @@ jobs:
           cd k8s-dev
           kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:dev-${{ github.sha }}
           kubectl apply -k .
-          kubectl -n public-webapp rollout status deployment/skill-radar-dev --timeout=300s
+          kubectl -n public-webapp-dev rollout status deployment/skill-radar-dev --timeout=300s
 
       - name: Smoke test
         run: |
-          kubectl -n public-webapp port-forward deploy/skill-radar-dev 9090:8080 &
+          kubectl -n public-webapp-dev port-forward deploy/skill-radar-dev 9090:8080 &
           PF_PID=$!
           sleep 2
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")

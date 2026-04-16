@@ -5,20 +5,20 @@
 
 ## Security & Reliability (from Codex adversarial review, 2026-04-16)
 
-- [ ] **Resend webhook unreachable (403)** — Router middleware ordering: `protectedRouter` mounts on `/` before the public webhook route, so unauthenticated Resend calls hit `requireLead` first. The auth bypass in `server/index.ts:123` never helps because the router-level middleware runs first. Fix: move webhook route before `protectedRouter.use(requireLead)` in `server/routes/recruitment.ts`.
+- [x] **Resend webhook unreachable (403)** — Fixed: moved webhook route before `protectedRouter.use()` mount in `server/routes/recruitment.ts`.
 
-- [ ] **Reopen endpoint auth gap** — `POST /api/evaluate/:id/reopen` uses `requireLead` but the global auth gate skips all `/evaluate/*` paths, so `req.user` is never populated. Fix: either move reopen to the recruitment router, or add explicit auth for this route.
+- [x] **Reopen endpoint auth gap** — Fixed: replaced broad `startsWith('/evaluate/')` exclusion with precise regex matching only `/form`, `/ratings`, `/submit` paths in `server/index.ts`.
 
-- [ ] **Evaluation autosave race condition** — `PUT /:id/ratings` does read-before-write without `WHERE version = ?` on the UPDATE. Two concurrent autosaves both succeed. A slow autosave can overwrite a just-submitted evaluation. Fix: add `WHERE version = ? AND submitted_at IS NULL` to the UPDATE.
+- [x] **Evaluation autosave race condition** — Fixed: atomic CAS with `WHERE version = ? AND submitted_at IS NULL` in `server/routes/evaluate.ts`. Also hardened submit path and auto-advance with CAS.
 
-- [ ] **Status change not compare-and-swap** — Two recruiters can move the same candidature to incompatible states simultaneously. Fix: add `WHERE statut = ?` (expected current status) to the UPDATE.
+- [x] **Status change not compare-and-swap** — Fixed: added `AND statut = ?` to UPDATE with conflict detection (409) in `server/routes/recruitment.ts`. Side effects gated on successful CAS.
 
-- [ ] **Refuse sends double email** — `PATCH /status` sends a transition email via `sendTransitionEmail()`, then immediately calls `sendCandidateDeclined()` which sends another refusal email. Candidate receives two rejection emails. Fix: remove one of the two sends.
+- [x] **Refuse sends double email** — Fixed: added `skipCandidateEmail` option to `sendCandidateDeclined` in `server/lib/email.ts`. Lead notification decoupled from candidate email existence.
 
-- [ ] **Document filename collision** — Uploading `cv.pdf` twice overwrites the first file on disk while both DB rows remain. Old downloads serve new bytes. Fix: append timestamp or UUID to stored filename.
+- [x] **Document filename collision** — Fixed: prepend 8-char UUID to stored filename in `server/lib/document-service.ts`.
 
-- [ ] **Content-Disposition header injection** — `server/routes/recruitment.ts:756` interpolates candidate-controlled filename directly into header. Fix: use RFC 5987 encoding.
+- [x] **Content-Disposition header injection** — Fixed: RFC 5987 encoding + ASCII fallback in `server/routes/recruitment.ts`.
 
-- [ ] **Dev/prod share GKE namespace + GCP identity** — Both deployments use `public-webapp` namespace and same workload identity. A dev compromise can reach prod backup objects via Litestream bucket. Fix: separate namespaces and service accounts.
+- [x] **Dev/prod share GKE namespace + GCP identity** — Fixed (partial): all k8s-dev manifests and deploy-dev.yml updated to use `public-webapp-dev` namespace. External prerequisites remain: create GCP service account, bind workload identity, separate Litestream bucket access.
 
-- [ ] **Intake retries abandon failed side effects** — Redelivered webhooks return `updated: true` without retrying failed document saves, CV extraction, or receipt emails. Fix: track completion state per side effect.
+- [x] **Intake retries abandon failed side effects** — Fixed: redelivered webhooks now check and retry missing document uploads, CV extraction, and candidate notes in `server/lib/intake-service.ts`. Email intentionally not retried.
