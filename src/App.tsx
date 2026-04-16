@@ -7,6 +7,7 @@ import { CatalogProvider } from '@/providers/catalog-provider'
 import { ProtectedRoute } from '@/components/auth/protected-route'
 import { useFullRoster } from '@/hooks/use-full-roster'
 import { Toaster } from '@/components/ui/sonner'
+import Footer from '@/components/footer'
 
 const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
@@ -36,6 +37,8 @@ function App() {
                 </div>
               }
             >
+              <div className="flex min-h-screen flex-col">
+              <div className="flex-1">
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
@@ -50,6 +53,9 @@ function App() {
                 <Route path="/confidentialite" element={<ConfidentialitePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
+              </div>
+              <Footer />
+              </div>
             </Suspense>
           </ErrorBoundaryWrapper>
         </TooltipProvider>

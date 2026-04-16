@@ -1,5 +1,4 @@
 import AppHeader from '@/components/app-header'
-import Footer from '@/components/footer'
 
 export default function ConfidentialitePage() {
   return (
@@ -98,7 +97,6 @@ export default function ConfidentialitePage() {
           </section>
         </div>
       </main>
-      <Footer />
     </div>
   )
 }

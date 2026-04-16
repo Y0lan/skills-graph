@@ -1,5 +1,4 @@
 import AppHeader from '@/components/app-header'
-import Footer from '@/components/footer'
 
 export default function MentionsLegalesPage() {
   return (
@@ -96,7 +95,6 @@ export default function MentionsLegalesPage() {
           </section>
         </div>
       </main>
-      <Footer />
     </div>
   )
 }
