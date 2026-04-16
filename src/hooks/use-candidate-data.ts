@@ -24,7 +24,7 @@ export interface CandidateDetail {
 }
 
 export interface TeamAggregate {
-  members: { slug: string; categoryAverages: Record<string, number> }[]
+  members: { slug: string; categoryAverages: Record<string, number>; skillRatings?: Record<string, number> }[]
 }
 
 export interface CategoryInfo {

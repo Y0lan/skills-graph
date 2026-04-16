@@ -356,6 +356,7 @@ export function initDatabase(): void {
   try { db.exec("ALTER TABLE candidature_documents ADD COLUMN scan_status TEXT DEFAULT 'pending'") } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scan_result TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scanned_at TEXT') } catch { /* already exists */ }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_scan_status ON candidature_documents(scan_status)')
 
   // Idempotent column additions for soft skill scoring + global score
   try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }

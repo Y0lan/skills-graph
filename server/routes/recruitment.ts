@@ -142,8 +142,8 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
     }
 
     res.status(result.updated ? 200 : 201).json({ ...result, warnings })
-  } catch (err) {
-    console.error('[Intake] Error:', err)
+  } catch {
+    console.error('[INTAKE] Processing failed')
     res.status(500).json({ error: 'Erreur interne' })
   }
 })
@@ -490,7 +490,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
     })()
-  } catch (err) {
+  } catch {
     if ((err as Error).message === 'STATUS_CONFLICT') {
       res.status(409).json({ error: 'Le statut a été modifié par un autre utilisateur. Veuillez rafraîchir.' })
       return
@@ -549,8 +549,8 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
             userSlug
           )
         }
-      } catch (err) {
-        console.error(`[Email] Failed to send ${statut} email:`, err)
+      } catch {
+        console.error(`[EMAIL] Failed to send ${statut} email`)
         emailSent = false
         getDb().prepare(`
           INSERT INTO candidature_events (candidature_id, type, notes, created_by)
@@ -582,8 +582,8 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
           includeReason: !!includeReasonInEmail,
           skipCandidateEmail: true,
         })
-      } catch (err) {
-        console.error('[Email] Failed to send decline notification to lead:', err)
+      } catch {
+        console.error('[EMAIL] Failed to send decline notification to lead')
       }
     }
   }
@@ -715,8 +715,8 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
     })
 
     res.status(201).json(result)
-  } catch (err) {
-    console.error('[Document upload] Error:', err)
+  } catch {
+    console.error('[DOCUMENT_UPLOAD] Upload failed')
     res.status(500).json({ error: 'Erreur upload' })
   }
 })
@@ -926,8 +926,8 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
     })
 
     res.json(result)
-  } catch (err) {
-    console.error('[Manual Aboro] Error:', err)
+  } catch {
+    console.error('[MANUAL_ABORO] Save failed')
     res.status(500).json({ error: 'Erreur sauvegarde' })
   }
 })
@@ -1002,8 +1002,8 @@ protectedRouter.post('/ai-email-draft', heavyRateLimit, async (req, res) => {
     const body = bodyMatch?.[1]?.trim() || rawText
 
     res.json({ subject, body })
-  } catch (err) {
-    console.error('[AI Email] Error generating draft:', err)
+  } catch {
+    console.error('[AI_EMAIL] Draft generation failed')
     const isTimeout = err instanceof Error && (err.message.includes('timeout') || err.message.includes('ETIMEDOUT'))
     res.status(503).json({ error: 'ai_unavailable', detail: isTimeout ? 'Claude timeout' : 'Claude API error' })
   }
@@ -1069,8 +1069,8 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
 
     // Create combined archive
     const archive = archiver('zip', { zlib: { level: 6 } })
-    archive.on('error', (err) => {
-      console.error('[Batch ZIP] Archive error:', err)
+    archive.on('error', () => {
+      console.error('[BATCH_ZIP] Archive error')
     })
 
     res.setHeader('Content-Type', 'application/zip')
@@ -1137,8 +1137,8 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
     }
 
     await archive.finalize()
-  } catch (err) {
-    console.error('[Batch ZIP] Error:', err)
+  } catch {
+    console.error('[BATCH_ZIP] Generation failed')
     if (!res.headersSent) {
       res.status(500).json({ error: 'Erreur lors de la génération du ZIP' })
     }
@@ -1171,8 +1171,8 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
         'svix-timestamp': svixTimestamp,
         'svix-signature': svixSignature,
       }) as Record<string, unknown>
-    } catch (err) {
-      console.error('[Webhook] Svix verification failed:', err)
+    } catch {
+      console.error('[WEBHOOK_AUTH] Verification failed')
       res.status(401).json({ error: 'Invalid webhook signature' })
       return
     }
@@ -1231,8 +1231,8 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
       `).run(event.candidature_id, `Email ouvert par le candidat (messageId: ${emailId})`)
 
       console.log(`[Webhook] Recorded email_open for candidature ${event.candidature_id}`)
-    } catch (err) {
-      console.error('[Webhook] Error processing email.opened:', err)
+    } catch {
+      console.error('[WEBHOOK] Error processing email.opened event')
     }
   }
 
@@ -1266,8 +1266,8 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
         `).run(event.candidature_id, `Email rebondi (messageId: ${emailId})`)
         console.log(`[Webhook] Recorded email_failed for candidature ${event.candidature_id}`)
       }
-    } catch (err) {
-      console.error('[Webhook] Error processing email.bounced:', err)
+    } catch {
+      console.error('[WEBHOOK] Error processing email.bounced event')
     }
   }
 
@@ -1301,8 +1301,8 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
         `).run(event.candidature_id, `Lien cliqué dans l'email (messageId: ${emailId})`)
         console.log(`[Webhook] Recorded email_clicked for candidature ${event.candidature_id}`)
       }
-    } catch (err) {
-      console.error('[Webhook] Error processing email.clicked:', err)
+    } catch {
+      console.error('[WEBHOOK] Error processing email.clicked event')
     }
   }
 })
@@ -1348,8 +1348,8 @@ recruitmentRouter.get('/pipeline-health', (_req, res) => {
       candidatesLast24h: recentCount.count,
       status,
     })
-  } catch (err) {
-    console.error('[Pipeline Health] Error:', err)
+  } catch {
+    console.error('[PIPELINE_HEALTH] Health check failed')
     res.status(500).json({ status: 'unhealthy', error: 'Health check failed' })
   }
 })

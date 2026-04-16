@@ -128,8 +128,8 @@ export async function processIntake(
               docType: 'cv',
               userSlug: 'drupal-webhook',
             })
-          } catch (err) {
-            console.error('[Intake retry] CV file save error:', err)
+          } catch {
+            console.error('[INTAKE_RETRY] CV file save failed')
           }
         }
       }
@@ -147,8 +147,8 @@ export async function processIntake(
               docType: 'lettre',
               userSlug: 'drupal-webhook',
             })
-          } catch (err) {
-            console.error('[Intake retry] Lettre file save error:', err)
+          } catch {
+            console.error('[INTAKE_RETRY] Lettre file save failed')
           }
         }
       }
@@ -178,8 +178,8 @@ export async function processIntake(
                 ).run(tauxPoste, tauxEquipe, tauxGlobal, cid)
               }
             }
-          } catch (err) {
-            console.error('[Intake retry] CV processing error:', err)
+          } catch {
+            console.error('[INTAKE_RETRY] CV processing failed')
           }
         }
       }
@@ -205,8 +205,8 @@ export async function processIntake(
         docType: 'cv',
         userSlug: 'drupal-webhook',
       })
-    } catch (err) {
-      console.error('[Intake] CV file save error:', err)
+    } catch {
+      console.error('[INTAKE] CV file save failed')
     }
   }
 
@@ -219,8 +219,8 @@ export async function processIntake(
         docType: 'lettre',
         userSlug: 'drupal-webhook',
       })
-    } catch (err) {
-      console.error('[Intake] Lettre file save error:', err)
+    } catch {
+      console.error('[INTAKE] Lettre file save failed')
     }
   }
 
@@ -243,8 +243,8 @@ export async function processIntake(
           'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
         ).run(tauxPoste, tauxEquipe, tauxGlobal, candidatureId)
       }
-    } catch (err) {
-      console.error('[Intake] CV processing error:', err)
+    } catch {
+      console.error('[INTAKE] CV processing failed')
     }
   }
 
@@ -257,7 +257,7 @@ export async function processIntake(
       role: poste.titre,
       candidateEmail: email.trim(),
       leadEmail,
-    }).catch(err => console.error('[Intake] Application email error:', err))
+    }).catch(() => console.error('[INTAKE] Application email failed'))
   }
 
   return intakeResult

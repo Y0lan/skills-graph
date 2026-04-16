@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import ReactMarkdown from 'react-markdown'
@@ -96,7 +96,9 @@ export default function CandidateDetailPage() {
     fetch('/api/candidates', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then((all: { id: string; name: string }[]) => setSiblings(all))
-      .catch(() => {})
+      .catch((err) => {
+        console.error('Failed to load sibling candidates:', err)
+      })
   })
   const currentIndex = siblings.findIndex(c => c.id === id)
   const prevCandidate = currentIndex > 0 ? siblings[currentIndex - 1] : null
@@ -129,6 +131,24 @@ export default function CandidateDetailPage() {
     const file = e.target.files?.[0]
     if (file) setTransitionFile(file)
   }, [setTransitionFile])
+
+  // Gap analysis: where candidate fills team gaps (memoized)
+  const gapAnalysis = useMemo(() => {
+    if (!candidate) return []
+    return categories.flatMap(cat =>
+      cat.skills.map(skill => {
+        const candidateScore = candidate.ratings[skill.id] ?? 0
+        if (candidateScore === 0) return null
+        const memberScores = teamData?.members?.map(m => {
+          return m.skillRatings?.[skill.id] ?? 0
+        }) ?? []
+        const validScores = memberScores.filter(v => v > 0)
+        const teamAvg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
+        const gap = candidateScore - teamAvg
+        return { skill: skill.label, category: cat.label, candidateScore, teamAvg: Math.round(teamAvg * 10) / 10, gap: Math.round(gap * 10) / 10 }
+      }).filter(Boolean)
+    ).sort((a, b) => (b?.gap ?? 0) - (a?.gap ?? 0))
+  }, [candidate, categories, teamData])
 
   if (loading) {
     return (
@@ -175,22 +195,6 @@ export default function CandidateDetailPage() {
       fullMark: 5,
     }
   })
-
-  // Gap analysis: where candidate fills team gaps
-  const gapAnalysis = categories.flatMap(cat =>
-    cat.skills.map(skill => {
-      const candidateScore = candidate.ratings[skill.id] ?? 0
-      if (candidateScore === 0) return null
-      const memberScores = teamData?.members?.map(m => {
-        const memberRatings = (m as unknown as { skillRatings?: Record<string, number> }).skillRatings
-        return memberRatings?.[skill.id] ?? 0
-      }) ?? []
-      const validScores = memberScores.filter(v => v > 0)
-      const teamAvg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
-      const gap = candidateScore - teamAvg
-      return { skill: skill.label, category: cat.label, candidateScore, teamAvg: Math.round(teamAvg * 10) / 10, gap: Math.round(gap * 10) / 10 }
-    }).filter(Boolean)
-  ).sort((a, b) => (b?.gap ?? 0) - (a?.gap ?? 0))
 
   const isPending = !candidate.submittedAt
 

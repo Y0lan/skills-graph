@@ -62,14 +62,14 @@ export async function sendCandidateInvite(opts: {
     })
 
     if (error) {
-      console.error('[EMAIL] Resend error:', error)
+      console.error('[EMAIL] Send invitation failed')
       return null
     }
 
-    console.log(`[EMAIL] Invitation sent to ${opts.to} (id: ${data?.id})`)
+    console.log(`[EMAIL] Invitation sent (id: ${data?.id})`)
     return data
-  } catch (err) {
-    console.error('[EMAIL] Failed to send:', err)
+  } catch {
+    console.error('[EMAIL] Failed to send invitation')
     return null
   }
 }
@@ -113,14 +113,14 @@ export async function sendCandidateSubmitted(opts: {
     })
 
     if (error) {
-      console.error('[EMAIL] Resend error:', error)
+      console.error('[EMAIL] Send submission notification failed')
       return null
     }
 
-    console.log(`[EMAIL] Submission notification sent to ${opts.to}`)
+    console.log('[EMAIL] Submission notification sent')
     return data
-  } catch (err) {
-    console.error('[EMAIL] Failed to send:', err)
+  } catch {
+    console.error('[EMAIL] Failed to send submission notification')
     return null
   }
 }
@@ -154,9 +154,9 @@ export async function sendApplicationReceived(opts: {
 <p style="margin:0;">Cordialement,</p>
       `),
     })
-    console.log(`[EMAIL] Application received sent to candidate ${opts.candidateEmail}`)
-  } catch (err) {
-    console.error('[EMAIL] Failed to send application received (candidate):', err)
+    console.log('[EMAIL] Application received sent to candidate')
+  } catch {
+    console.error('[EMAIL] Failed to send application received (candidate)')
   }
 
   // Email to lead (+ director if configured)
@@ -174,9 +174,9 @@ export async function sendApplicationReceived(opts: {
 <p style="margin:0;">Consultez le pipeline de recrutement pour examiner cette candidature.</p>
       `),
     })
-    console.log(`[EMAIL] Application received sent to lead ${opts.leadEmail}`)
-  } catch (err) {
-    console.error('[EMAIL] Failed to send application received (lead):', err)
+    console.log('[EMAIL] Application received sent to lead')
+  } catch {
+    console.error('[EMAIL] Failed to send application received (lead)')
   }
 }
 
@@ -209,9 +209,9 @@ export async function sendCandidateDeclined(opts: {
 <p style="margin:0;">Cordialement,</p>
         `),
       })
-      console.log(`[EMAIL] Decline sent to candidate ${opts.candidateEmail}`)
-    } catch (err) {
-      console.error('[EMAIL] Failed to send decline (candidate):', err)
+      console.log('[EMAIL] Decline sent to candidate')
+    } catch {
+      console.error('[EMAIL] Failed to send decline (candidate)')
     }
   }
 
@@ -228,9 +228,9 @@ ${opts.reason ? `<div style="margin:12px 0;padding:12px 16px;background:#f9fafb;
 <p style="color:#999;font-size:12px;line-height:1.5;margin:0;">${opts.includeReason ? 'Le motif a \u00e9t\u00e9 communiqu\u00e9 au candidat.' : 'Le motif n\'a pas \u00e9t\u00e9 communiqu\u00e9 au candidat.'}</p>
       `),
     })
-    console.log(`[EMAIL] Decline confirmation sent to lead ${opts.leadEmail}`)
-  } catch (err) {
-    console.error('[EMAIL] Failed to send decline (lead):', err)
+    console.log('[EMAIL] Decline confirmation sent to lead')
+  } catch {
+    console.error('[EMAIL] Failed to send decline (lead)')
   }
 }
 
@@ -294,14 +294,14 @@ export async function sendTransitionNotification(opts: {
     })
 
     if (error) {
-      console.error('[EMAIL] Resend error:', error)
+      console.error(`[EMAIL] Transition notification (${opts.statut}) send failed`)
       return null
     }
 
-    console.log(`[EMAIL] Transition notification (${opts.statut}) sent to ${opts.to} (id: ${data?.id})`)
+    console.log(`[EMAIL] Transition notification (${opts.statut}) sent (id: ${data?.id})`)
     return data
-  } catch (err) {
-    console.error('[EMAIL] Failed to send transition notification:', err)
+  } catch {
+    console.error(`[EMAIL] Failed to send transition notification (${opts.statut})`)
     return null
   }
 }
@@ -556,14 +556,14 @@ export async function sendTransitionEmail(opts: {
     })
 
     if (error) {
-      console.error('[EMAIL] Resend error:', error)
+      console.error(`[EMAIL] Transition email (${opts.statut}) send failed`)
       return { sent: false }
     }
 
-    console.log(`[EMAIL] Transition email (${opts.statut}) sent to ${opts.to} (id: ${data?.id})`)
+    console.log(`[EMAIL] Transition email (${opts.statut}) sent (id: ${data?.id})`)
     return { messageId: data?.id, sent: true }
-  } catch (err) {
-    console.error('[EMAIL] Failed to send transition email:', err)
+  } catch {
+    console.error(`[EMAIL] Failed to send transition email (${opts.statut})`)
     return { sent: false }
   }
 }

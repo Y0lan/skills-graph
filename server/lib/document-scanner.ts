@@ -33,8 +33,8 @@ async function scanWithClamAV(filePath: string): Promise<{ available: boolean; c
 
     const { isInfected, viruses } = await clamscan.isInfected(filePath)
     return { available: true, clean: !isInfected, threats: viruses ?? [] }
-  } catch (err) {
-    console.warn('[SCAN] ClamAV not available — skipping local scan:', (err as Error).message)
+  } catch {
+    console.warn('[SCAN] ClamAV not available — skipping local scan')
     return { available: false, clean: true, threats: [] }
   }
 }
@@ -65,8 +65,7 @@ async function scanWithVirusTotal(filePath: string, filename: string): Promise<{
     })
 
     if (!uploadRes.ok) {
-      const text = await uploadRes.text()
-      throw new Error(`VirusTotal upload failed (${uploadRes.status}): ${text}`)
+      throw new Error(`VirusTotal upload failed (${uploadRes.status})`)
     }
 
     const uploadData = await uploadRes.json() as { data: { id: string } }
@@ -114,8 +113,8 @@ async function scanWithVirusTotal(filePath: string, filename: string): Promise<{
 
     console.warn('[SCAN] VirusTotal scan timed out after polling')
     return { available: true, clean: true, threats: [] }
-  } catch (err) {
-    console.error('[SCAN] VirusTotal error:', (err as Error).message)
+  } catch {
+    console.error('[SCAN] VirusTotal scan failed')
     return { available: false, clean: true, threats: [] }
   }
 }

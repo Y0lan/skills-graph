@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { ArrowUpDown, Eye, Search, ArrowLeft } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
@@ -135,7 +136,10 @@ export default function EquipePage() {
 
         setMembers(rows)
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('Failed to load team data:', err)
+        toast.error('Erreur lors du chargement des données')
+      })
       .finally(() => setLoading(false))
 
     return () => controller.abort()
@@ -189,14 +193,14 @@ export default function EquipePage() {
     return result
   }, [members, poleFilter, search, sortField, sortDir])
 
-  function toggleSort(field: SortField) {
+  const toggleSort = useCallback((field: SortField) => {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
       setSortField(field)
       setSortDir('asc')
     }
-  }
+  }, [sortField])
 
   if (loading) {
     return (
