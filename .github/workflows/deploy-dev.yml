@@ -67,7 +67,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/625956894258/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: terraform-deployer@premier-socle-sinapse.iam.gserviceaccount.com
+          service_account: github-deploy@premier-socle-sinapse.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
 
