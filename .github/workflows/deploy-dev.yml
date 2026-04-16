@@ -4,6 +4,10 @@ on:
   push:
     branches: [dev]
 
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
+
 permissions:
   contents: read
   id-token: write
