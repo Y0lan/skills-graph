@@ -62,11 +62,22 @@ const createRateLimit = rateLimit({
   message: { error: 'Trop de candidats créés. Réessayez dans une minute.' },
 })
 
-// List all candidates
+// List all candidates (with most-advanced pipeline status across candidatures)
 candidatesRouter.get('/', (_req, res) => {
   const rows = getDb()
-    .prepare('SELECT id, name, role, email, created_by, created_at, expires_at, submitted_at, ai_report IS NOT NULL as has_report FROM candidates ORDER BY created_at DESC')
-    .all() as (Pick<CandidateRow, 'id' | 'name' | 'role' | 'email' | 'created_by' | 'created_at' | 'expires_at' | 'submitted_at'> & { has_report: number })[]
+    .prepare(`SELECT c.id, c.name, c.role, c.email, c.created_by, c.created_at, c.expires_at, c.submitted_at,
+      c.ai_report IS NOT NULL as has_report,
+      (SELECT statut FROM candidatures WHERE candidate_id = c.id
+       ORDER BY CASE statut
+         WHEN 'embauche' THEN 9 WHEN 'proposition' THEN 8
+         WHEN 'entretien_2' THEN 7 WHEN 'aboro' THEN 6
+         WHEN 'entretien_1' THEN 5 WHEN 'skill_radar_complete' THEN 4
+         WHEN 'skill_radar_envoye' THEN 3 WHEN 'preselectionne' THEN 2
+         WHEN 'postule' THEN 1 WHEN 'refuse' THEN 0 ELSE -1 END DESC
+       LIMIT 1) as pipeline_status,
+      (SELECT COUNT(*) FROM candidatures WHERE candidate_id = c.id) as candidature_count
+    FROM candidates c ORDER BY c.created_at DESC`)
+    .all() as (Pick<CandidateRow, 'id' | 'name' | 'role' | 'email' | 'created_by' | 'created_at' | 'expires_at' | 'submitted_at'> & { has_report: number; pipeline_status: string | null; candidature_count: number })[]
 
   res.json(rows.map(r => ({
     id: r.id,
@@ -78,6 +89,8 @@ candidatesRouter.get('/', (_req, res) => {
     expiresAt: r.expires_at,
     submittedAt: r.submitted_at,
     hasReport: !!r.has_report,
+    pipelineStatus: r.pipeline_status,
+    candidatureCount: r.candidature_count,
   })))
 })
 

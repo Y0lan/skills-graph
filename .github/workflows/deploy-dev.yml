@@ -21,10 +21,8 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-  deploy-dev:
-    needs: test
+  build:
     runs-on: ubuntu-latest
-    environment: dev
     steps:
       - uses: actions/checkout@v4
 
@@ -35,9 +33,6 @@ jobs:
           service_account: github-deploy@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Install gke-gcloud-auth-plugin
-        run: gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
@@ -56,6 +51,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  deploy-dev:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deploy@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
       - name: Get GKE credentials
         run: |
           gcloud container clusters get-credentials cloud-sinapse \
@@ -71,10 +81,9 @@ jobs:
 
       - name: Smoke test
         run: |
-          kubectl -n public-webapp rollout status deployment/skill-radar-dev --timeout=90s
           kubectl -n public-webapp port-forward deploy/skill-radar-dev 9090:8080 &
           PF_PID=$!
-          sleep 3
+          sleep 2
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
           kill $PF_PID 2>/dev/null || true
           if [ "$STATUS" = "200" ]; then

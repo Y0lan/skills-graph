@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
   return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR')
+}
+
+const PIPELINE_ORDER: Record<string, number> = {
+  embauche: 9, proposition: 8, entretien_2: 7, aboro: 6,
+  entretien_1: 5, skill_radar_complete: 4, skill_radar_envoye: 3,
+  preselectionne: 2, postule: 1, refuse: 0,
 }
 import AppHeader from '@/components/app-header'
 import { Button } from '@/components/ui/button'
@@ -24,7 +31,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2 } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2, Search, ArrowUpDown } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -36,6 +44,8 @@ interface Candidate {
   expiresAt: string
   submittedAt: string | null
   hasReport: boolean
+  pipelineStatus: string | null
+  candidatureCount: number
 }
 
 interface Role {
@@ -53,6 +63,11 @@ interface CatalogCategory {
 
 export default function RecruitPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterPoste, setFilterPoste] = useState('all')
+  const [filterStatut, setFilterStatut] = useState('all')
+  const [sortKey, setSortKey] = useState<'name' | 'role' | 'status' | 'createdAt'>('createdAt')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -159,10 +174,63 @@ export default function RecruitPage() {
   }
 
   function statusBadge(c: Candidate) {
+    // Show pipeline status when candidature exists
+    if (c.pipelineStatus && STATUT_LABELS[c.pipelineStatus]) {
+      return (
+        <Badge variant="secondary" className={STATUT_COLORS[c.pipelineStatus] ?? ''}>
+          {STATUT_LABELS[c.pipelineStatus]}
+        </Badge>
+      )
+    }
+    // Fallback to evaluation status for candidates without candidatures
     if (c.hasReport) return <Badge variant="default" className="bg-[#1B6179]">Analysé</Badge>
     if (c.submittedAt) return <Badge variant="default" className="bg-primary">Soumis</Badge>
     if (new Date(c.expiresAt) < new Date()) return <Badge variant="destructive">Expiré</Badge>
     return <Badge variant="secondary">En attente</Badge>
+  }
+
+  function statusOrder(c: Candidate): number {
+    if (c.pipelineStatus) return PIPELINE_ORDER[c.pipelineStatus] ?? -1
+    if (c.hasReport) return -2
+    if (c.submittedAt) return -3
+    return -4
+  }
+
+  const uniquePostes = useMemo(() => [...new Set(candidates.map(c => c.role))].sort(), [candidates])
+
+  const allStatuses = useMemo(() => {
+    const set = new Set<string>()
+    candidates.forEach(c => {
+      if (c.pipelineStatus) set.add(c.pipelineStatus)
+    })
+    return [...set].sort((a, b) => (PIPELINE_ORDER[b] ?? 0) - (PIPELINE_ORDER[a] ?? 0))
+  }, [candidates])
+
+  const filtered = useMemo(() => {
+    let result = candidates
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(c => c.name.toLowerCase().includes(q))
+    }
+    if (filterPoste !== 'all') result = result.filter(c => c.role === filterPoste)
+    if (filterStatut !== 'all') result = result.filter(c => c.pipelineStatus === filterStatut)
+
+    result = [...result].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name, 'fr'); break
+        case 'role': cmp = a.role.localeCompare(b.role, 'fr'); break
+        case 'status': cmp = statusOrder(a) - statusOrder(b); break
+        case 'createdAt': cmp = a.createdAt.localeCompare(b.createdAt); break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return result
+  }, [candidates, searchQuery, filterPoste, filterStatut, sortKey, sortDir])
+
+  const toggleSort = (key: typeof sortKey) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc') }
   }
 
   const handleSaveRole = async () => {
@@ -466,19 +534,80 @@ export default function RecruitPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="mt-6 overflow-x-auto">
+          <>
+          {/* Search + Filters */}
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Rechercher par nom..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={filterPoste} onValueChange={v => setFilterPoste(v ?? 'all')}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Tous les postes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les postes</SelectItem>
+                {uniquePostes.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterStatut} onValueChange={v => setFilterStatut(v ?? 'all')}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                {allStatuses.map(s => <SelectItem key={s} value={s}>{STATUT_LABELS[s] ?? s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {(searchQuery || filterPoste !== 'all' || filterStatut !== 'all') && (
+              <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setFilterPoste('all'); setFilterStatut('all') }}>
+                <X className="mr-1 h-3 w-3" /> Réinitialiser
+              </Button>
+            )}
+          </div>
+
+          {/* Count */}
+          <p className="mt-3 text-sm text-muted-foreground">
+            {filtered.length === candidates.length
+              ? `${candidates.length} candidat${candidates.length !== 1 ? 's' : ''}`
+              : `${filtered.length} / ${candidates.length} candidat${candidates.length !== 1 ? 's' : ''}`}
+          </p>
+
+          {/* Table */}
+          <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-3 font-medium">Nom</th>
-                  <th className="pb-3 font-medium">Poste</th>
-                  <th className="pb-3 font-medium">Statut</th>
-                  <th className="pb-3 font-medium">Créé le</th>
+                  <th className="pb-3 font-medium">
+                    <button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Nom <ArrowUpDown className="h-3 w-3" />
+                    </button>
+                  </th>
+                  <th className="pb-3 font-medium">
+                    <button onClick={() => toggleSort('role')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Poste <ArrowUpDown className="h-3 w-3" />
+                    </button>
+                  </th>
+                  <th className="pb-3 font-medium">
+                    <button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Statut <ArrowUpDown className="h-3 w-3" />
+                    </button>
+                  </th>
+                  <th className="pb-3 font-medium">
+                    <button onClick={() => toggleSort('createdAt')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Créé le <ArrowUpDown className="h-3 w-3" />
+                    </button>
+                  </th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {candidates.map(c => (
+                {filtered.map(c => (
                   <tr key={c.id} className="border-b last:border-0">
                     <td className="py-3">
                       <Link to={`/recruit/${c.id}`} className="hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
@@ -510,6 +639,7 @@ export default function RecruitPage() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>
