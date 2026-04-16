@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: skill-radar-dev
-  namespace: public-webapp
+  name: skill-radar
+  namespace: skill-radar-dev
   labels:
-    app: skill-radar-dev
+    app: skill-radar
 spec:
   type: ClusterIP
   ports:
@@ -13,4 +13,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: skill-radar-dev
+    app: skill-radar

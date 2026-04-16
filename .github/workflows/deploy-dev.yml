@@ -40,7 +40,7 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker australia-southeast1-docker.pkg.dev --quiet
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -51,8 +51,8 @@ jobs:
           context: .
           push: true
           tags: |
-            asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:dev-${{ github.sha }}
-            asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:dev-latest
+            australia-southeast1-docker.pkg.dev/sinapse-core/skill-radar/app:dev-${{ github.sha }}
+            australia-southeast1-docker.pkg.dev/sinapse-core/skill-radar/app:dev-latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -76,20 +76,20 @@ jobs:
 
       - name: Get GKE credentials
         run: |
-          gcloud container clusters get-credentials cloud-sinapse \
-            --region asia-northeast1 \
-            --project ${{ vars.GCP_PROJECT_ID }}
+          gcloud container clusters get-credentials skill-radar \
+            --region australia-southeast1 \
+            --project sinapse-core
 
       - name: Deploy to GKE (dev)
         run: |
           cd k8s-dev
-          kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:dev-${{ github.sha }}
+          kustomize edit set image skill-radar=australia-southeast1-docker.pkg.dev/sinapse-core/skill-radar/app:dev-${{ github.sha }}
           kubectl apply -k .
-          kubectl -n public-webapp rollout status deployment/skill-radar-dev --timeout=600s
+          kubectl -n skill-radar-dev rollout status deployment/skill-radar --timeout=600s
 
       - name: Smoke test
         run: |
-          kubectl -n public-webapp port-forward deploy/skill-radar-dev 9090:8080 &
+          kubectl -n skill-radar-dev port-forward deploy/skill-radar 9090:8080 &
           PF_PID=$!
           sleep 5
           for i in $(seq 1 12); do

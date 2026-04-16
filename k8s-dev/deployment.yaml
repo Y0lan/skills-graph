@@ -1,24 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: skill-radar-dev
-  namespace: public-webapp
+  name: skill-radar
+  namespace: skill-radar-dev
   labels:
-    app: skill-radar-dev
+    app: skill-radar
 spec:
   replicas: 1  # SQLite is single-writer — do not scale beyond 1
   strategy:
     type: Recreate  # Ensures old pod releases the PVC before new pod starts
   selector:
     matchLabels:
-      app: skill-radar-dev
+      app: skill-radar
   template:
     metadata:
       labels:
-        app: skill-radar-dev
+        app: skill-radar
     spec:
       terminationGracePeriodSeconds: 30
-      serviceAccountName: skill-radar-dev
+      serviceAccountName: skill-radar
       securityContext:
         runAsUser: 999
         runAsGroup: 999
@@ -31,9 +31,9 @@ spec:
               name: http
           envFrom:
             - configMapRef:
-                name: skill-radar-dev-config
+                name: skill-radar-config
             - secretRef:
-                name: skill-radar-dev-secrets
+                name: skill-radar-secrets
           volumeMounts:
             - name: data
               mountPath: /data
@@ -72,4 +72,4 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: skill-radar-dev-data
+            claimName: skill-radar-data

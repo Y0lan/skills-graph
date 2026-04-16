@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: skill-radar-dev-config
-  namespace: public-webapp
+  name: skill-radar-config
+  namespace: skill-radar-dev
 data:
   NODE_ENV: "production"
   PORT: "8080"
