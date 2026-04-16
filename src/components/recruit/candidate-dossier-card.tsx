@@ -1,7 +1,8 @@
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle } from 'lucide-react'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle, ShieldCheck, ShieldAlert, Loader } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -29,6 +30,40 @@ const EXPECTED_DOCUMENTS: Record<string, string[]> = {
   entretien_2: ['cv', 'lettre', 'aboro', 'entretien'],
   proposition: ['cv', 'lettre', 'aboro', 'entretien', 'proposition'],
   embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
+}
+
+function ScanBadge({ doc }: { doc: CandidatureDocument }) {
+  if (!doc.scan_status || doc.scan_status === 'pending') {
+    return (
+      <Tooltip>
+        <TooltipTrigger className="cursor-help">
+          <Loader className="h-3 w-3 text-muted-foreground animate-spin" />
+        </TooltipTrigger>
+        <TooltipContent className="text-xs">Scan antivirus en cours...</TooltipContent>
+      </Tooltip>
+    )
+  }
+  if (doc.scan_status === 'clean') {
+    return (
+      <Tooltip>
+        <TooltipTrigger className="cursor-help">
+          <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
+        </TooltipTrigger>
+        <TooltipContent className="text-xs">Scanné avec un logiciel antivirus — aucun malware détecté</TooltipContent>
+      </Tooltip>
+    )
+  }
+  if (doc.scan_status === 'infected') {
+    return (
+      <Tooltip>
+        <TooltipTrigger className="cursor-help">
+          <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+        </TooltipTrigger>
+        <TooltipContent className="text-xs max-w-[200px]">Menace détectée — ce fichier peut contenir un malware</TooltipContent>
+      </Tooltip>
+    )
+  }
+  return null // 'error' or 'skipped' — no badge
 }
 
 export interface CandidateDossierCardProps {
@@ -78,26 +113,32 @@ export default function CandidateDossierCard({
       {hasCv && (
         <div className="flex flex-wrap gap-2">
           {cvDoc && (
-            <Button
-              size="sm"
-              variant="default"
-              onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/download`, '_blank')}
-              className="gap-2"
-            >
-              <FileText className="h-4 w-4" />
-              Ouvrir CV
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/download`, '_blank')}
+                className="gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Ouvrir CV
+              </Button>
+              <ScanBadge doc={cvDoc} />
+            </div>
           )}
           {lettreDoc && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/download`, '_blank')}
-              className="gap-2"
-            >
-              <FileText className="h-4 w-4" />
-              Ouvrir Lettre
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/download`, '_blank')}
+                className="gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Ouvrir Lettre
+              </Button>
+              <ScanBadge doc={lettreDoc} />
+            </div>
           )}
           {documents.length > 0 && (
             <Button
@@ -127,6 +168,7 @@ export default function CandidateDossierCard({
                 <span className="text-[9px] text-muted-foreground shrink-0">
                   {formatDateTime(doc.created_at)}
                 </span>
+                <ScanBadge doc={doc} />
               </div>
               <Button
                 size="sm"

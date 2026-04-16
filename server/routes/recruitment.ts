@@ -775,8 +775,8 @@ protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
 // List documents for a candidature
 protectedRouter.get('/candidatures/:id/documents', (req, res) => {
   const docs = getDb().prepare(
-    'SELECT id, type, filename, uploaded_by, created_at FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC'
-  ).all(req.params.id) as { id: string; type: string; filename: string; uploaded_by: string; created_at: string }[]
+    'SELECT id, type, filename, uploaded_by, created_at, scan_status FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC'
+  ).all(req.params.id) as { id: string; type: string; filename: string; uploaded_by: string; created_at: string; scan_status: string | null }[]
 
   res.json(docs)
 })
@@ -795,6 +795,29 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
   res.setHeader('Content-Type', result.contentType)
   fs.createReadStream(result.filePath).pipe(res)
+})
+
+// Get scan status for a document
+protectedRouter.get('/documents/:docId/scan', (req, res) => {
+  const doc = getDb().prepare(
+    'SELECT scan_status, scan_result, scanned_at FROM candidature_documents WHERE id = ?'
+  ).get(req.params.docId) as { scan_status: string | null; scan_result: string | null; scanned_at: string | null } | undefined
+
+  if (!doc) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  let parsedResult = null
+  if (doc.scan_result) {
+    try { parsedResult = JSON.parse(doc.scan_result) } catch { parsedResult = doc.scan_result }
+  }
+
+  res.json({
+    status: doc.scan_status ?? 'pending',
+    result: parsedResult,
+    scannedAt: doc.scanned_at,
+  })
 })
 
 // Download all documents as ZIP for a candidature

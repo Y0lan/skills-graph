@@ -5,6 +5,7 @@ import { extractAboroText, extractAboroProfile, type AboroProfile } from './abor
 import { calculateSoftSkillScore } from './soft-skill-scoring.js'
 import { calculateGlobalScore } from './compatibility.js'
 import { STATUT_LABELS as statusLabels } from './constants.js'
+import { scanDocument } from './document-scanner.js'
 import archiver from 'archiver'
 import type { Writable } from 'stream'
 
@@ -51,6 +52,11 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     INSERT INTO candidature_events (candidature_id, type, notes, created_by)
     VALUES (?, 'document', ?, ?)
   `).run(candidatureId, `Document uploadé: ${file.filename} (${docType})`, userSlug)
+
+  // Trigger async malware scan (non-blocking)
+  triggerDocumentScan(docId, filePath, file.filename).catch(err =>
+    console.error('[SCAN] Background scan failed:', err)
+  )
 
   // Auto-extract Aboro profile if document type is 'aboro'
   let aboroProfile: AboroProfile | null = null
@@ -243,4 +249,35 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
   }
 
   return { candidateName, pipe }
+}
+
+// ─── Async malware scan ─────────────────────────────────────────────
+
+async function triggerDocumentScan(docId: string, filePath: string, filename: string): Promise<void> {
+  try {
+    const result = await scanDocument(filePath, filename)
+
+    const scanStatus = result.engines.length === 0
+      ? 'skipped'
+      : result.safe ? 'clean' : 'infected'
+
+    getDb().prepare(
+      'UPDATE candidature_documents SET scan_status = ?, scan_result = ?, scanned_at = ? WHERE id = ?'
+    ).run(scanStatus, JSON.stringify(result), result.scannedAt, docId)
+
+    if (!result.safe) {
+      console.error(`[SCAN] Document ${docId} (${filename}) is INFECTED — threats: ${result.threats.join(', ')}`)
+      // NOTE: File is kept for forensic review, but marked as infected in DB
+    } else if (scanStatus === 'skipped') {
+      console.warn(`[SCAN] Document ${docId} (${filename}) — scan skipped (no engines available)`)
+    } else {
+      console.log(`[SCAN] Document ${docId} (${filename}) — clean (${result.engines.join(', ')})`)
+    }
+  } catch (err) {
+    // Mark as error — scan itself failed
+    getDb().prepare(
+      "UPDATE candidature_documents SET scan_status = 'error', scan_result = ?, scanned_at = ? WHERE id = ?"
+    ).run(JSON.stringify({ error: (err as Error).message }), new Date().toISOString(), docId)
+    console.error(`[SCAN] Document ${docId} scan error:`, err)
+  }
 }

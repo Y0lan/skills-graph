@@ -352,6 +352,11 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN event_id INTEGER REFERENCES candidature_events(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_event ON candidature_documents(event_id)')
 
+  // Idempotent: add malware scan columns to candidature_documents
+  try { db.exec("ALTER TABLE candidature_documents ADD COLUMN scan_status TEXT DEFAULT 'pending'") } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scan_result TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scanned_at TEXT') } catch { /* already exists */ }
+
   // Idempotent column additions for soft skill scoring + global score
   try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN soft_skill_alerts TEXT') } catch { /* already exists */ }

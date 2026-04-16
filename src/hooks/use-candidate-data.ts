@@ -68,6 +68,8 @@ export interface CandidatureDocument {
   filename: string
   uploaded_by: string
   created_at: string
+  scan_status?: 'pending' | 'clean' | 'infected' | 'error' | 'skipped'
+  scanned_at?: string
 }
 
 export interface AboroProfile {
