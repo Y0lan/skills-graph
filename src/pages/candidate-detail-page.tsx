@@ -8,9 +8,11 @@ import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
 import FitReport from '@/components/recruit/fit-report'
 import MultiPosteCard from '@/components/recruit/multi-poste-card'
-import CandidateStatusBar from '@/components/recruit/candidate-status-bar'
+import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
+import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
+import CandidateDossierCard from '@/components/recruit/candidate-dossier-card'
+import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
-import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import AboroProfileSection from '@/components/recruit/aboro-profile-section'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,7 +30,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2 } from 'lucide-react'
-import { STATUT_LABELS } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useTransitionState } from '@/hooks/use-transition-state'
 import { useNavigate } from 'react-router-dom'
@@ -108,7 +110,7 @@ export default function CandidateDetailPage() {
       if (!res.ok) throw new Error('Erreur lors de l\'analyse')
       const data = await res.json()
       setCandidate(prev => prev ? { ...prev, aiReport: data.report } : null)
-      toast.success('Analyse générée')
+      toast.success('Analyse generee')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur')
     } finally {
@@ -200,141 +202,233 @@ export default function CandidateDetailPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
-        <Link to="/recruit" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Retour
-        </Link>
-
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">{candidate.name}</h1>
-            <p className="text-muted-foreground">{candidate.role}</p>
-          </div>
-          {isPending ? (
-            <Badge variant="secondary" className="ml-auto">
-              <Clock className="mr-1 h-3 w-3" /> En attente
-            </Badge>
-          ) : candidate.aiReport ? (
-            <Badge variant="default" className="ml-auto bg-[#1B6179]">Analysé</Badge>
-          ) : (
-            <Badge variant="default" className="ml-auto bg-primary">Soumis</Badge>
-          )}
-          {candidate.submittedAt && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
-                  method: 'POST',
-                  credentials: 'include',
-                })
-                if (res.ok) {
-                  toast.success('Évaluation rouverte — le candidat peut modifier ses réponses')
-                  window.location.reload()
-                } else {
-                  toast.error('Erreur lors de la réouverture')
-                }
-              }}
-              className="gap-1.5"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Rouvrir l'évaluation
-            </Button>
+        {/* ── BACK + NAVIGATION ── */}
+        <div className="flex items-center justify-between mb-4">
+          <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Retour
+          </Link>
+          {siblings.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!prevCandidate}
+                onClick={() => prevCandidate && navigate(`/recruit/${prevCandidate.id}`)}
+                className="gap-1 h-7 px-2"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span className="text-xs hidden sm:inline">{prevCandidate?.name ?? 'Prec.'}</span>
+              </Button>
+              <span className="text-xs font-medium text-muted-foreground tabular-nums">
+                {currentIndex + 1}/{siblings.length}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!nextCandidate}
+                onClick={() => nextCandidate && navigate(`/recruit/${nextCandidate.id}`)}
+                className="gap-1 h-7 px-2"
+              >
+                <span className="text-xs hidden sm:inline">{nextCandidate?.name ?? 'Suiv.'}</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           )}
         </div>
 
-        {/* Contact info */}
-        {(candidate.email || candidate.telephone || candidate.pays) && (
-          <div className="mt-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
-            {candidate.email && (
-              <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground">
-                <Mail className="h-3.5 w-3.5" /> {candidate.email}
-              </a>
+        {/* ══════════ ABOVE THE FOLD ══════════ */}
+
+        {/* ── 1. IDENTITY HEADER ── */}
+        <div className="flex items-start gap-4 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl font-bold">{candidate.name}</h1>
+            <p className="text-muted-foreground">{candidate.role}</p>
+
+            {/* Contact info */}
+            <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
+              {candidate.email && (
+                <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground">
+                  <Mail className="h-3.5 w-3.5" /> {candidate.email}
+                </a>
+              )}
+              {candidate.telephone && (
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3.5 w-3.5" /> {candidate.telephone}
+                </span>
+              )}
+              {candidate.pays && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" /> {candidate.pays}
+                </span>
+              )}
+              {candidate.linkedinUrl && (
+                <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                  <Globe className="h-3.5 w-3.5" /> LinkedIn
+                </a>
+              )}
+              {candidate.githubUrl && (
+                <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                  <Globe className="h-3.5 w-3.5" /> GitHub
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Status badges */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {isPending ? (
+              <Badge variant="secondary">
+                <Clock className="mr-1 h-3 w-3" /> En attente
+              </Badge>
+            ) : candidate.aiReport ? (
+              <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
+            ) : (
+              <Badge variant="default" className="bg-primary">Soumis</Badge>
             )}
-            {candidate.telephone && (
-              <span className="flex items-center gap-1">
-                <Phone className="h-3.5 w-3.5" /> {candidate.telephone}
-              </span>
-            )}
-            {candidate.pays && (
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" /> {candidate.pays}
-              </span>
-            )}
-            {candidate.linkedinUrl && (
-              <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                <Globe className="h-3.5 w-3.5" /> LinkedIn
-              </a>
-            )}
-            {candidate.githubUrl && (
-              <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                <Globe className="h-3.5 w-3.5" /> GitHub
-              </a>
+            {candidate.canal && (
+              <Badge variant="outline" className="text-xs">
+                {CANAL_LABELS[candidate.canal] ?? candidate.canal}
+              </Badge>
             )}
             {candidate.hasCv && (
-              <Badge variant="outline" className="text-xs">CV uploadé</Badge>
+              <Badge variant="outline" className="text-xs">CV uploade</Badge>
+            )}
+            {candidate.submittedAt && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
+                    method: 'POST',
+                    credentials: 'include',
+                  })
+                  if (res.ok) {
+                    toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
+                    window.location.reload()
+                  } else {
+                    toast.error('Erreur lors de la reouverture')
+                  }
+                }}
+                className="gap-1.5 h-7"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Rouvrir
+              </Button>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Pipeline candidature(s) */}
-        <CandidateStatusBar
-          candidatures={candidatures}
-          events={events}
-          allowedTransitions={allowedTransitions}
-          changingStatus={changingStatus}
-          onOpenTransition={handleOpenTransition}
-          candidatureDataMap={candidatureDataMap}
-        />
+        {/* ── 2. PER-CANDIDATURE: STEPPER + SCORES + DOSSIER + ACTIONS ── */}
+        {candidatures.map(c => {
+          const cData = candidatureDataMap?.[c.id]
+          const cEvents = cData?.events ?? events
+          const cTransitions = cData?.allowedTransitions ?? allowedTransitions
+          const cDocuments = cData?.documents ?? documents
 
-        {/* Notes d'entretien (collapsible) */}
-        {candidatures[0]?.id && (
-          <details className="mt-4 rounded-lg border bg-card">
-            <summary className="cursor-pointer px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Notes d&apos;entretien
-            </summary>
-            <div className="px-4 pb-4">
-              <CandidateNotesSection
-                candidateId={candidate.id}
-                candidatureId={candidatures[0].id}
-                notes={candidatures[0]?.notesDirecteur ?? notes}
-                onNotesChange={setNotes}
-              />
-            </div>
-          </details>
-        )}
+          return (
+            <Card key={c.id} className="mt-6">
+              <CardContent className="py-5 px-5 space-y-5">
+                {/* Candidature context */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <p className="text-sm font-medium">{c.posteTitre}</p>
+                  <Badge variant="secondary" className={`text-xs ${STATUT_COLORS[c.statut] ?? ''}`}>
+                    {STATUT_LABELS[c.statut] ?? c.statut}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
+                  </span>
+                </div>
 
-        {/* Prev/Next candidate navigation */}
-        {siblings.length > 1 && (
-          <div className="mt-4 flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-2.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!prevCandidate}
-              onClick={() => prevCandidate && navigate(`/recruit/${prevCandidate.id}`)}
-              className="gap-2"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span className="text-sm">{prevCandidate?.name ?? 'Précédent'}</span>
-            </Button>
-            <span className="text-sm font-medium text-muted-foreground tabular-nums">
-              {currentIndex + 1} / {siblings.length}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!nextCandidate}
-              onClick={() => nextCandidate && navigate(`/recruit/${nextCandidate.id}`)}
-              className="gap-2"
-            >
-              <span className="text-sm">{nextCandidate?.name ?? 'Suivant'}</span>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+                {/* Soft skill alerts */}
+                {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.softSkillAlerts.map((a, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600">
+                        {'\u26A0'} {a.message}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
 
-        {/* Transition confirmation dialog */}
+                {/* Pipeline stepper */}
+                <CandidatePipelineStepper candidature={c} events={cEvents} />
+
+                {/* 3-column grid: Dossier | Scores | Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t">
+                  {/* Dossier */}
+                  <CandidateDossierCard
+                    candidatureId={c.id}
+                    documents={cDocuments}
+                    setDocuments={setDocuments}
+                    setEvents={setEvents}
+                    currentStatut={c.statut}
+                  />
+
+                  {/* Scores */}
+                  <CandidateScoreSummary
+                    tauxPoste={c.tauxPoste}
+                    tauxEquipe={c.tauxEquipe}
+                    tauxSoft={c.tauxSoft}
+                  />
+
+                  {/* Actions */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</p>
+                    {cTransitions && (cTransitions.allowedTransitions.length > 0 || cTransitions.skipTransitions.length > 0) ? (
+                      <div className="flex flex-col gap-2">
+                        {/* Normal forward transitions */}
+                        {cTransitions.allowedTransitions.filter(s => s !== 'refuse').map(s => (
+                          <Button
+                            key={s}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenTransition(c.id, s, false, [], c.statut)}
+                            disabled={changingStatus}
+                            className="justify-start gap-2"
+                          >
+                            <ChevronRight className="h-3 w-3" />
+                            {STATUT_LABELS[s] ?? s}
+                          </Button>
+                        ))}
+                        {/* Skip transitions */}
+                        {cTransitions.skipTransitions.map(st => (
+                          <Button
+                            key={st.statut}
+                            size="sm"
+                            variant="ghost"
+                            className="justify-start text-muted-foreground"
+                            onClick={() => handleOpenTransition(c.id, st.statut, true, st.skipped, c.statut)}
+                            disabled={changingStatus}
+                          >
+                            {STATUT_LABELS[st.statut] ?? st.statut}
+                            <span className="text-[10px] ml-1">(sauter {st.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')})</span>
+                          </Button>
+                        ))}
+                        {/* Refuse */}
+                        {cTransitions.allowedTransitions.includes('refuse') && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleOpenTransition(c.id, 'refuse', false, [], c.statut)}
+                            disabled={changingStatus}
+                            className="justify-start gap-2 mt-1"
+                          >
+                            <X className="h-3 w-3" />
+                            Refuser
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Aucune action disponible</p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+
+        {/* ── TRANSITION DIALOG ── */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
           <AlertDialogContent size="lg">
             <AlertDialogHeader>
@@ -343,7 +437,7 @@ export default function CandidateDetailPage() {
                   ? 'Refuser cette candidature ?'
                   : transitionDialog?.targetStatut === 'embauche'
                     ? 'Confirmer l\'embauche ?'
-                    : `Passer à : ${STATUT_LABELS[transitionDialog?.targetStatut ?? ''] ?? transitionDialog?.targetStatut}`
+                    : `Passer a : ${STATUT_LABELS[transitionDialog?.targetStatut ?? ''] ?? transitionDialog?.targetStatut}`
                 }
               </AlertDialogTitle>
               <AlertDialogDescription>
@@ -354,7 +448,7 @@ export default function CandidateDetailPage() {
                   </span>
                 )}
                 {transitionDialog?.targetStatut === 'embauche' && (
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">Cette action est définitive.</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Cette action est definitive.</span>
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -366,7 +460,7 @@ export default function CandidateDetailPage() {
                   {transitionEmailLoading ? (
                     <div className="flex items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Chargement du modèle d'email...
+                      Chargement du modele d'email...
                     </div>
                   ) : transitionHasEmailTemplate && (
                     <>
@@ -414,7 +508,7 @@ export default function CandidateDetailPage() {
                             disabled
                           >
                             <Wand2 className="h-3 w-3" />
-                            Rédiger avec l'IA
+                            Rediger avec l'IA
                           </Button>
                         </div>
                       )}
@@ -438,7 +532,7 @@ export default function CandidateDetailPage() {
                   />
                   <span className="text-sm">
                     {transitionDialog.targetStatut === 'skill_radar_envoye'
-                      ? "Envoyer le lien d'évaluation par email au candidat"
+                      ? "Envoyer le lien d'evaluation par email au candidat"
                       : 'Envoyer un email de notification au candidat'}
                   </span>
                 </label>
@@ -464,7 +558,7 @@ export default function CandidateDetailPage() {
                   <Textarea
                     value={transitionSkipReason}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipReason(e.target.value)}
-                    placeholder="Pourquoi sauter cette étape ?"
+                    placeholder="Pourquoi sauter cette etape ?"
                     rows={2}
                     className="mt-1"
                   />
@@ -485,7 +579,7 @@ export default function CandidateDetailPage() {
                     onClick={() => setTransitionShowMarkdownPreview(!transitionShowMarkdownPreview)}
                     className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {transitionShowMarkdownPreview ? 'Éditer' : 'Aperçu'}
+                    {transitionShowMarkdownPreview ? 'Editer' : 'Apercu'}
                   </button>
                 </div>
                 {transitionShowMarkdownPreview ? (
@@ -587,48 +681,107 @@ export default function CandidateDetailPage() {
           </AlertDialogContent>
         </AlertDialog>
 
+        {/* ══════════ BELOW THE FOLD ══════════ */}
+
         {isPending ? (
           <Card className="mt-8">
             <CardContent className="p-12 text-center">
               <Clock className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h2 className="mt-4 text-lg font-medium">En attente de l'évaluation</h2>
+              <h2 className="mt-4 text-lg font-medium">En attente de l'evaluation</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Le candidat n'a pas encore soumis son évaluation.
+                Le candidat n'a pas encore soumis son evaluation.
               </p>
             </CardContent>
           </Card>
         ) : (
-          <div className="mt-8 grid gap-6 lg:grid-cols-2">
-            {/* Radar chart */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Radar — Candidat vs Équipe</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <VisxRadarChart
-                  data={candidateRadar}
-                  overlay={teamRadar}
-                  primaryLabel={candidate.name}
-                  overlayLabel="Moyenne équipe"
-                  showOverlayToggle
+          <>
+            {/* 2-column: Notes + Radar/Fit */}
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+              {/* Left: Recruiter notes */}
+              <div className="space-y-6">
+                {candidatures[0]?.id && (
+                  <CandidateNotesSection
+                    candidateId={candidate.id}
+                    candidatureId={candidatures[0].id}
+                    notes={candidatures[0]?.notesDirecteur ?? notes}
+                    onNotesChange={setNotes}
+                  />
+                )}
+
+                {/* Behavioral profile (Aboro) */}
+                <AboroProfileSection
+                  candidateId={candidate.id}
+                  aboroProfile={aboroProfile}
+                  hasCandidatures={candidatures.length > 0}
+                  onProfileUpdated={setAboroProfile}
                 />
-              </CardContent>
-            </Card>
+              </div>
+
+              {/* Right: Radar + Fit report */}
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Radar — Candidat vs Equipe</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <VisxRadarChart
+                      data={candidateRadar}
+                      overlay={teamRadar}
+                      primaryLabel={candidate.name}
+                      overlayLabel="Moyenne equipe"
+                      showOverlayToggle
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* AI Report */}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-base">Analyse IA</CardTitle>
+                    {!candidate.aiReport && (
+                      <Button onClick={generateAnalysis} disabled={analyzing} size="sm">
+                        {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                        Generer l'analyse
+                      </Button>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {candidate.aiReport ? (
+                      <FitReport report={candidate.aiReport} />
+                    ) : analyzing ? (
+                      <div className="flex items-center justify-center py-12">
+                        <Loader2 className="mr-3 h-6 w-6 animate-spin" />
+                        <span className="text-muted-foreground">Analyse en cours... (15-30 secondes)</span>
+                      </div>
+                    ) : (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        Cliquez sur &laquo; Generer l'analyse &raquo; pour obtenir un rapport IA comparant ce candidat a l'equipe.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Multi-poste compatibility */}
+                {multiPosteCompatibility.length > 0 && (
+                  <MultiPosteCard entries={multiPosteCompatibility} />
+                )}
+              </div>
+            </div>
 
             {/* Gap analysis */}
-            <Card>
+            <Card className="mt-6">
               <CardHeader>
-                <CardTitle className="text-base">Analyse des écarts</CardTitle>
+                <CardTitle className="text-base">Analyse des ecarts</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="max-h-[400px] overflow-y-auto">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-card">
                       <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4 font-medium">Compétence</th>
+                        <th className="pb-2 pr-4 font-medium">Competence</th>
                         <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-20">Candidat</th>
-                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-16">Équipe</th>
-                        <th className="pb-2 pl-3 font-medium text-center whitespace-nowrap w-14">Écart</th>
+                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-16">Equipe</th>
+                        <th className="pb-2 pl-3 font-medium text-center whitespace-nowrap w-14">Ecart</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -650,87 +803,45 @@ export default function CandidateDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Behavioral profile (Aboro) */}
-            <AboroProfileSection
-              candidateId={candidate.id}
-              aboroProfile={aboroProfile}
-              hasCandidatures={candidatures.length > 0}
-              onProfileUpdated={setAboroProfile}
-            />
-
-            {/* Documents */}
-            {candidatures.length > 0 && (
-              <CandidateDocumentsPanel
-                candidatureId={candidatures[0].id}
-                documents={documents}
-                setDocuments={setDocuments}
-                setEvents={setEvents}
-              />
-            )}
-
-            {/* Multi-poste compatibility */}
-            {multiPosteCompatibility.length > 0 && (
-              <div className="lg:col-span-2">
-                <MultiPosteCard entries={multiPosteCompatibility} />
-                {bonusSkills && bonusSkills.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">Compétences bonus (hors poste)</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {bonusSkills.map((s) => (
-                        <Badge key={s.skillId} variant="outline" className="text-[10px]">
-                          + {s.skillLabel} {s.score}/5
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Bonus skills (standalone, when no multi-poste data) */}
-            {multiPosteCompatibility.length === 0 && bonusSkills && bonusSkills.length > 0 && (
-              <div className="lg:col-span-2">
-                <div className="mt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Compétences bonus (hors poste)</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {bonusSkills.map((s) => (
-                      <Badge key={s.skillId} variant="outline" className="text-[10px]">
-                        + {s.skillLabel} {s.score}/5
-                      </Badge>
-                    ))}
-                  </div>
+            {/* Bonus skills */}
+            {bonusSkills && bonusSkills.length > 0 && (
+              <div className="mt-4">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Competences bonus (hors poste)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {bonusSkills.map((s) => (
+                    <Badge key={s.skillId} variant="outline" className="text-[10px]">
+                      + {s.skillLabel} {s.score}/5
+                    </Badge>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* AI Report */}
-            <Card className="lg:col-span-2">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">Analyse IA</CardTitle>
-                {!candidate.aiReport && (
-                  <Button onClick={generateAnalysis} disabled={analyzing} size="sm">
-                    {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                    Générer l'analyse
-                  </Button>
-                )}
-              </CardHeader>
-              <CardContent>
-                {candidate.aiReport ? (
-                  <FitReport report={candidate.aiReport} />
-                ) : analyzing ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="mr-3 h-6 w-6 animate-spin" />
-                    <span className="text-muted-foreground">Analyse en cours... (15-30 secondes)</span>
-                  </div>
-                ) : (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    Cliquez sur &laquo; Générer l'analyse &raquo; pour obtenir un rapport IA comparant ce candidat à l'équipe.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-          </div>
+            {/* ── FULL HISTORY BY STAGE ── */}
+            {candidatures.length > 0 && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="text-base">Historique complet</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {candidatures.map(c => {
+                    const cData = candidatureDataMap?.[c.id]
+                    const cEvents = cData?.events ?? events
+                    return (
+                      <div key={c.id}>
+                        {candidatures.length > 1 && (
+                          <p className="text-xs font-medium text-muted-foreground mb-2 mt-4 first:mt-0">
+                            {c.posteTitre}
+                          </p>
+                        )}
+                        <CandidateHistoryByStage events={cEvents} currentStatut={c.statut} />
+                      </div>
+                    )
+                  })}
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
       </div>
     </div>

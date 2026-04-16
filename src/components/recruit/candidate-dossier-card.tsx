@@ -1,0 +1,194 @@
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle } from 'lucide-react'
+import { formatDateTime } from '@/lib/constants'
+import { useDocumentUpload } from '@/hooks/use-document-upload'
+import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  cv: 'CV',
+  lettre: 'Lettre de motivation',
+  aboro: 'Rapport Aboro',
+  entretien: 'Compte-rendu entretien',
+  proposition: 'Proposition',
+  administratif: 'Administratif',
+  other: 'Autre',
+}
+
+/** Reuse the EXPECTED_DOCUMENTS map from candidate-documents-panel.tsx */
+const EXPECTED_DOCUMENTS: Record<string, string[]> = {
+  cv: ['cv'],
+  lettre: ['cv', 'lettre'],
+  postule: ['cv'],
+  preselectionne: ['cv'],
+  skill_radar_envoye: ['cv'],
+  skill_radar_complete: ['cv'],
+  entretien_1: ['cv', 'lettre'],
+  aboro: ['cv', 'lettre', 'aboro'],
+  entretien_2: ['cv', 'lettre', 'aboro', 'entretien'],
+  proposition: ['cv', 'lettre', 'aboro', 'entretien', 'proposition'],
+  embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
+}
+
+export interface CandidateDossierCardProps {
+  candidatureId: string
+  documents: CandidatureDocument[]
+  setDocuments: React.Dispatch<React.SetStateAction<CandidatureDocument[]>>
+  setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>
+  currentStatut?: string
+}
+
+export default function CandidateDossierCard({
+  candidatureId,
+  documents,
+  setDocuments,
+  setEvents,
+  currentStatut,
+}: CandidateDossierCardProps) {
+  const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
+
+  const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
+  const uploadedTypes = new Set(documents.map(d => d.type))
+
+  const cvDoc = documents.find(d => d.type === 'cv')
+  const lettreDoc = documents.find(d => d.type === 'lettre')
+  const otherDocs = documents.filter(d => d.type !== 'cv' && d.type !== 'lettre')
+  const missingDocs = expectedTypes.filter(t => !uploadedTypes.has(t))
+  const hasCv = uploadedTypes.has('cv')
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dossier</p>
+
+      {/* Empty state */}
+      {documents.length === 0 && (
+        <div className="rounded-lg border-2 border-dashed border-amber-500/40 bg-amber-500/5 p-4 text-center">
+          <AlertTriangle className="h-5 w-5 mx-auto text-amber-500 mb-2" />
+          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+            CV manquant
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Impossible de faire une revue rapide sans CV
+          </p>
+        </div>
+      )}
+
+      {/* Primary document buttons */}
+      {hasCv && (
+        <div className="flex flex-wrap gap-2">
+          {cvDoc && (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/download`, '_blank')}
+              className="gap-2"
+            >
+              <FileText className="h-4 w-4" />
+              Ouvrir CV
+            </Button>
+          )}
+          {lettreDoc && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/download`, '_blank')}
+              className="gap-2"
+            >
+              <FileText className="h-4 w-4" />
+              Ouvrir Lettre
+            </Button>
+          )}
+          {documents.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open(`/api/recruitment/candidatures/${candidatureId}/documents/zip`, '_blank')}
+              className="gap-2"
+            >
+              <FolderArchive className="h-3.5 w-3.5" />
+              ZIP
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Other documents list */}
+      {otherDocs.length > 0 && (
+        <div className="space-y-1">
+          {otherDocs.map(doc => (
+            <div key={doc.id} className="flex items-center justify-between gap-2 py-1 px-1.5 rounded hover:bg-muted/50 group">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs truncate">{doc.filename}</span>
+                <Badge variant="secondary" className="text-[9px] shrink-0">
+                  {DOC_TYPE_LABELS[doc.type] ?? doc.type}
+                </Badge>
+                <span className="text-[9px] text-muted-foreground shrink-0">
+                  {formatDateTime(doc.created_at)}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+                onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
+              >
+                <Download className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Missing expected docs */}
+      {missingDocs.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {missingDocs.map(type => (
+            <Badge
+              key={type}
+              variant="outline"
+              className="text-[9px] border-dashed border-amber-500/50 text-amber-600 dark:text-amber-400"
+            >
+              <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
+              {DOC_TYPE_LABELS[type] ?? type}
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Upload (tertiary, at bottom) */}
+      <div className="flex items-center gap-2 pt-1">
+        <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>
+          <SelectTrigger className="w-[140px] h-7 text-xs">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(DOC_TYPE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs text-muted-foreground"
+          disabled={uploading}
+          onClick={() => {
+            const input = document.createElement('input')
+            input.type = 'file'
+            input.accept = '.pdf,.docx,.doc'
+            input.onchange = (e) => {
+              const file = (e.target as HTMLInputElement).files?.[0]
+              if (file) uploadDocument(file)
+            }
+            input.click()
+          }}
+        >
+          {uploading ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Upload className="mr-1.5 h-3 w-3" />}
+          Uploader
+        </Button>
+      </div>
+    </div>
+  )
+}
