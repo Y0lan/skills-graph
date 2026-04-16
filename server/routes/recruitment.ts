@@ -490,7 +490,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
     })()
-  } catch {
+  } catch (err) {
     if ((err as Error).message === 'STATUS_CONFLICT') {
       res.status(409).json({ error: 'Le statut a été modifié par un autre utilisateur. Veuillez rafraîchir.' })
       return
@@ -1002,7 +1002,7 @@ protectedRouter.post('/ai-email-draft', heavyRateLimit, async (req, res) => {
     const body = bodyMatch?.[1]?.trim() || rawText
 
     res.json({ subject, body })
-  } catch {
+  } catch (err) {
     console.error('[AI_EMAIL] Draft generation failed')
     const isTimeout = err instanceof Error && (err.message.includes('timeout') || err.message.includes('ETIMEDOUT'))
     res.status(503).json({ error: 'ai_unavailable', detail: isTimeout ? 'Claude timeout' : 'Claude API error' })
@@ -1196,7 +1196,7 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
   // Process email.opened events
   if (payload.type === 'email.opened') {
     try {
-      const emailId = payload.data.email_id
+      const emailId = (payload as { type: string; data: { email_id?: string } }).data.email_id
       if (!emailId) return
 
       // Find the candidature_event with matching messageId

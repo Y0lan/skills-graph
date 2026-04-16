@@ -111,7 +111,7 @@ export default function CandidatePipelineStepper({ candidature, events }: Candid
             <div key={step.statut} className="flex items-center flex-1 min-w-0">
               {/* Step circle */}
               <Tooltip>
-                <TooltipTrigger asChild>
+                <TooltipTrigger>
                   <div className={`shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
                     step.state === 'done'
                       ? 'h-6 w-6 bg-green-600 text-white'
