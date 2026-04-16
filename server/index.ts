@@ -148,6 +148,7 @@ app.use('/api/roles', rolesRouter)
 app.use('/api/recruitment', recruitmentRouter)
 
 // Global error handler — catch any unhandled route errors
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message)
   if (!res.headersSent) {

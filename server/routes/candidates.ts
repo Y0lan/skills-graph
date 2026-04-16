@@ -10,6 +10,7 @@ import { sendCandidateInvite } from '../lib/email.js'
 import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
+import fs from 'fs'
 
 interface ParsedUpload {
   fields: Record<string, string>
@@ -263,7 +264,6 @@ candidatesRouter.delete('/:id', (req, res) => {
 
     // Clean up orphaned files (non-blocking, best-effort)
     if (docs.length > 0) {
-      const fs = require('fs') as typeof import('fs')
       for (const doc of docs) {
         try { fs.unlinkSync(doc.path) } catch { /* file may already be gone */ }
       }
