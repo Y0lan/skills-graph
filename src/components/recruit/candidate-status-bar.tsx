@@ -16,7 +16,7 @@ export interface CandidateStatusBarProps {
   /** @deprecated Use candidatureDataMap instead */
   allowedTransitions: { allowedTransitions: string[]; skipTransitions: { statut: string; skipped: string[] }[]; notesRequired: string[] } | null
   changingStatus: boolean
-  onOpenTransition: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[]) => void
+  onOpenTransition: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => void
   candidatureDataMap?: Record<string, CandidatureData>
 }
 
@@ -167,7 +167,7 @@ export default function CandidateStatusBar({
                         key={s}
                         size="sm"
                         variant="outline"
-                        onClick={() => onOpenTransition(c.id, s)}
+                        onClick={() => onOpenTransition(c.id, s, false, [], c.statut)}
                         disabled={changingStatus}
                       >
                         <ChevronRight className="h-3 w-3 mr-1" />
@@ -180,7 +180,7 @@ export default function CandidateStatusBar({
                         size="sm"
                         variant="ghost"
                         className="text-muted-foreground"
-                        onClick={() => onOpenTransition(c.id, st.statut, true, st.skipped)}
+                        onClick={() => onOpenTransition(c.id, st.statut, true, st.skipped, c.statut)}
                         disabled={changingStatus}
                       >
                         {STATUT_LABELS[st.statut] ?? st.statut}
@@ -192,7 +192,7 @@ export default function CandidateStatusBar({
                         size="sm"
                         variant="destructive"
                         className="ml-auto"
-                        onClick={() => onOpenTransition(c.id, 'refuse')}
+                        onClick={() => onOpenTransition(c.id, 'refuse', false, [], c.statut)}
                         disabled={changingStatus}
                       >
                         Refuser

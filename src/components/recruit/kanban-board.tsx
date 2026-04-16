@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
 
@@ -55,13 +56,14 @@ export interface KanbanCandidature {
 
 export interface KanbanBoardProps {
   candidatures: KanbanCandidature[]
+  onDelete?: (candidateId: string, candidateName: string) => void
 }
 
 // ---------------------------------------------------------------------------
-// Card (read-only, clickable link to candidate detail)
+// Card (clickable link to candidate detail, with optional delete)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ item, now }: { item: KanbanCandidature; now: number }) {
+function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: number; onDelete?: (candidateId: string, candidateName: string) => void }) {
   const scoreColor = (v: number | null) =>
     v == null ? '' : v >= 70 ? 'text-green-500' : v >= 40 ? 'text-amber-500' : 'text-red-500'
 
@@ -70,38 +72,54 @@ function KanbanCard({ item, now }: { item: KanbanCandidature; now: number }) {
     : null
 
   return (
-    <Link
-      to={`/recruit/${item.candidateId}`}
-      className="block rounded-lg border bg-card p-2.5 cursor-pointer hover:bg-muted/30 hover:border-primary/30 transition-colors group"
-    >
-      <p className="font-medium text-sm truncate group-hover:text-primary transition-colors">
-        {item.candidateName}
-      </p>
-      <p className="text-xs text-muted-foreground truncate mt-0.5">{item.posteTitre}</p>
-      <div className="flex items-center gap-2 mt-1">
-        {item.tauxPoste != null && (
-          <span className={`text-xs font-medium ${scoreColor(item.tauxPoste)}`}>
-            {item.tauxPoste}%
-          </span>
-        )}
-        {daysInStatus != null && daysInStatus > 0 && (
-          <span className="text-[10px] text-muted-foreground/60 ml-auto">
-            {daysInStatus}j
-          </span>
-        )}
-      </div>
-      <p className="text-[10px] text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors mt-1">
-        → Voir le profil
-      </p>
-    </Link>
+    <div className="relative group">
+      <Link
+        to={`/recruit/${item.candidateId}`}
+        className="block rounded-lg border bg-card p-2.5 cursor-pointer hover:bg-muted/30 hover:border-primary/30 transition-colors"
+      >
+        <p className="font-medium text-sm truncate group-hover:text-primary transition-colors pr-6">
+          {item.candidateName}
+        </p>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{item.posteTitre}</p>
+        <div className="flex items-center gap-2 mt-1">
+          {item.tauxPoste != null && (
+            <span className={`text-xs font-medium ${scoreColor(item.tauxPoste)}`}>
+              {item.tauxPoste}%
+            </span>
+          )}
+          {daysInStatus != null && daysInStatus > 0 && (
+            <span className="text-[10px] text-muted-foreground/60 ml-auto">
+              {daysInStatus}j
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors mt-1">
+          &rarr; Voir le profil
+        </p>
+      </Link>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onDelete(item.candidateId, item.candidateName)
+          }}
+          className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-opacity"
+          title="Supprimer"
+        >
+          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+        </button>
+      )}
+    </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Column (read-only)
+// Column
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ statut, items, now }: { statut: string; items: KanbanCandidature[]; now: number }) {
+function KanbanColumn({ statut, items, now, onDelete }: { statut: string; items: KanbanCandidature[]; now: number; onDelete?: (candidateId: string, candidateName: string) => void }) {
   return (
     <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0`}>
       {/* Column header */}
@@ -122,7 +140,7 @@ function KanbanColumn({ statut, items, now }: { statut: string; items: KanbanCan
       {/* Cards */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px]">
         {items.map(item => (
-          <KanbanCard key={item.id} item={item} now={now} />
+          <KanbanCard key={item.id} item={item} now={now} onDelete={onDelete} />
         ))}
         {items.length === 0 && (
           <p className="text-[11px] text-muted-foreground/40 text-center pt-8">Aucun candidat</p>
@@ -133,10 +151,10 @@ function KanbanColumn({ statut, items, now }: { statut: string; items: KanbanCan
 }
 
 // ---------------------------------------------------------------------------
-// Board (read-only visualization)
+// Board
 // ---------------------------------------------------------------------------
 
-export default function KanbanBoard({ candidatures }: KanbanBoardProps) {
+export default function KanbanBoard({ candidatures, onDelete }: KanbanBoardProps) {
   const [now] = useState(() => Date.now())
 
   // Group candidatures by status, excluding refuse
@@ -158,6 +176,7 @@ export default function KanbanBoard({ candidatures }: KanbanBoardProps) {
           statut={statut}
           items={columns.get(statut) ?? []}
           now={now}
+          onDelete={onDelete}
         />
       ))}
     </div>

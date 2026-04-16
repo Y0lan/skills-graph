@@ -207,7 +207,7 @@ protectedRouter.put('/postes/:posteId/requirements', mutationRateLimit, (req, re
 
 // List candidatures with filters
 protectedRouter.get('/candidatures', (req, res) => {
-  const { poste, pole, statut } = req.query
+  const { poste, pole, statut, candidateId } = req.query
   let sql = `
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
       cand.ai_suggestions, cand.submitted_at as evaluation_submitted,
@@ -231,6 +231,10 @@ protectedRouter.get('/candidatures', (req, res) => {
   if (statut && typeof statut === 'string') {
     sql += ' AND c.statut = ?'
     params.push(statut)
+  }
+  if (candidateId && typeof candidateId === 'string') {
+    sql += ' AND c.candidate_id = ?'
+    params.push(candidateId)
   }
 
   sql += ' ORDER BY c.taux_compatibilite_poste DESC NULLS LAST, c.created_at DESC'
@@ -464,7 +468,7 @@ protectedRouter.get('/email-template/:statut', (req, res) => {
 
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req, res) => {
-  const { statut, notes, skipReason, sendEmail, includeReasonInEmail, customBody } = req.body
+  const { statut, currentStatut: clientStatut, notes, skipReason, sendEmail, includeReasonInEmail, customBody } = req.body
 
   if (!statut || typeof statut !== 'string') {
     res.status(400).json({ error: 'Statut requis' })
@@ -474,6 +478,15 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
   const current = getDb().prepare('SELECT statut FROM candidatures WHERE id = ?').get(req.params.id) as { statut: string } | undefined
   if (!current) {
     res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  // Early stale-state detection: if the client sent currentStatut and it doesn't match DB, reject immediately
+  if (clientStatut && clientStatut !== current.statut) {
+    res.status(409).json({
+      error: `Le statut a changé entre-temps (attendu : ${clientStatut}, actuel : ${current.statut}). Veuillez rafraîchir.`,
+      currentStatut: current.statut,
+    })
     return
   }
 

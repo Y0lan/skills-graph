@@ -75,8 +75,8 @@ export default function CandidateDetailPage() {
 
   const [analyzing, setAnalyzing] = useState(false)
 
-  // Wrap openTransitionDialog to inject candidate name & role
-  const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[]) => {
+  // Wrap openTransitionDialog to inject candidate name & role & currentStatut
+  const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => {
     openTransitionDialog(
       candidatureId,
       targetStatut,
@@ -84,6 +84,7 @@ export default function CandidateDetailPage() {
       skipped,
       candidate?.name ?? '',
       candidate?.role ?? '',
+      currentStatut,
     )
   }, [openTransitionDialog, candidate])
 
@@ -335,7 +336,7 @@ export default function CandidateDetailPage() {
 
         {/* Transition confirmation dialog */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
-          <AlertDialogContent className="max-w-lg">
+          <AlertDialogContent size="lg">
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {transitionDialog?.targetStatut === 'refuse'

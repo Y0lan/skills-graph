@@ -129,6 +129,8 @@ export default function RecruitPipelinePage() {
   const [downloadingZip, setDownloadingZip] = useState(false)
   const [scrollTrigger, setScrollTrigger] = useState(0)
   const candidaturesRef = useRef<HTMLDivElement>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (scrollTrigger > 0) {
@@ -194,6 +196,25 @@ export default function RecruitPipelinePage() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const handleDeleteCandidate = useCallback(async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/candidates/${deleteTarget.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error('Erreur lors de la suppression')
+      toast.success('Candidat supprim\u00e9')
+      setDeleteTarget(null)
+      fetchData()
+    } catch {
+      toast.error('Erreur lors de la suppression')
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteTarget, fetchData])
 
   const openWeightsDialog = useCallback(async () => {
     try {
@@ -507,6 +528,7 @@ export default function RecruitPipelinePage() {
               tauxPoste: c.tauxPoste,
               tauxGlobal: c.tauxGlobal,
             }))}
+            onDelete={(candidateId, candidateName) => setDeleteTarget({ id: candidateId, name: candidateName })}
           />
         ) : (
           <div className="space-y-2">

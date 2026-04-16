@@ -10,9 +10,9 @@ The recruitment module is functional but the UX falls short during real usage. C
 
 ## Phase 1 — Immediate Fixes
 
-### 1.1 Fix "Présélectionné" Transition Bug
+### 1.1 Fix Status Transition Bug (All Phases)
 
-The transition dialog opens but clicking "Confirmer" fails. Investigate the `PATCH /api/recruitment/candidatures/{id}/status` endpoint for the `preselectionne` status. Check allowed transitions in the server-side state machine and fix the validation or frontend payload.
+The transition dialog opens but clicking "Confirmer" fails. This likely affects ALL status transitions, not just Présélectionné. Investigate the `PATCH /api/recruitment/candidatures/{id}/status` endpoint, the server-side state machine, allowed transitions map, and the frontend payload sent by `use-transition-state.ts`.
 
 **Files:** `server/routes/recruitment.ts` (transition endpoint), `src/hooks/use-transition-state.ts` (frontend call)
 

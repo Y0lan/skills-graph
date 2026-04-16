@@ -167,10 +167,9 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
       })
 
     // Fetch candidatures for this candidate
-    fetch('/api/recruitment/candidatures', { credentials: 'include' })
+    fetch(`/api/recruitment/candidatures?candidateId=${encodeURIComponent(candidateId)}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
-      .then((all: CandidatureInfo[]) => {
-        const mine = all.filter((c: CandidatureInfo) => c.candidateId === candidateId)
+      .then((mine: CandidatureInfo[]) => {
         setCandidatures(mine)
         if (mine.length > 0) {
           // Fetch events + transitions + documents for ALL candidatures

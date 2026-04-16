@@ -5,6 +5,7 @@ import type { AllowedTransitions, CandidatureInfo, CandidatureEvent } from '@/ho
 
 export interface TransitionDialog {
   candidatureId: string
+  currentStatut: string
   targetStatut: string
   isSkip: boolean
   skipped: string[]
@@ -39,7 +40,7 @@ export interface UseTransitionStateReturn {
   transitionHasEmailTemplate: boolean
   transitionEmailLoading: boolean
   transitionFileError: string | null
-  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string) => void
+  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string, currentStatut?: string) => void
   closeTransitionDialog: () => void
   confirmTransition: () => Promise<void>
 }
@@ -106,9 +107,10 @@ export function useTransitionState(
     skipped: string[] = [],
     candidateName = '',
     role = '',
+    currentStatut = '',
   ) => {
     const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
-    setTransitionDialog({ candidatureId, targetStatut, isSkip, skipped, notesRequired, candidateName, role })
+    setTransitionDialog({ candidatureId, currentStatut, targetStatut, isSkip, skipped, notesRequired, candidateName, role })
     setTransitionNotes('')
     setTransitionSkipReason('')
     setTransitionFile(null)
@@ -131,7 +133,7 @@ export function useTransitionState(
 
   const confirmTransition = useCallback(async () => {
     if (!transitionDialog) return
-    const { candidatureId, targetStatut, isSkip, notesRequired } = transitionDialog
+    const { candidatureId, currentStatut, targetStatut, isSkip, notesRequired } = transitionDialog
 
     if (notesRequired && !transitionNotes.trim()) {
       toast.error('Les notes sont obligatoires pour cette transition')
@@ -171,8 +173,8 @@ export function useTransitionState(
         credentials: 'include',
         body: JSON.stringify({
           statut: targetStatut,
+          currentStatut: currentStatut || undefined,
           notes: transitionNotes.trim() || undefined,
-          contentMd: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
           sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
           includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
