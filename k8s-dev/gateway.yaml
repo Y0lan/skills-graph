@@ -5,8 +5,8 @@ metadata:
   namespace: skill-radar-dev
 spec:
   parentRefs:
-    - name: cloud-sinapse-gateway
-      namespace: gateway
+    - name: skill-radar-dev-gateway
+      namespace: skill-radar-dev
       sectionName: https
   hostnames: ["dev.radar.sinapse.nc"]
   rules:
