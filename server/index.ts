@@ -85,7 +85,18 @@ app.all('/api/auth/{*splat}', async (req, res, _next) => {
   }
 })
 
-app.use(express.json())
+app.use(express.json({ limit: '1mb' }))
+
+// Request timeout — no single request can run longer than 30s
+app.use((req, res, next) => {
+  res.setTimeout(30_000, () => {
+    if (!res.headersSent) {
+      console.error(`[TIMEOUT] ${req.method} ${req.path} exceeded 30s`)
+      res.status(408).json({ error: 'Requête expirée (30s)' })
+    }
+  })
+  next()
+})
 
 // Health check
 app.get('/health', (_req, res) => {
@@ -140,6 +151,14 @@ app.use('/api/evaluate', evaluateRouter)
 app.use('/api/roles', rolesRouter)
 app.use('/api/recruitment', recruitmentRouter)
 
+// Global error handler — catch any unhandled route errors
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message)
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Erreur interne du serveur' })
+  }
+})
+
 // Serve static files in production
 const distPath = path.join(process.cwd(), 'dist')
 if (fs.existsSync(distPath)) {
@@ -165,3 +184,12 @@ function shutdown() {
 
 process.on('SIGTERM', shutdown)
 process.on('SIGINT', shutdown)
+
+// --- Crash protection: never let a single error kill the process ---
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception (keeping process alive):', err)
+})
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection (keeping process alive):', reason)
+})

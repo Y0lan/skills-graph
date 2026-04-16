@@ -241,14 +241,40 @@ candidatesRouter.post('/:id/analyze', async (req, res) => {
   }
 })
 
-// Delete candidate
+// Delete candidate (cascade deletes candidatures, events, documents, aboro profiles via DB schema)
 candidatesRouter.delete('/:id', (req, res) => {
-  const result = getDb().prepare('DELETE FROM candidates WHERE id = ?').run(req.params.id)
-  if (result.changes === 0) {
-    res.status(404).json({ error: 'Candidat introuvable' })
-    return
+  try {
+    const db = getDb()
+
+    // Check candidate exists and count related records before deleting
+    const candidate = db.prepare('SELECT id, name FROM candidates WHERE id = ?').get(req.params.id) as { id: string; name: string } | undefined
+    if (!candidate) {
+      res.status(404).json({ error: 'Candidat introuvable' })
+      return
+    }
+
+    // Clean up document files from disk before DB cascade delete removes the references
+    const docs = db.prepare(
+      'SELECT cd.path FROM candidature_documents cd JOIN candidatures c ON c.id = cd.candidature_id WHERE c.candidate_id = ?'
+    ).all(req.params.id) as { path: string }[]
+
+    // Delete candidate (DB cascade handles candidatures, events, documents, aboro_profiles)
+    db.prepare('DELETE FROM candidates WHERE id = ?').run(req.params.id)
+
+    // Clean up orphaned files (non-blocking, best-effort)
+    if (docs.length > 0) {
+      const fs = require('fs') as typeof import('fs')
+      for (const doc of docs) {
+        try { fs.unlinkSync(doc.path) } catch { /* file may already be gone */ }
+      }
+    }
+
+    console.log(`[DELETE] Candidate ${candidate.name} (${req.params.id}) deleted, ${docs.length} files cleaned`)
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[DELETE] Error deleting candidate:', err)
+    res.status(500).json({ error: 'Erreur lors de la suppression' })
   }
-  res.json({ ok: true })
 })
 
 function formatCandidate(row: CandidateRow) {
