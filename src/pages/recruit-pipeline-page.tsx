@@ -447,7 +447,9 @@ export default function RecruitPipelinePage() {
 
           <Select value={filterPoste} onValueChange={(v) => setFilterPoste(v ?? 'all')}>
             <SelectTrigger className="w-56">
-              <SelectValue placeholder="Tous les postes" />
+              <SelectValue placeholder="Tous les postes">
+                {filterPoste === 'all' ? 'Tous les postes' : postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tous les postes</SelectItem>
