@@ -32,7 +32,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2, Search, ArrowUpDown } from 'lucide-react'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -231,6 +231,13 @@ export default function RecruitPage() {
   const toggleSort = (key: typeof sortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc') }
+  }
+
+  const sortIcon = (key: typeof sortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="h-3 w-3 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="h-3 w-3 text-primary" />
+      : <ArrowDown className="h-3 w-3 text-primary" />
   }
 
   const handleSaveRole = async () => {
@@ -585,22 +592,22 @@ export default function RecruitPage() {
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="pb-3 font-medium">
                     <button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Nom <ArrowUpDown className="h-3 w-3" />
+                      Nom {sortIcon('name')}
                     </button>
                   </th>
                   <th className="pb-3 font-medium">
                     <button onClick={() => toggleSort('role')} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Poste <ArrowUpDown className="h-3 w-3" />
+                      Poste {sortIcon('role')}
                     </button>
                   </th>
                   <th className="pb-3 font-medium">
                     <button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Statut <ArrowUpDown className="h-3 w-3" />
+                      Statut {sortIcon('status')}
                     </button>
                   </th>
                   <th className="pb-3 font-medium">
                     <button onClick={() => toggleSort('createdAt')} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Créé le <ArrowUpDown className="h-3 w-3" />
+                      Créé le {sortIcon('createdAt')}
                     </button>
                   </th>
                   <th className="pb-3 font-medium text-right">Actions</th>
