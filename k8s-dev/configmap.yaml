@@ -11,3 +11,5 @@ data:
   BETTER_AUTH_URL: "https://dev.radar.sinapse.nc"
   LITESTREAM_BUCKET: "skill-radar-litestream-premier"
   LITESTREAM_PATH: "dev/ratings"
+  CLAMAV_HOST: "localhost"
+  CLAMAV_PORT: "3310"
