@@ -1,7 +1,14 @@
 # TODOs
 
 ## Visualization
-- [ ] **Role-type filtering on radar comparison** — Separate Business Analyst profiles from Technical profiles on the radar graph. Comparing a BA's soft skills with a dev's technical skills on the same axes makes neither profile look good. The role_categories mapping already exists in db.ts. The radar chart could filter by role type or show role-relevant categories only. Independent of extraction changes.
+- [x] **Role-type filtering on radar comparison** — Shipped via ranked-list redesign (docs/superpowers/plans/2026-04-17-role-type-filtering-radar.md). New endpoint `GET /api/recruitment/postes/:id/comparison`, role-aware radar axes, gap chips, row actions (Préselectionner / Refuser).
+
+### Follow-ups from role filtering plan
+- [ ] **Role categories editor UI** — Admin-only screen to manage `role_categories` mapping. Needed before many new roles get added; currently seed-only.
+- [ ] **Weighted category importance** — must-have vs nice-to-have per role. Currently all role categories are weighted equally for the gap threshold.
+- [ ] **Toggle to full-profile radar** — Let recruiter optionally show all 18 axes for a candidate (edge case: cross-role evaluation).
+- [ ] **Shortlist feature** — Cross-poste "shortlisted candidates" view, separate from statut.
+- [ ] **Schedule interview integration** — Calendar / invite generation from compare page.
 
 ## Security & Reliability (from Codex adversarial review, 2026-04-16)
 

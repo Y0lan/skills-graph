@@ -10,6 +10,9 @@ import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate } from '..
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
+import { computeRoleGaps } from '../lib/gap-analysis.js'
+import { getSkillCategories } from '../lib/catalog.js'
+import { getRoleCategories } from '../lib/db.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
 import { Webhook } from 'svix'
@@ -206,6 +209,83 @@ protectedRouter.put('/postes/:posteId/requirements', mutationRateLimit, (req, re
   })()
 
   res.json({ ok: true, count: requirements.length })
+})
+
+// Poste comparison view: enriched candidatures with rank + gaps, plus role categories.
+// Powers the /recruit/reports/comparison/:posteId page.
+protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
+  const posteId = req.params.posteId
+  const poste = getDb().prepare('SELECT id, role_id, titre FROM postes WHERE id = ?').get(posteId) as
+    { id: string; role_id: string; titre: string } | undefined
+  if (!poste) {
+    res.status(404).json({ error: 'Poste introuvable' })
+    return
+  }
+
+  const roleCategories = getRoleCategories(poste.role_id)
+  const categories = getSkillCategories()
+
+  // Exclude refused candidates from the compare view (existing page behavior).
+  // Stable ordering: fit DESC, global DESC, createdAt ASC, id ASC.
+  const rows = getDb().prepare(`
+    SELECT c.id, c.candidate_id, c.poste_id, c.statut, c.canal,
+      c.taux_compatibilite_poste, c.taux_compatibilite_equipe, c.taux_soft_skills,
+      c.soft_skill_alerts, c.taux_global, c.notes_directeur,
+      c.created_at, c.updated_at,
+      cand.name, cand.email, cand.ratings, cand.ai_suggestions,
+      cand.cv_text IS NOT NULL as has_cv,
+      cand.submitted_at as evaluation_submitted,
+      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    WHERE c.poste_id = ? AND c.statut != 'refuse'
+    ORDER BY c.taux_compatibilite_poste DESC NULLS LAST,
+             c.taux_global DESC NULLS LAST,
+             c.created_at ASC,
+             c.id ASC
+  `).all(posteId) as (CandidatureRow & {
+    name: string; email: string | null;
+    ratings: string; ai_suggestions: string | null;
+    has_cv: number; evaluation_submitted: string | null;
+    last_event_at: string | null
+  })[]
+
+  const enriched = rows.map((r, idx) => {
+    const ratings = safeJsonParse<Record<string, number>>(r.ratings ?? '{}', {})
+    const aiSuggestions = safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
+    // Manual ratings override AI suggestions — same precedence as compare page.
+    const effective = { ...aiSuggestions, ...ratings }
+    const gaps = computeRoleGaps(effective, categories, roleCategories)
+    return {
+      id: r.id,
+      candidateId: r.candidate_id,
+      posteId: r.poste_id,
+      statut: r.statut,
+      canal: r.canal,
+      candidateName: r.name,
+      candidateEmail: r.email,
+      hasCv: !!r.has_cv,
+      evaluationSubmitted: !!r.evaluation_submitted,
+      tauxPoste: r.taux_compatibilite_poste,
+      tauxEquipe: r.taux_compatibilite_equipe,
+      tauxSoft: r.taux_soft_skills,
+      softSkillAlerts: safeJsonParse<{ trait: string; value: number; threshold: number; message: string }[]>(r.soft_skill_alerts, []),
+      tauxGlobal: r.taux_global,
+      notesDirecteur: r.notes_directeur,
+      ratings: effective,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      lastEventAt: r.last_event_at,
+      rank: idx + 1,
+      gaps,
+    }
+  })
+
+  res.json({
+    poste: { id: poste.id, titre: poste.titre, roleId: poste.role_id },
+    roleCategories,
+    candidatures: enriched,
+  })
 })
 
 // List candidatures with filters
