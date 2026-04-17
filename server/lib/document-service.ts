@@ -1,11 +1,11 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
-import { resolveSafePath } from './fs-safety.js'
 import { extractAboroText, extractAboroProfile, type AboroProfile } from './aboro-extraction.js'
 import { calculateSoftSkillScore } from './soft-skill-scoring.js'
 import { calculateGlobalScore } from './compatibility.js'
 import { STATUT_LABELS as statusLabels } from './constants.js'
 import { scanDocument } from './document-scanner.js'
+import { uploadToGcs, downloadFromGcs, isGcsPath } from './gcs.js'
 import archiver from 'archiver'
 import type { Writable } from 'stream'
 
@@ -27,25 +27,24 @@ interface UploadDocumentResult {
 
 export async function uploadDocument(params: UploadDocumentParams): Promise<UploadDocumentResult> {
   const { candidatureId, file, docType, userSlug } = params
-  const dataDir = process.env.DATA_DIR || 'server/data'
-  const docDir = `${dataDir}/documents/${candidatureId}`
 
-  // Create directory
-  const fs = await import('fs')
-  fs.mkdirSync(docDir, { recursive: true })
-
-  // Save file
+  // Save file to GCS
   const safeFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
   const uniqueFilename = `${crypto.randomUUID().slice(0, 8)}-${safeFilename}`
-  const filePath = resolveSafePath(docDir, uniqueFilename)
-  fs.writeFileSync(filePath, file.buffer)
+  const storedPath = await uploadToGcs(
+    candidatureId,
+    uniqueFilename,
+    file.buffer,
+    file.mimetype,
+    file.filename,
+  )
 
-  // Save metadata
+  // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)
   const docId = crypto.randomUUID()
   getDb().prepare(`
     INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(docId, candidatureId, docType, file.filename, filePath, userSlug)
+  `).run(docId, candidatureId, docType, file.filename, storedPath, userSlug)
 
   // Log event
   getDb().prepare(`
@@ -54,7 +53,7 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
   `).run(candidatureId, `Document uploadé: ${file.filename} (${docType})`, userSlug)
 
   // Trigger async malware scan (non-blocking)
-  triggerDocumentScan(docId, filePath, file.filename).catch(err =>
+  triggerDocumentScan(docId, storedPath, file.filename).catch(err =>
     console.error('[SCAN] Background scan failed:', err)
   )
 
@@ -117,11 +116,21 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
 
 // ─── Document download ───────────────────────────────────────────────
 
-interface DownloadDocumentResult {
+interface DownloadDocumentResultLocal {
+  kind: 'local'
   filePath: string
   filename: string
   contentType: string
 }
+
+interface DownloadDocumentResultGcs {
+  kind: 'gcs'
+  buffer: Buffer
+  filename: string
+  contentType: string
+}
+
+export type DownloadDocumentResult = DownloadDocumentResultLocal | DownloadDocumentResultGcs
 
 export async function getDocumentForDownload(docId: string): Promise<DownloadDocumentResult | { error: string; status: number }> {
   const doc = getDb().prepare(
@@ -130,19 +139,6 @@ export async function getDocumentForDownload(docId: string): Promise<DownloadDoc
 
   if (!doc) {
     return { error: 'Document introuvable', status: 404 }
-  }
-
-  const fs = await import('fs')
-  const path = await import('path')
-  if (!fs.existsSync(doc.path)) {
-    return { error: 'Fichier introuvable sur le disque', status: 404 }
-  }
-
-  const dataDir = process.env.DATA_DIR || 'server/data'
-  const expectedBase = path.resolve(dataDir, 'documents')
-  const resolvedPath = path.resolve(doc.path)
-  if (!resolvedPath.startsWith(expectedBase + path.sep)) {
-    return { error: 'Acces refuse', status: 403 }
   }
 
   const mimeTypes: Record<string, string> = {
@@ -156,7 +152,32 @@ export async function getDocumentForDownload(docId: string): Promise<DownloadDoc
   const ext = doc.filename.split('.').pop()?.toLowerCase() ?? ''
   const contentType = mimeTypes[ext] ?? 'application/octet-stream'
 
-  return { filePath: resolvedPath, filename: doc.filename, contentType }
+  // GCS path (new) — download from cloud storage
+  if (isGcsPath(doc.path)) {
+    try {
+      const buffer = await downloadFromGcs(doc.path)
+      return { kind: 'gcs', buffer, filename: doc.filename, contentType }
+    } catch (err) {
+      console.error(`[DOWNLOAD] GCS download failed for doc ${docId}:`, err)
+      return { error: 'Fichier introuvable dans le stockage cloud', status: 404 }
+    }
+  }
+
+  // Legacy local path — backward compatibility
+  const fs = await import('fs')
+  const path = await import('path')
+  if (!fs.existsSync(doc.path)) {
+    return { error: 'Fichier introuvable sur le disque', status: 404 }
+  }
+
+  const dataDir = process.env.DATA_DIR || 'server/data'
+  const expectedBase = path.resolve(dataDir, 'documents')
+  const resolvedPath = path.resolve(doc.path)
+  if (!resolvedPath.startsWith(expectedBase + path.sep)) {
+    return { error: 'Acces refuse', status: 403 }
+  }
+
+  return { kind: 'local', filePath: resolvedPath, filename: doc.filename, contentType }
 }
 
 // ─── ZIP generation ──────────────────────────────────────────────────
@@ -205,12 +226,22 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
     // Add documents with numbered prefixes
     let idx = 1
     for (const doc of docs) {
-      if (fs.existsSync(doc.path)) {
-        const ext = doc.filename.split('.').pop() ?? 'pdf'
-        const prefix = String(idx).padStart(2, '0')
-        const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
-        const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
-        archive.file(doc.path, { name: `${prefix}_${typeName}_${candidateName}.${ext}` })
+      const ext = doc.filename.split('.').pop() ?? 'pdf'
+      const prefix = String(idx).padStart(2, '0')
+      const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
+      const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
+      const archiveName = `${prefix}_${typeName}_${candidateName}.${ext}`
+
+      if (isGcsPath(doc.path)) {
+        try {
+          const buffer = await downloadFromGcs(doc.path)
+          archive.append(buffer, { name: archiveName })
+          idx++
+        } catch (err) {
+          console.warn(`[ZIP] Skipping GCS doc ${doc.id} — download failed:`, err)
+        }
+      } else if (fs.existsSync(doc.path)) {
+        archive.file(doc.path, { name: archiveName })
         idx++
       }
     }
@@ -253,9 +284,20 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
 
 // ─── Async malware scan ─────────────────────────────────────────────
 
-async function triggerDocumentScan(docId: string, filePath: string, filename: string): Promise<void> {
+async function triggerDocumentScan(docId: string, storedPath: string, filename: string): Promise<void> {
+  let tempPath: string | null = null
   try {
-    const result = await scanDocument(filePath, filename)
+    // For GCS paths, download to a temp file for scanning
+    let scanPath: string
+    if (isGcsPath(storedPath)) {
+      const { downloadToTempFile } = await import('./gcs.js')
+      tempPath = await downloadToTempFile(storedPath)
+      scanPath = tempPath
+    } else {
+      scanPath = storedPath
+    }
+
+    const result = await scanDocument(scanPath, filename)
 
     const scanStatus = result.engines.length === 0
       ? 'skipped'
@@ -279,5 +321,13 @@ async function triggerDocumentScan(docId: string, filePath: string, filename: st
       "UPDATE candidature_documents SET scan_status = 'error', scan_result = ?, scanned_at = ? WHERE id = ?"
     ).run(JSON.stringify({ error: (err as Error).message }), new Date().toISOString(), docId)
     console.error(`[SCAN] Document ${docId} scan error:`, err)
+  } finally {
+    // Clean up temp file
+    if (tempPath) {
+      try {
+        const fs = await import('fs')
+        fs.unlinkSync(tempPath)
+      } catch { /* ignore cleanup errors */ }
+    }
   }
 }

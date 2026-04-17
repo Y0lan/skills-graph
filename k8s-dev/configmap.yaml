@@ -13,3 +13,5 @@ data:
   LITESTREAM_PATH: "dev/ratings"
   CLAMAV_HOST: "localhost"
   CLAMAV_PORT: "3310"
+  DOCUMENTS_BUCKET: "skill-radar-litestream-premier"
+  DOCUMENTS_PREFIX: "dev/documents"

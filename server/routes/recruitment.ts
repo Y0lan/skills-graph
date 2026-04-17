@@ -9,6 +9,7 @@ import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
+import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
 import { Webhook } from 'svix'
@@ -744,11 +745,16 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     return
   }
 
-  const fs = await import('fs')
   const safeFilename = result.filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"')
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
   res.setHeader('Content-Type', result.contentType)
-  fs.createReadStream(result.filePath).pipe(res)
+
+  if (result.kind === 'gcs') {
+    res.send(result.buffer)
+  } else {
+    const fs = await import('fs')
+    fs.createReadStream(result.filePath).pipe(res)
+  }
 })
 
 // Get scan status for a document
@@ -1093,13 +1099,23 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
       // Add documents
       let idx = 1
       for (const doc of docs) {
-        if (fs.existsSync(doc.path)) {
-          const ext = doc.filename.split('.').pop() ?? 'pdf'
-          const prefix = String(idx).padStart(2, '0')
-          const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
-          const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
-          const safeCandName = (cand.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Candidat'
-          archive.file(doc.path, { name: `${folderName}/${prefix}_${typeName}_${safeCandName}.${ext}` })
+        const ext = doc.filename.split('.').pop() ?? 'pdf'
+        const prefix = String(idx).padStart(2, '0')
+        const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
+        const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
+        const safeCandName = (cand.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Candidat'
+        const archiveName = `${folderName}/${prefix}_${typeName}_${safeCandName}.${ext}`
+
+        if (isGcsPath(doc.path)) {
+          try {
+            const buffer = await downloadFromGcs(doc.path)
+            archive.append(buffer, { name: archiveName })
+            idx++
+          } catch (err) {
+            console.warn(`[BATCH_ZIP] Skipping GCS doc ${doc.id} — download failed:`, err)
+          }
+        } else if (fs.existsSync(doc.path)) {
+          archive.file(doc.path, { name: archiveName })
           idx++
         }
       }
