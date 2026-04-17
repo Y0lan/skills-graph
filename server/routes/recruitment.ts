@@ -13,6 +13,7 @@ import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
 import { computeRoleGaps } from '../lib/gap-analysis.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { getRoleCategories } from '../lib/db.js'
+import { buildFunnel } from '../lib/funnel-analysis.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
 import { Webhook } from 'svix'
@@ -209,6 +210,16 @@ protectedRouter.put('/postes/:posteId/requirements', mutationRateLimit, (req, re
   })()
 
   res.json({ ok: true, count: requirements.length })
+})
+
+// Recruitment funnel: aggregated transitions for the Sankey diagram.
+// GET /api/recruitment/funnel?days=90&pole=all
+protectedRouter.get('/funnel', (req, res) => {
+  const daysRaw = req.query.days
+  const poleRaw = req.query.pole
+  const days = typeof daysRaw === 'string' && /^\d+$/.test(daysRaw) ? Number(daysRaw) : null
+  const pole = typeof poleRaw === 'string' ? poleRaw : null
+  res.json(buildFunnel({ days, pole }))
 })
 
 // Poste comparison view: enriched candidatures with rank + gaps, plus role categories.

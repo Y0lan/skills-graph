@@ -18,9 +18,23 @@ const CandidateFormPage = lazy(() => import('@/pages/candidate-form-page'))
 const RecruitPipelinePage = lazy(() => import('@/pages/recruit-pipeline-page'))
 const ReportCampaignPage = lazy(() => import('@/pages/report-campaign-page'))
 const ReportComparisonPage = lazy(() => import('@/pages/report-comparison-page'))
+const RecruitFunnelPage = lazy(() => import('@/pages/recruit-funnel-page'))
 const EquipePage = lazy(() => import('@/pages/equipe-page'))
 const MentionsLegalesPage = lazy(() => import('@/pages/mentions-legales'))
 const ConfidentialitePage = lazy(() => import('@/pages/confidentialite'))
+
+// Vite fires this event when a dynamically-imported chunk fails to load —
+// the canonical signal of a stale-deploy chunk reference. Reload before the
+// error reaches React.
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', () => {
+    const key = 'stale-chunk-reload-attempted'
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, '1')
+      window.location.reload()
+    }
+  })
+}
 
 function App() {
   return (
@@ -49,6 +63,7 @@ function App() {
                 <Route path="/recruit/pipeline" element={<ProtectedRoute checkOwnership={false}><RecruitPipelinePage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/campaign" element={<ProtectedRoute checkOwnership={false}><ReportCampaignPage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/comparison/:posteId" element={<ProtectedRoute checkOwnership={false}><ReportComparisonPage /></ProtectedRoute>} />
+                <Route path="/recruit/funnel" element={<ProtectedRoute checkOwnership={false}><RecruitFunnelPage /></ProtectedRoute>} />
                 <Route path="/recruit/:id" element={<ProtectedRoute checkOwnership={false}><CandidateDetailPage /></ProtectedRoute>} />
                 <Route path="/evaluate/:id" element={<CandidateFormPage />} />
                 <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
@@ -83,6 +98,21 @@ function ErrorBoundaryWrapper({ children }: { children: ReactNode }) {
   return <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
 }
 
+// Stale chunk reference after a deploy: index.html is fresh but the in-memory
+// SPA still references chunk hashes from the previous build. The browser hits
+// 404 when lazy() tries to fetch them. Auto-reload once (guarded by sessionStorage
+// to prevent infinite refresh loops if the chunk is genuinely missing).
+const STALE_CHUNK_RELOAD_KEY = 'stale-chunk-reload-attempted'
+function isStaleChunkError(error: Error): boolean {
+  const msg = (error?.message ?? '').toLowerCase()
+  return (
+    msg.includes('failed to fetch dynamically imported module') ||
+    msg.includes('importing a module script failed') ||
+    msg.includes('error loading chunk') ||
+    /loading chunk \d+ failed/i.test(error?.message ?? '')
+  )
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null }
 
@@ -90,8 +120,29 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     return { error }
   }
 
+  componentDidCatch(error: Error) {
+    if (isStaleChunkError(error)) {
+      const alreadyReloaded = sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY)
+      if (!alreadyReloaded) {
+        sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, '1')
+        window.location.reload()
+      }
+    } else {
+      // A successful navigation means the chunks are loading fine; clear the guard.
+      sessionStorage.removeItem(STALE_CHUNK_RELOAD_KEY)
+    }
+  }
+
   render() {
     if (this.state.error) {
+      // While the auto-reload is in flight, render a neutral placeholder.
+      if (isStaleChunkError(this.state.error) && !sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY + '-failed')) {
+        return (
+          <div className="flex min-h-screen items-center justify-center">
+            <p className="text-sm text-muted-foreground">Mise à jour de l'application…</p>
+          </div>
+        )
+      }
       return (
         <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-8">
           <h1 className="text-xl font-semibold">Une erreur est survenue</h1>

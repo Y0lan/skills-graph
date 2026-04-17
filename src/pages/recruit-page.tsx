@@ -32,7 +32,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Copy, Trash2, Loader2, Users, Eye, Settings, Upload, X, CheckCircle, Building2, GitBranch, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 interface Candidate {
   id: string
@@ -307,6 +307,9 @@ export default function RecruitPage() {
           <div className="flex gap-2">
             <Link to="/recruit/pipeline">
               <Button variant="outline"><Building2 className="mr-2 h-4 w-4" /> Pipeline</Button>
+            </Link>
+            <Link to="/recruit/funnel">
+              <Button variant="outline"><GitBranch className="mr-2 h-4 w-4" /> Funnel</Button>
             </Link>
           <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreationResult(null) }}>
             <AlertDialogTrigger>

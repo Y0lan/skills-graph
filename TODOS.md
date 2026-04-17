@@ -42,7 +42,12 @@
 
 ## Recruitment Analytics
 
-- [ ] **Recruitment funnel Sankey diagram** — Visualize the full candidate pipeline as a Sankey/flow diagram: Postule → Preselectionne → Skill Radar → Entretien 1 → Entretien 2 → Proposition → Embauche/Refuse. Shows drop-off volume at each stage (how many refused, withdrawn, still in progress). Aggregate from `candidatures` + `candidature_events` tables. Use `d3-sankey` or similar. Place on the recruitment dashboard or as a dedicated analytics page.
+- [x] **Recruitment funnel Sankey diagram** — Shipped at `/recruit/funnel` (docs/superpowers/plans/2026-04-17-recruitment-funnel-sankey.md). Backend `GET /api/recruitment/funnel?days=&pole=` aggregates candidature_events into nodes + links. Frontend uses d3-sankey. Filters: time range (30d/90d/1y/all), pole. Empty/loading/error states wired.
+
+### Follow-ups from funnel plan
+- [ ] **Per-candidature drill-down** — Click a Sankey link to see the list of candidates in that specific flow.
+- [ ] **Time animation** — Show how the funnel evolves month-over-month.
+- [ ] **Drop-off rate annotations** — Numerical drop-off % overlaid on each link.
 
 ## Observability (dev + prod)
 
