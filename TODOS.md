@@ -32,7 +32,11 @@
 
 ## Infrastructure Stability
 
-- [ ] **Switch dev deployment strategy to RollingUpdate** — Current `Recreate` strategy kills the old pod before starting the new one, causing downtime on every deploy. Switch to `RollingUpdate` with `maxUnavailable: 0, maxSurge: 1` so the old pod serves traffic until the new one passes health checks. Requires solving SQLite single-writer conflict (only one pod can write at a time).
+- [x] **Deployment strategy corrected to Recreate + PVC** (2026-04-17) — Original TODO aimed for `RollingUpdate` but investigation revealed live config was already RollingUpdate + emptyDir, which caused silent data-loss races (two pods writing different local SQLite files, both replicating to same GCS path, generations diverged). Fixed in cloud-sinapse-infra@bcce500: `Recreate` strategy + `skill-radar-data` PVC. Accepts ~30-60s downtime per deploy as correct cost for single-writer SQLite. Zero-downtime deploys would require Postgres migration or leader election — see follow-up below.
+
+### Follow-ups from deployment strategy fix
+- [ ] **Postgres migration (long-term zero-downtime path)** — If deploy downtime bothers real users, moving off SQLite is the proper fix. Cloud SQL Postgres, rewrite data access, schema migration. 1-2 days of work. Not urgent: current workload tolerates the 30-60s gap.
+- [ ] **Garbage-collect old Litestream generations** — GCS has ~15 generations from the old broken setup. They're harmless but clutter. One-time cleanup.
 
 - [x] **Crash-proofing** — Fixed (37344d2, e94962e): Express error middleware catches route errors, uncaughtException triggers graceful shutdown, unhandledRejection logged without crash, candidates DELETE wrapped in try/catch with file cleanup, 120s server timeout, 1MB payload limit.
 
