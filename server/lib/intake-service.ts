@@ -5,6 +5,7 @@ import { getSkillCategories } from './catalog.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from './compatibility.js'
 import { uploadDocument } from './document-service.js'
 import { sendApplicationReceived } from './email.js'
+import { DEFAULT_LEAD_SLUG } from '../middleware/require-lead.js'
 import type { PosteRow } from './types.js'
 
 // ─── Process intake ──────────────────────────────────────────────────
@@ -250,8 +251,7 @@ export async function processIntake(
 
   // Send application received emails (candidate + default lead)
   if (email?.trim()) {
-    const defaultLeadSlug = 'yolan-maldonado'
-    const leadEmail = `${defaultLeadSlug.replaceAll('-', '.')}@sinapse.nc`
+    const leadEmail = `${DEFAULT_LEAD_SLUG.replaceAll('-', '.')}@sinapse.nc`
     sendApplicationReceived({
       candidateName: fullName,
       role: poste.titre,
