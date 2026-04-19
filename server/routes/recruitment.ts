@@ -1126,7 +1126,7 @@ protectedRouter.get('/documents/:docId/preview', async (req, res) => {
   }
 })
 
-// Get scan status for a document
+// Get scan status for a document, including any active override.
 protectedRouter.get('/documents/:docId/scan', (req, res) => {
   const doc = getDb().prepare(
     'SELECT scan_status, scan_result, scanned_at FROM candidature_documents WHERE id = ?'
@@ -1142,11 +1142,79 @@ protectedRouter.get('/documents/:docId/scan', (req, res) => {
     try { parsedResult = JSON.parse(doc.scan_result) } catch { parsedResult = doc.scan_result }
   }
 
+  // Look up active override (if any).
+  const override = getDb().prepare(
+    `SELECT id, verdict, reason, expires_at, created_by, created_at
+     FROM scan_overrides
+     WHERE document_id = ? AND expires_at > datetime('now')
+     ORDER BY created_at DESC LIMIT 1`
+  ).get(req.params.docId) as { id: string; verdict: string; reason: string; expires_at: string; created_by: string; created_at: string } | undefined
+
   res.json({
     status: doc.scan_status ?? 'pending',
     result: parsedResult,
     scannedAt: doc.scanned_at,
+    override: override ?? null,
+    effectiveVerdict: override?.verdict ?? (doc.scan_status === 'clean' ? 'safe' : doc.scan_status === 'infected' ? 'quarantine' : doc.scan_status ?? 'pending'),
   })
+})
+
+// Create a scan override (recruiter mark file safe / quarantine for an incident).
+// Reason mandatory, expiry defaults to 30 days. Audit-logged. Recruitment-lead only
+// (already enforced by protectedRouter).
+protectedRouter.post('/documents/:docId/scan/override', (req, res) => {
+  const body = req.body as { verdict?: unknown; reason?: unknown; expires_at?: unknown }
+  if (body.verdict !== 'safe' && body.verdict !== 'quarantine') {
+    res.status(400).json({ error: 'verdict doit être "safe" ou "quarantine"' })
+    return
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+  if (reason.length < 10) {
+    res.status(400).json({ error: 'Une raison d’au moins 10 caractères est requise' })
+    return
+  }
+
+  const doc = getDb().prepare(
+    'SELECT candidature_id, filename FROM candidature_documents WHERE id = ?'
+  ).get(req.params.docId) as { candidature_id: string; filename: string } | undefined
+  if (!doc) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  // Default 30-day expiry; cap user-provided expiry at 365 days.
+  let expiresAt: string
+  if (typeof body.expires_at === 'string') {
+    const parsed = new Date(body.expires_at)
+    if (isNaN(parsed.getTime())) {
+      res.status(400).json({ error: 'expires_at invalide (ISO 8601 attendu)' })
+      return
+    }
+    const oneYearFromNow = Date.now() + 365 * 24 * 60 * 60 * 1000
+    if (parsed.getTime() > oneYearFromNow) {
+      res.status(400).json({ error: 'Expiration plafonnée à 1 an' })
+      return
+    }
+    expiresAt = parsed.toISOString()
+  } else {
+    expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  }
+
+  const user = getUser(req)
+  const id = crypto.randomUUID()
+  getDb().prepare(`
+    INSERT INTO scan_overrides (id, document_id, verdict, reason, expires_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, req.params.docId, body.verdict, reason, expiresAt, user.slug || 'unknown')
+
+  try {
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+      VALUES (?, 'document', ?, ?)
+    `).run(doc.candidature_id, `Override scan (${body.verdict}) sur ${doc.filename} — raison: ${reason}`, user.slug || 'unknown')
+  } catch { /* audit non-blocking */ }
+
+  res.status(201).json({ id, verdict: body.verdict, reason, expires_at: expiresAt })
 })
 
 // Download all documents as ZIP for a candidature

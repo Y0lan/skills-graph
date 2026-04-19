@@ -360,6 +360,21 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN deleted_at TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
+
+  // Scan verdict overrides — recruiter can mark a flagged file as safe
+  // (or quarantine a clean one) for a bounded incident window.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scan_overrides (
+      id TEXT PRIMARY KEY,
+      document_id TEXT NOT NULL REFERENCES candidature_documents(id) ON DELETE CASCADE,
+      verdict TEXT NOT NULL CHECK(verdict IN ('safe', 'quarantine')),
+      reason TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_scan_overrides_document ON scan_overrides(document_id, expires_at)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_scan_status ON candidature_documents(scan_status)')
 
   // Idempotent column additions for soft skill scoring + global score

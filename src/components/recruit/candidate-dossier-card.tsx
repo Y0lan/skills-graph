@@ -32,7 +32,12 @@ const EXPECTED_DOCUMENTS: Record<string, string[]> = {
   embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
 }
 
+import { useState } from 'react'
+import ScanDetailDialog from './scan-detail-dialog'
+
 function ScanBadge({ doc }: { doc: CandidatureDocument }) {
+  const [open, setOpen] = useState(false)
+
   if (!doc.scan_status || doc.scan_status === 'pending') {
     return (
       <Tooltip>
@@ -43,27 +48,43 @@ function ScanBadge({ doc }: { doc: CandidatureDocument }) {
       </Tooltip>
     )
   }
-  if (doc.scan_status === 'clean') {
-    return (
+
+  const icon = doc.scan_status === 'clean'
+    ? <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
+    : doc.scan_status === 'infected'
+      ? <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
+      : null
+  if (!icon) return null
+
+  return (
+    <>
       <Tooltip>
-        <TooltipTrigger className="cursor-help">
-          <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex cursor-pointer rounded p-0.5 hover:bg-muted/60"
+            aria-label={`Voir le détail du scan de ${doc.filename}`}
+          >
+            {icon}
+          </button>
         </TooltipTrigger>
-        <TooltipContent className="text-xs">Scanné avec un logiciel antivirus — aucun malware détecté</TooltipContent>
+        <TooltipContent className="text-xs max-w-[220px]">
+          {doc.scan_status === 'clean'
+            ? 'Scanné — aucun malware détecté. Cliquer pour voir le détail.'
+            : 'Menace détectée — cliquer pour voir le détail et créer un override.'}
+        </TooltipContent>
       </Tooltip>
-    )
-  }
-  if (doc.scan_status === 'infected') {
-    return (
-      <Tooltip>
-        <TooltipTrigger className="cursor-help">
-          <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
-        </TooltipTrigger>
-        <TooltipContent className="text-xs max-w-[200px]">Menace détectée — ce fichier peut contenir un malware</TooltipContent>
-      </Tooltip>
-    )
-  }
-  return null // 'error' or 'skipped' — no badge
+      {open && (
+        <ScanDetailDialog
+          open={open}
+          onClose={() => setOpen(false)}
+          documentId={doc.id}
+          filename={doc.filename}
+        />
+      )}
+    </>
+  )
 }
 
 export interface CandidateDossierCardProps {
