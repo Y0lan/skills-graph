@@ -284,9 +284,9 @@ export default function CandidateDetailPage() {
               )}
             </h1>
             <p className="text-muted-foreground">
-              {candidatures.length > 1
-                ? `${candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')}`
-                : candidate.role}
+              {candidatures.length > 0
+                ? candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')
+                : candidate.role /* edge case: candidate without any candidature (manual create) */}
             </p>
 
             {/* Contact info */}

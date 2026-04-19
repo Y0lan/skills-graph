@@ -385,12 +385,11 @@ export function initDatabase(): void {
 
     if (dupes.length > 0) {
       console.log(`[DEDUP] Found ${dupes.length} email(s) with duplicate candidate rows`)
+      // For data fields (cv_text, ai_suggestions, ratings, …) keep canonical's
+      // value when non-null/non-empty: the OLDEST candidate is the
+      // most-curated source.
       const mergeNonNull = db.prepare(`
         UPDATE candidates SET
-          telephone = COALESCE(telephone, (SELECT telephone FROM candidates WHERE id = ?)),
-          pays = COALESCE(pays, (SELECT pays FROM candidates WHERE id = ?)),
-          linkedin_url = COALESCE(linkedin_url, (SELECT linkedin_url FROM candidates WHERE id = ?)),
-          github_url = COALESCE(github_url, (SELECT github_url FROM candidates WHERE id = ?)),
           cv_text = COALESCE(cv_text, (SELECT cv_text FROM candidates WHERE id = ?)),
           ai_suggestions = COALESCE(ai_suggestions, (SELECT ai_suggestions FROM candidates WHERE id = ?)),
           ai_report = COALESCE(ai_report, (SELECT ai_report FROM candidates WHERE id = ?)),
@@ -398,6 +397,18 @@ export function initDatabase(): void {
           experience = CASE WHEN experience = '{}' OR experience IS NULL OR experience = '' THEN (SELECT experience FROM candidates WHERE id = ?) ELSE experience END,
           skipped_categories = CASE WHEN skipped_categories = '[]' OR skipped_categories IS NULL OR skipped_categories = '' THEN (SELECT skipped_categories FROM candidates WHERE id = ?) ELSE skipped_categories END,
           submitted_at = COALESCE(submitted_at, (SELECT submitted_at FROM candidates WHERE id = ?))
+        WHERE id = ?
+      `)
+      // For contact fields, the NEWEST non-null value wins — the candidate's
+      // most recent application probably has their freshest phone/address.
+      // We iterate duplicates oldest→newest, overwriting canonical only when
+      // the duplicate's value is non-null. End state = newest-non-null.
+      const mergeContactPreferDup = db.prepare(`
+        UPDATE candidates SET
+          telephone = CASE WHEN (SELECT telephone FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT telephone FROM candidates WHERE id = ?) ELSE telephone END,
+          pays = CASE WHEN (SELECT pays FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT pays FROM candidates WHERE id = ?) ELSE pays END,
+          linkedin_url = CASE WHEN (SELECT linkedin_url FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT linkedin_url FROM candidates WHERE id = ?) ELSE linkedin_url END,
+          github_url = CASE WHEN (SELECT github_url FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT github_url FROM candidates WHERE id = ?) ELSE github_url END
         WHERE id = ?
       `)
       const appendNotes = db.prepare(`
@@ -441,9 +452,15 @@ export function initDatabase(): void {
             auditBits.push(`dropped skipped_categories: ${dup.skipped_categories}`)
           }
 
-          // 1. Pull non-null fields from dup into canonical.
+          // 1a. Pull non-null DATA fields from dup into canonical (canonical wins ties).
           mergeNonNull.run(
-            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
+            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
+            canonical.id,
+          )
+          // 1b. Pull non-null CONTACT fields, preferring the dup (newer wins
+          //     because we iterate duplicates oldest→newest).
+          mergeContactPreferDup.run(
+            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
             canonical.id,
           )
 

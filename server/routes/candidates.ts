@@ -143,11 +143,33 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
   }
 
   const user = getUser(req)
-  const id = crypto.randomUUID()
 
-  getDb().prepare(
-    'INSERT INTO candidates (id, name, role, role_id, email, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, name.trim(), role!.trim(), resolvedRoleId, email?.trim() || null, user.slug)
+  // Email-level dedup: if a candidate with this email already exists, refresh
+  // their fields (last-write-wins on optional metadata, never on identity) and
+  // return the existing id rather than creating a second row. Mirrors the
+  // intake-service.ts behaviour so admin manual-create stays consistent with
+  // Drupal webhook intake.
+  let id: string
+  const existing = email?.trim()
+    ? getDb().prepare('SELECT id FROM candidates WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1').get(email.trim()) as { id: string } | undefined
+    : undefined
+
+  if (existing) {
+    id = existing.id
+    // Update name only if missing on existing (don't clobber a verified name).
+    getDb().prepare(`
+      UPDATE candidates SET
+        name = COALESCE(NULLIF(name, ''), ?),
+        role = COALESCE(NULLIF(role, ''), ?),
+        role_id = COALESCE(role_id, ?)
+      WHERE id = ?
+    `).run(name.trim(), role!.trim(), resolvedRoleId, id)
+  } else {
+    id = crypto.randomUUID()
+    getDb().prepare(
+      'INSERT INTO candidates (id, name, role, role_id, email, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(id, name.trim(), role!.trim(), resolvedRoleId, email?.trim() || null, user.slug)
+  }
 
   // Process CV if uploaded
   let suggestionsCount = 0
