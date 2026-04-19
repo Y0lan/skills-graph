@@ -134,7 +134,7 @@ export type DownloadDocumentResult = DownloadDocumentResultLocal | DownloadDocum
 
 export async function getDocumentForDownload(docId: string): Promise<DownloadDocumentResult | { error: string; status: number }> {
   const doc = getDb().prepare(
-    'SELECT filename, display_filename, path FROM candidature_documents WHERE id = ?'
+    'SELECT filename, display_filename, path FROM candidature_documents WHERE id = ? AND deleted_at IS NULL'
   ).get(docId) as { filename: string; display_filename: string | null; path: string } | undefined
 
   if (!doc) {
@@ -205,7 +205,7 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
   }
 
   const docs = getDb().prepare(
-    'SELECT id, type, filename, display_filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
+    'SELECT id, type, filename, display_filename, path FROM candidature_documents WHERE candidature_id = ? AND deleted_at IS NULL ORDER BY created_at ASC'
   ).all(candidatureId) as { id: string; type: string; filename: string; display_filename: string | null; path: string }[]
 
   const events = getDb().prepare(

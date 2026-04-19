@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Upload, FileText, Download, Eye, Pencil, FolderArchive } from 'lucide-react'
+import { Loader2, Upload, FileText, Download, Eye, Pencil, Trash2, FolderArchive } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -64,6 +64,30 @@ export default function CandidateDocumentsPanel({
   const [renameDoc, setRenameDoc] = useState<CandidatureDocument | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [renaming, setRenaming] = useState(false)
+  const [deleteDoc, setDeleteDoc] = useState<CandidatureDocument | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDelete(): Promise<void> {
+    if (!deleteDoc) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/recruitment/documents/${deleteDoc.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({ error: 'Erreur' }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      setDocuments(prev => prev.filter(d => d.id !== deleteDoc.id))
+      toast.success('Document supprimé (récupérable pendant 30 jours)')
+      setDeleteDoc(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors de la suppression')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   function openRenameDialog(doc: CandidatureDocument): void {
     setRenameDoc(doc)
@@ -229,6 +253,16 @@ export default function CandidateDocumentsPanel({
                     >
                       <Download className="h-3.5 w-3.5" />
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      title="Supprimer (récupérable 30 jours)"
+                      aria-label={`Supprimer ${name}`}
+                      onClick={() => setDeleteDoc(doc)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               )
@@ -255,6 +289,25 @@ export default function CandidateDocumentsPanel({
               className="flex-1 w-full border-0"
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteDoc} onOpenChange={(open) => { if (!open && !deleting) setDeleteDoc(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Supprimer ce document ?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>Le document <span className="font-medium">{deleteDoc ? effectiveName(deleteDoc) : ''}</span> sera retiré du dossier.</p>
+            <p className="text-xs text-muted-foreground">Récupérable depuis l’historique pendant 30 jours, puis purgé définitivement.</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" disabled={deleting} onClick={() => setDeleteDoc(null)}>Annuler</Button>
+            <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Supprimer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
