@@ -14,6 +14,7 @@ interface CandidateFormData {
   id: string
   name: string
   role: string
+  posteTitres?: string[]
   submitted: boolean
   aiSuggestions: Record<string, number> | null
   roleCategories: string[] | null
@@ -167,8 +168,18 @@ export default function CandidateFormPage() {
               Bonjour {formData.name} 👋
             </h1>
             <p className="mt-3 text-muted-foreground">
-              Vous êtes invité(e) à évaluer vos compétences pour le poste de{' '}
-              <span className="font-medium text-foreground">{formData.role}</span> chez SINAPSE.
+              {formData.posteTitres && formData.posteTitres.length > 1 ? (
+                <>
+                  Vous êtes invité(e) à évaluer vos compétences pour vos candidatures :
+                  <span className="block mt-1 font-medium text-foreground">{formData.posteTitres.join(' · ')}</span>
+                  <span className="block mt-2 text-xs">Vos réponses seront utilisées pour chacune de ces candidatures — vous ne remplissez le formulaire qu’une seule fois.</span>
+                </>
+              ) : (
+                <>
+                  Vous êtes invité(e) à évaluer vos compétences pour le poste de{' '}
+                  <span className="font-medium text-foreground">{formData.role}</span> chez SINAPSE.
+                </>
+              )}
             </p>
             <div className="mt-4 rounded-lg border bg-muted/50 p-4 text-sm">
               <p className="font-medium">Comment ça marche :</p>

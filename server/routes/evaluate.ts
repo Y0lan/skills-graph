@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { getDb, getRoleCategories, getCategoryIdsByPole } from '../lib/db.js'
+import { getDb, getCategoriesForCandidate, getCategoryIdsByPole } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
@@ -50,13 +50,25 @@ evaluateRouter.get('/:id/form', (req, res) => {
   const row = getCandidateGuard(req.params.id, res, { allowSubmitted: true })
   if (!row) return
 
+  // Union of category IDs across all postes this candidate has applied to.
+  // Empty array means "show ALL categories" (free candidature without a role).
+  const candidateCategories = getCategoriesForCandidate(row.id)
+  const candidatureRows = getDb().prepare(`
+    SELECT p.titre AS poste_titre
+    FROM candidatures c
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.candidate_id = ?
+    ORDER BY c.created_at ASC
+  `).all(row.id) as { poste_titre: string }[]
+
   res.json({
     id: row.id,
     name: row.name,
     role: row.role,
+    posteTitres: candidatureRows.map(r => r.poste_titre),
     submitted: !!row.submitted_at,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
-    roleCategories: row.role_id ? getRoleCategories(row.role_id) : null,
+    roleCategories: candidateCategories.length > 0 ? candidateCategories : null,
     categoryIdsByPole: getCategoryIdsByPole(),
     version: row.version,
   })

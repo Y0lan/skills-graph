@@ -919,6 +919,29 @@ export function getRoleCategories(roleId: string): string[] {
   return rows.map(r => r.category_id)
 }
 
+/**
+ * Union of role_categories across every active candidature for this candidate.
+ * Used by the self-eval form so a candidate who applied to N postes (potentially
+ * across different pôles) sees the union of their categories — answers once,
+ * recruiter sees per-poste compatibility scores. Falls back to candidate.role_id
+ * when no candidatures exist (manually-created candidate).
+ */
+export function getCategoriesForCandidate(candidateId: string): string[] {
+  const rows = db.prepare(`
+    SELECT DISTINCT rc.category_id
+    FROM candidatures c
+    JOIN postes p ON p.id = c.poste_id
+    JOIN role_categories rc ON rc.role_id = p.role_id
+    WHERE c.candidate_id = ?
+  `).all(candidateId) as { category_id: string }[]
+  if (rows.length > 0) return rows.map(r => r.category_id)
+
+  // Fallback for candidates without candidatures (edge case): use the legacy
+  // candidates.role_id field, which intake sets to the first applied poste's role.
+  const legacy = db.prepare('SELECT role_id FROM candidates WHERE id = ?').get(candidateId) as { role_id: string | null } | undefined
+  return legacy?.role_id ? getRoleCategories(legacy.role_id) : []
+}
+
 export function getCategoryIdsByPole(): Record<string, string[]> {
   const rows = db.prepare('SELECT pole, category_id FROM pole_categories').all() as { pole: string; category_id: string }[]
   const result: Record<string, string[]> = {}
