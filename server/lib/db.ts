@@ -361,6 +361,74 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
 
+  // ─── One-shot dedup of candidates by email ──────────────────────────
+  // Before the intake fix shipped, applying to two postes with the same email
+  // created two `candidates` rows. Walk any leftover duplicates, pick the
+  // OLDEST as canonical, merge data, re-point candidatures + aboro_profiles,
+  // delete the duplicates. Idempotent — no-op when no duplicates exist.
+  try {
+    const dupes = db.prepare(`
+      SELECT LOWER(email) AS norm_email, COUNT(*) AS n
+      FROM candidates
+      WHERE email IS NOT NULL AND email != ''
+      GROUP BY LOWER(email)
+      HAVING COUNT(*) > 1
+    `).all() as { norm_email: string; n: number }[]
+
+    if (dupes.length > 0) {
+      console.log(`[DEDUP] Found ${dupes.length} email(s) with duplicate candidate rows`)
+      const mergeNonNull = db.prepare(`
+        UPDATE candidates SET
+          telephone = COALESCE(telephone, (SELECT telephone FROM candidates WHERE id = ?)),
+          pays = COALESCE(pays, (SELECT pays FROM candidates WHERE id = ?)),
+          linkedin_url = COALESCE(linkedin_url, (SELECT linkedin_url FROM candidates WHERE id = ?)),
+          github_url = COALESCE(github_url, (SELECT github_url FROM candidates WHERE id = ?)),
+          notes = COALESCE(notes, (SELECT notes FROM candidates WHERE id = ?)),
+          cv_text = COALESCE(cv_text, (SELECT cv_text FROM candidates WHERE id = ?)),
+          ai_suggestions = COALESCE(ai_suggestions, (SELECT ai_suggestions FROM candidates WHERE id = ?)),
+          ai_report = COALESCE(ai_report, (SELECT ai_report FROM candidates WHERE id = ?)),
+          ratings = CASE WHEN ratings = '{}' OR ratings IS NULL THEN (SELECT ratings FROM candidates WHERE id = ?) ELSE ratings END,
+          submitted_at = COALESCE(submitted_at, (SELECT submitted_at FROM candidates WHERE id = ?))
+        WHERE id = ?
+      `)
+      const repointCandidatures = db.prepare(
+        'UPDATE candidatures SET candidate_id = ? WHERE candidate_id = ?'
+      )
+      const repointAboro = db.prepare(
+        'UPDATE aboro_profiles SET candidate_id = ? WHERE candidate_id = ?'
+      )
+      const deleteDuplicate = db.prepare(
+        'DELETE FROM candidates WHERE id = ?'
+      )
+
+      const merge = db.transaction((normEmail: string) => {
+        const rows = db.prepare(
+          'SELECT id, created_at FROM candidates WHERE LOWER(email) = ? ORDER BY created_at ASC'
+        ).all(normEmail) as { id: string; created_at: string }[]
+        if (rows.length < 2) return
+        const canonical = rows[0]
+        const duplicates = rows.slice(1)
+        for (const dup of duplicates) {
+          // 1. Pull non-null fields from dup into canonical (10 column slots).
+          mergeNonNull.run(
+            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
+            canonical.id,
+          )
+          // 2. Re-point dependent rows.
+          repointCandidatures.run(canonical.id, dup.id)
+          repointAboro.run(canonical.id, dup.id)
+          // 3. Delete the now-orphan duplicate.
+          deleteDuplicate.run(dup.id)
+        }
+        console.log(`[DEDUP] Merged ${duplicates.length} duplicate(s) for email ${normEmail} → canonical ${canonical.id}`)
+      })
+      for (const d of dupes) merge(d.norm_email)
+    }
+  } catch (err) {
+    console.error('[DEDUP] Migration failed:', err)
+    // Non-fatal — server still boots, dedup retried next start
+  }
+
   // Scan verdict overrides — recruiter can mark a flagged file as safe
   // (or quarantine a clean one) for a bounded incident window.
   db.exec(`

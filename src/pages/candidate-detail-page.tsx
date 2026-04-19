@@ -275,8 +275,19 @@ export default function CandidateDetailPage() {
         {/* ── 1. IDENTITY HEADER ── */}
         <div className="flex items-start gap-4 flex-wrap">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold">{candidate.name}</h1>
-            <p className="text-muted-foreground">{candidate.role}</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
+              {candidate.name}
+              {candidatures.length > 1 && (
+                <Badge variant="outline" className="text-[11px] font-normal" title="Ce candidat a plusieurs candidatures actives">
+                  {candidatures.length} candidatures
+                </Badge>
+              )}
+            </h1>
+            <p className="text-muted-foreground">
+              {candidatures.length > 1
+                ? `${candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')}`
+                : candidate.role}
+            </p>
 
             {/* Contact info */}
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground max-w-full">

@@ -61,21 +61,57 @@ export async function processIntake(
     return { error: `Canal invalide: ${resolvedCanal}. Valeurs acceptées: ${VALID_CANALS.join(', ')}`, status: 400 }
   }
 
-  // Atomic creation: idempotence check + candidate + candidature + event in one transaction
-  // This prevents duplicate candidatures from parallel webhook deliveries
+  // Atomic creation: dedup-by-email + idempotence check + candidate (or reuse) + candidature + event
+  // in one transaction. Prevents both duplicate candidates (same email applies to multiple postes)
+  // and duplicate candidatures (parallel webhook redelivery on the same poste).
   const intakeResult = getDb().transaction((): IntakeResult => {
-    // Check idempotence INSIDE transaction (case-insensitive email match)
-    const existingCandidature = getDb().prepare(`
-      SELECT c.id as candidature_id, c.candidate_id
-      FROM candidatures c
-      JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE LOWER(cand.email) = LOWER(?) AND c.poste_id = ?
-    `).get(email.trim(), poste_vise) as { candidature_id: string; candidate_id: string } | undefined
+    // 1. Find existing candidate by email (case-insensitive). One person = one candidate.
+    const existingCandidate = getDb().prepare(
+      'SELECT id FROM candidates WHERE LOWER(email) = LOWER(?) ORDER BY created_at ASC LIMIT 1'
+    ).get(email.trim()) as { id: string } | undefined
 
-    if (existingCandidature) {
-      return { ok: true, candidatureId: existingCandidature.candidature_id, updated: true }
+    if (existingCandidate) {
+      // 2a. Candidate exists. Did they already apply to this poste? → idempotent return.
+      const existingCandidature = getDb().prepare(
+        'SELECT id FROM candidatures WHERE candidate_id = ? AND poste_id = ?'
+      ).get(existingCandidate.id, poste_vise) as { id: string } | undefined
+
+      if (existingCandidature) {
+        return { ok: true, candidatureId: existingCandidature.id, updated: true }
+      }
+
+      // 2b. Candidate exists, new poste — refresh contact fields (last-write-wins on
+      // optional metadata, never on email or name to avoid identity collisions) and
+      // attach a NEW candidature.
+      getDb().prepare(`
+        UPDATE candidates SET
+          telephone = COALESCE(?, telephone),
+          pays = COALESCE(?, pays),
+          linkedin_url = COALESCE(?, linkedin_url),
+          github_url = COALESCE(?, github_url)
+        WHERE id = ?
+      `).run(
+        telephone?.trim() || null,
+        pays?.trim() || null,
+        linkedin?.trim() || null,
+        github?.trim() || null,
+        existingCandidate.id,
+      )
+
+      getDb().prepare(`
+        INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal)
+        VALUES (?, ?, ?, 'postule', ?)
+      `).run(candidatureId, existingCandidate.id, poste_vise, resolvedCanal)
+
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
+        VALUES (?, 'status_change', 'postule', ?, 'drupal-webhook')
+      `).run(candidatureId, message?.trim() || null)
+
+      return { ok: true, candidatureId, candidateId: existingCandidate.id, updated: false }
     }
 
+    // 3. New candidate, new candidature.
     getDb().prepare(`
       INSERT INTO candidates (id, name, role, role_id, email, created_by, telephone, pays, linkedin_url, github_url, canal)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
