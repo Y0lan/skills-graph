@@ -373,6 +373,7 @@ export default function CandidateDetailPage() {
                     tauxPoste={c.tauxPoste}
                     tauxEquipe={c.tauxEquipe}
                     tauxSoft={c.tauxSoft}
+                    candidatureId={c.id}
                   />
 
                   {/* Actions */}

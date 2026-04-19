@@ -7,7 +7,8 @@ import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate } from '../lib/email.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills } from '../lib/compatibility.js'
+import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
+import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
 import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
 import { computeRoleGaps } from '../lib/gap-analysis.js'
@@ -902,6 +903,62 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     const fs = await import('fs')
     fs.createReadStream(result.filePath).pipe(res)
   }
+})
+
+// Compatibility breakdown — lazy endpoint per (candidature, metric).
+// Drives the "Voir les détails" UI on the % pill.
+protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {
+  const metric = req.params.metric
+  if (metric !== 'poste' && metric !== 'equipe' && metric !== 'soft') {
+    res.status(400).json({ error: 'metric doit être poste, equipe ou soft' })
+    return
+  }
+
+  const row = getDb().prepare(`
+    SELECT cand.ratings AS candidate_ratings, cand.role_id AS candidate_role_id, p.role_id AS poste_role_id
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(req.params.id) as { candidate_ratings: string | null; candidate_role_id: string | null; poste_role_id: string } | undefined
+
+  if (!row) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  const ratings = safeJsonParse<Record<string, number>>(row.candidate_ratings ?? '{}', {})
+
+  if (metric === 'poste') {
+    res.json(getPosteCompatBreakdown(ratings, row.poste_role_id))
+    return
+  }
+  if (metric === 'equipe') {
+    res.json(getEquipeCompatBreakdown(ratings, row.poste_role_id))
+    return
+  }
+
+  // soft
+  const candidateRow = getDb().prepare(`
+    SELECT candidate_id FROM candidatures WHERE id = ?
+  `).get(req.params.id) as { candidate_id: string } | undefined
+  if (!candidateRow) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  const aboroRow = getDb().prepare(
+    'SELECT profile_json FROM aboro_profiles WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1'
+  ).get(candidateRow.candidate_id) as { profile_json: string } | undefined
+  if (!aboroRow) {
+    res.status(404).json({ error: 'Aucun profil Âboro disponible pour ce candidat', missing: true })
+    return
+  }
+  const profile = safeJsonParse<import('../lib/aboro-extraction.js').AboroProfile | null>(aboroRow.profile_json, null)
+  if (!profile) {
+    res.status(500).json({ error: 'Profil Âboro illisible' })
+    return
+  }
+  res.json(getSoftSkillBreakdown(profile))
 })
 
 // Preview a document inline (PDFs only). Logs view to candidature_events.

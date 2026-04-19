@@ -214,6 +214,216 @@ export function calculateEquipeCompatibility(
   return totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0
 }
 
+// ─── Breakdowns (drive the "Voir les détails" UI on every % pill) ────────
+
+export interface PosteCompatBreakdown {
+  total: number
+  formula: 'weighted' | 'category-average'
+  items: Array<{
+    skillId?: string
+    skillLabel?: string
+    categoryId?: string
+    categoryLabel?: string
+    candidateLevel: number
+    targetLevel: number
+    weight: number
+    contribution: number
+    contributionPct: number
+  }>
+}
+
+export interface EquipeCompatBreakdown {
+  total: number
+  items: Array<{
+    categoryId: string
+    categoryLabel: string
+    candidateAvg: number
+    teamAvg: number
+    contribution: number
+    direction: 'fills_gap' | 'matches' | 'below_team'
+  }>
+}
+
+export function getPosteCompatBreakdown(
+  candidateRatings: Record<string, number>,
+  posteRoleId: string,
+): PosteCompatBreakdown {
+  const db = getDb()
+  const posteRow = db.prepare('SELECT id FROM postes WHERE role_id = ?').get(posteRoleId) as { id: string } | undefined
+  const requirements = posteRow
+    ? db.prepare(
+        'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?'
+      ).all(posteRow.id) as { skill_id: string; target_level: number; importance: string }[]
+    : []
+
+  if (requirements.length > 0) {
+    const skillLabels = new Map(
+      (db.prepare('SELECT id, label FROM skills').all() as { id: string; label: string }[])
+        .map(s => [s.id, s.label])
+    )
+    let weightedSum = 0
+    let totalWeight = 0
+    const rawItems = requirements.map(r => {
+      const weight = r.importance === 'requis' ? 2 : 1
+      const candidateLevel = candidateRatings[r.skill_id] ?? 0
+      const contribution = (Math.min(candidateLevel, r.target_level) / r.target_level) * weight
+      weightedSum += contribution
+      totalWeight += weight
+      return {
+        skillId: r.skill_id,
+        skillLabel: skillLabels.get(r.skill_id) ?? r.skill_id,
+        candidateLevel,
+        targetLevel: r.target_level,
+        weight,
+        contribution,
+      }
+    })
+    const items = rawItems.map(item => ({
+      ...item,
+      contributionPct: weightedSum > 0 ? Math.round((item.contribution / weightedSum) * 1000) / 10 : 0,
+    })).sort((a, b) => b.contribution - a.contribution)
+    return {
+      total: totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) : 0,
+      formula: 'weighted',
+      items,
+    }
+  }
+
+  // Category-average fallback
+  const roleCats = db.prepare(
+    'SELECT category_id FROM role_categories WHERE role_id = ?'
+  ).all(posteRoleId) as { category_id: string }[]
+  const categories = db.prepare('SELECT id, label FROM categories').all() as { id: string; label: string }[]
+  const catLabels = new Map(categories.map(c => [c.id, c.label]))
+  const skills = db.prepare('SELECT id, category_id FROM skills').all() as { id: string; category_id: string }[]
+  const skillsByCategory = new Map<string, string[]>()
+  for (const s of skills) {
+    const list = skillsByCategory.get(s.category_id) ?? []
+    list.push(s.id)
+    skillsByCategory.set(s.category_id, list)
+  }
+
+  let totalScore = 0
+  let totalWeight = 0
+  const rawItems: Array<{ categoryId: string; categoryLabel: string; candidateLevel: number; targetLevel: number; weight: number; contribution: number }> = []
+
+  for (const { category_id: catId } of roleCats) {
+    const catSkills = skillsByCategory.get(catId) ?? []
+    if (catSkills.length === 0) continue
+    let candidateSum = 0
+    for (const skillId of catSkills) {
+      const level = candidateRatings[skillId]
+      if (level != null && level > 0) candidateSum += level
+    }
+    const candidateAvg = candidateSum / catSkills.length
+    const categoryScore = (candidateAvg / 5) * 100
+    totalScore += categoryScore
+    totalWeight++
+    rawItems.push({
+      categoryId: catId,
+      categoryLabel: catLabels.get(catId) ?? catId,
+      candidateLevel: Math.round(candidateAvg * 10) / 10,
+      targetLevel: 5,
+      weight: 1,
+      contribution: categoryScore,
+    })
+  }
+  const items = rawItems.map(item => ({
+    ...item,
+    contributionPct: totalScore > 0 ? Math.round((item.contribution / totalScore) * 1000) / 10 : 0,
+  })).sort((a, b) => b.contribution - a.contribution)
+  return {
+    total: totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0,
+    formula: 'category-average',
+    items,
+  }
+}
+
+export function getEquipeCompatBreakdown(
+  candidateRatings: Record<string, number>,
+  posteRoleId: string,
+): EquipeCompatBreakdown {
+  const db = getDb()
+  const roleCats = db.prepare(
+    'SELECT category_id FROM role_categories WHERE role_id = ?'
+  ).all(posteRoleId) as { category_id: string }[]
+  if (roleCats.length === 0) return { total: 0, items: [] }
+
+  const teamMembers = db.prepare(
+    'SELECT slug, ratings FROM evaluations WHERE submitted_at IS NOT NULL'
+  ).all() as { slug: string; ratings: string }[]
+
+  const skills = db.prepare('SELECT id, category_id FROM skills').all() as { id: string; category_id: string }[]
+  const categories = db.prepare('SELECT id, label FROM categories').all() as { id: string; label: string }[]
+  const catLabels = new Map(categories.map(c => [c.id, c.label]))
+  const skillsByCategory = new Map<string, string[]>()
+  for (const s of skills) {
+    const list = skillsByCategory.get(s.category_id) ?? []
+    list.push(s.id)
+    skillsByCategory.set(s.category_id, list)
+  }
+
+  const teamRatings = teamMembers.map(m => safeJsonParse<Record<string, number>>(m.ratings, {}))
+
+  let totalScore = 0
+  let totalWeight = 0
+  const items: EquipeCompatBreakdown['items'] = []
+
+  for (const { category_id: catId } of roleCats) {
+    const catSkills = skillsByCategory.get(catId) ?? []
+    if (catSkills.length === 0) continue
+
+    let teamSum = 0
+    let teamCount = 0
+    for (const memberRatings of teamRatings) {
+      for (const skillId of catSkills) {
+        const level = memberRatings[skillId]
+        if (level != null && level > 0) {
+          teamSum += level
+          teamCount++
+        }
+      }
+    }
+    const teamAvg = teamCount > 0 ? teamSum / teamCount : 0
+
+    let candidateSum = 0
+    for (const skillId of catSkills) {
+      const level = candidateRatings[skillId]
+      if (level != null && level > 0) candidateSum += level
+    }
+    const candidateAvg = candidateSum / catSkills.length
+
+    let gapScore: number
+    let direction: EquipeCompatBreakdown['items'][number]['direction']
+    if (teamAvg === 0) {
+      gapScore = (candidateAvg / 5) * 100
+      direction = 'fills_gap'
+    } else if (candidateAvg >= teamAvg) {
+      gapScore = Math.min(100, (candidateAvg / 5) * 100 + (candidateAvg - teamAvg) * GAP_BONUS_MULTIPLIER)
+      direction = candidateAvg > teamAvg + 0.25 ? 'fills_gap' : 'matches'
+    } else {
+      gapScore = (candidateAvg / 5) * 100 * 0.8
+      direction = 'below_team'
+    }
+
+    totalScore += gapScore
+    totalWeight++
+    items.push({
+      categoryId: catId,
+      categoryLabel: catLabels.get(catId) ?? catId,
+      candidateAvg: Math.round(candidateAvg * 10) / 10,
+      teamAvg: Math.round(teamAvg * 10) / 10,
+      contribution: Math.round(gapScore),
+      direction,
+    })
+  }
+
+  return {
+    total: totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0,
+    items: items.sort((a, b) => b.contribution - a.contribution),
+  }
+}
+
 /**
  * Get gap analysis: which categories the candidate fills vs the team
  */
