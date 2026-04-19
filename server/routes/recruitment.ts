@@ -307,7 +307,9 @@ protectedRouter.get('/candidatures', (req, res) => {
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
       cand.ai_suggestions, cand.submitted_at as evaluation_submitted,
       p.titre as poste_titre, p.pole as poste_pole,
-      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at
+      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
+      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id AND ce.type = 'status_change' AND ce.statut_to = c.statut) as entered_status_at,
+      (SELECT COUNT(DISTINCT cd.type) FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.deleted_at IS NULL AND cd.type IN ('cv', 'lettre', 'aboro')) as docs_slot_count
     FROM candidatures c
     JOIN candidates cand ON cand.id = c.candidate_id
     JOIN postes p ON p.id = c.poste_id
@@ -339,7 +341,9 @@ protectedRouter.get('/candidatures', (req, res) => {
     ai_suggestions: string | null; evaluation_submitted: string | null;
     poste_titre: string; poste_pole: string;
     taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null;
-    last_event_at: string | null
+    last_event_at: string | null;
+    entered_status_at: string | null;
+    docs_slot_count: number | null;
   })[]
 
   res.json(rows.map(r => ({
@@ -363,6 +367,8 @@ protectedRouter.get('/candidatures', (req, res) => {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     lastEventAt: r.last_event_at,
+    enteredStatusAt: r.entered_status_at ?? r.created_at,
+    docsSlotCount: r.docs_slot_count ?? 0,
   })))
 })
 

@@ -28,6 +28,8 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
 import KanbanBoard from '@/components/recruit/kanban-board'
+import StatusChip from '@/components/recruit/status-chip'
+import DocsChip from '@/components/recruit/docs-chip'
 
 interface Poste {
   id: string
@@ -65,6 +67,8 @@ interface Candidature {
   createdAt: string
   updatedAt: string
   lastEventAt: string | null
+  enteredStatusAt: string | null
+  docsSlotCount: number
 }
 
 interface DashboardStats {
@@ -561,13 +565,12 @@ export default function RecruitPipelinePage() {
                     <div className="flex items-center gap-4">
                       {/* Name + meta */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="hover:underline font-medium text-sm truncate">{c.candidateName}</span>
-                          <Badge variant="secondary" className={STATUT_COLORS[c.statut] ?? ''}>
-                            {STATUT_LABELS[c.statut] ?? c.statut}
-                          </Badge>
+                          <StatusChip statut={c.statut} enteredStatusAt={c.enteredStatusAt} />
+                          <DocsChip docsSlotCount={c.docsSlotCount} />
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                           <span>{c.posteTitre}</span>
                           <span>·</span>
                           <span>{CANAL_LABELS[c.canal] ?? c.canal}</span>
@@ -581,15 +584,6 @@ export default function RecruitPipelinePage() {
                               Soft skills
                             </Badge>
                           )}
-                          {c.lastEventAt && (() => {
-                            const daysSince = Math.floor((Date.now() - new Date(c.lastEventAt.includes('T') ? c.lastEventAt : c.lastEventAt.replace(' ', 'T') + 'Z').getTime()) / (1000 * 60 * 60 * 24))
-                            return daysSince >= 7 && !['embauche', 'refuse'].includes(c.statut) ? (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-500 text-amber-600 dark:text-amber-400">
-                                <AlertCircle className="h-2.5 w-2.5 mr-0.5" />
-                                {daysSince}j
-                              </Badge>
-                            ) : null
-                          })()}
                         </div>
                       </div>
 
