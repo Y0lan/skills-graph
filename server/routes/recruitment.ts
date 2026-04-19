@@ -848,6 +848,44 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   }
 })
 
+// Preview a document inline (PDFs only). Logs view to candidature_events.
+protectedRouter.get('/documents/:docId/preview', async (req, res) => {
+  const result = await getDocumentForDownload(req.params.docId)
+
+  if ('error' in result) {
+    res.status(result.status).json({ error: result.error })
+    return
+  }
+
+  if (result.contentType !== 'application/pdf') {
+    res.status(406).json({ error: 'Aperçu disponible uniquement pour les PDF', contentType: result.contentType })
+    return
+  }
+
+  const user = getUser(req)
+  try {
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+      SELECT candidature_id, 'document', ?, ?
+      FROM candidature_documents WHERE id = ?
+    `).run(`Aperçu: ${result.filename}`, user.slug || 'unknown', req.params.docId)
+  } catch {
+    // Audit failure must never block preview
+  }
+
+  const safeFilename = result.filename.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"')
+  res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`)
+  res.setHeader('Content-Type', result.contentType)
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+
+  if (result.kind === 'gcs') {
+    res.send(result.buffer)
+  } else {
+    const fs = await import('fs')
+    fs.createReadStream(result.filePath).pipe(res)
+  }
+})
+
 // Get scan status for a document
 protectedRouter.get('/documents/:docId/scan', (req, res) => {
   const doc = getDb().prepare(

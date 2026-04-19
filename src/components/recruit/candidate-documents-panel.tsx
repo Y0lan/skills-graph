@@ -1,11 +1,17 @@
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Upload, FileText, Download, FolderArchive } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Loader2, Upload, FileText, Download, Eye, FolderArchive } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
+
+function isPdf(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.pdf')
+}
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   cv: 'CV',
@@ -47,6 +53,7 @@ export default function CandidateDocumentsPanel({
   currentStatut,
 }: CandidateDocumentsPanelProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
+  const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
 
   const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
   const uploadedTypes = new Set(documents.map(d => d.type))
@@ -139,14 +146,30 @@ export default function CandidateDocumentsPanel({
                     {formatDateTime(doc.created_at)}
                   </span>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="opacity-0 group-hover:opacity-100 h-7 w-7 p-0"
-                  onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </Button>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                  {isPdf(doc.filename) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      title="Voir le document"
+                      aria-label={`Voir ${doc.filename}`}
+                      onClick={() => setPreviewDoc(doc)}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    title="Télécharger le document"
+                    aria-label={`Télécharger ${doc.filename}`}
+                    onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -156,6 +179,23 @@ export default function CandidateDocumentsPanel({
           </p>
         )}
       </CardContent>
+
+      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) setPreviewDoc(null) }}>
+        <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 py-3 border-b shrink-0">
+            <DialogTitle className="text-sm font-medium truncate pr-8">
+              {previewDoc?.filename}
+            </DialogTitle>
+          </DialogHeader>
+          {previewDoc && (
+            <iframe
+              src={`/api/recruitment/documents/${previewDoc.id}/preview`}
+              title={`Aperçu de ${previewDoc.filename}`}
+              className="flex-1 w-full border-0"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
