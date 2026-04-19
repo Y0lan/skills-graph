@@ -225,14 +225,19 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
     })
     archive.pipe(output)
 
-    // Add documents with numbered prefixes
+    // Add documents with numbered prefixes. If the user has renamed a document
+    // (display_filename), honour their choice; otherwise use the design's
+    // canonical "Type_Candidate.ext" convention.
     let idx = 1
     for (const doc of docs) {
       const ext = doc.filename.split('.').pop() ?? 'pdf'
       const prefix = String(idx).padStart(2, '0')
       const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
       const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
-      const archiveName = `${prefix}_${typeName}_${candidateName}.${ext}`
+      const baseName = doc.display_filename
+        ? doc.display_filename.replace(/[\\/]/g, '_').trim()
+        : `${typeName}_${candidateName}.${ext}`
+      const archiveName = `${prefix}_${baseName}`
 
       if (isGcsPath(doc.path)) {
         try {

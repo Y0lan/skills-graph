@@ -1281,7 +1281,7 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
         'SELECT type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events WHERE candidature_id = ? ORDER BY created_at ASC'
       ).all(cand.id as string) as { type: string; statut_from: string | null; statut_to: string | null; notes: string | null; created_by: string; created_at: string }[]
 
-      // Add documents
+      // Add documents — honour display_filename if the user renamed.
       let idx = 1
       for (const doc of docs) {
         const ext = doc.filename.split('.').pop() ?? 'pdf'
@@ -1289,7 +1289,10 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
         const safeType = doc.type.replace(/[^a-zA-Z0-9_-]/g, '_')
         const typeName = safeType === 'other' ? 'Document' : safeType.charAt(0).toUpperCase() + safeType.slice(1)
         const safeCandName = (cand.name as string).replace(/[^a-zA-Z0-9À-ÿ\s-]/g, '').replace(/\s+/g, '_') || 'Candidat'
-        const archiveName = `${folderName}/${prefix}_${typeName}_${safeCandName}.${ext}`
+        const baseName = doc.display_filename
+          ? doc.display_filename.replace(/[\\/]/g, '_').trim()
+          : `${typeName}_${safeCandName}.${ext}`
+        const archiveName = `${folderName}/${prefix}_${baseName}`
 
         if (isGcsPath(doc.path)) {
           try {
