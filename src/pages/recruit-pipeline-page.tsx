@@ -133,8 +133,15 @@ export default function RecruitPipelinePage() {
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    if (scrollTrigger > 0) {
-      candidaturesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (scrollTrigger === 0) return
+    // Only scroll if the candidatures section is not already visible.
+    // Avoids the jarring jump when clicking a poste card that's already near the list.
+    const el = candidaturesRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const isOffscreen = rect.top < 0 || rect.top > window.innerHeight - 80
+    if (isOffscreen) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [scrollTrigger])
 
