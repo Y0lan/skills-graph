@@ -1032,6 +1032,92 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   }
 })
 
+// Revert the most recent status change for a candidature (within 10 min, same user).
+// Emits a NEW status_change event — never deletes the original — so the audit
+// trail keeps the full forward+back history.
+const REVERT_WINDOW_MS = 10 * 60 * 1000
+const TERMINAL_STATUTS = new Set(['embauche', 'refuse'])
+protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req, res) => {
+  const lastEvent = getDb().prepare(`
+    SELECT id, statut_from, statut_to, created_by, created_at
+    FROM candidature_events
+    WHERE candidature_id = ? AND type = 'status_change'
+    ORDER BY created_at DESC LIMIT 1
+  `).get(req.params.id) as { id: number; statut_from: string | null; statut_to: string; created_by: string; created_at: string } | undefined
+
+  if (!lastEvent) {
+    res.status(404).json({ error: 'Aucun changement de statut à annuler' })
+    return
+  }
+  if (!lastEvent.statut_from) {
+    res.status(409).json({ error: 'Premier événement — rien à annuler' })
+    return
+  }
+
+  const ageMs = Date.now() - new Date(lastEvent.created_at + 'Z').getTime()
+  if (ageMs > REVERT_WINDOW_MS) {
+    res.status(410).json({
+      error: 'Délai d’annulation dépassé (10 minutes). Pour reculer, utilisez un nouveau changement de statut.',
+      ageMinutes: Math.round(ageMs / 60000),
+    })
+    return
+  }
+
+  const user = getUser(req)
+  if (lastEvent.created_by !== (user.slug || 'unknown')) {
+    res.status(403).json({
+      error: `Seul l’utilisateur ayant fait le changement (${lastEvent.created_by}) peut l’annuler dans les 10 minutes.`,
+    })
+    return
+  }
+
+  // Block revert OUT of terminal statuses — too many side effects
+  // (embauche triggers onboarding, refuse sent a finality email).
+  if (TERMINAL_STATUTS.has(lastEvent.statut_to)) {
+    res.status(422).json({
+      error: `Impossible d’annuler une transition vers "${lastEvent.statut_to}" (effets de bord engagés). Créez un nouveau changement de statut explicite.`,
+      statut_to: lastEvent.statut_to,
+    })
+    return
+  }
+
+  const current = getDb().prepare('SELECT statut FROM candidatures WHERE id = ?').get(req.params.id) as { statut: string } | undefined
+  if (!current) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  // Defensive: if the candidature has been moved again since lastEvent, refuse.
+  if (current.statut !== lastEvent.statut_to) {
+    res.status(409).json({
+      error: 'Le statut a évolué depuis. Rafraîchissez la page.',
+      currentStatut: current.statut,
+    })
+    return
+  }
+
+  try {
+    getDb().transaction(() => {
+      const result = getDb().prepare(
+        'UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?'
+      ).run(lastEvent.statut_from, req.params.id, current.statut)
+      if (result.changes === 0) throw new Error('REVERT_CONFLICT')
+
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
+        VALUES (?, 'status_change', ?, ?, ?, ?)
+      `).run(req.params.id, current.statut, lastEvent.statut_from, `Annulation de la transition ${lastEvent.statut_from} → ${current.statut}`, user.slug || 'unknown')
+    })()
+  } catch (err) {
+    if ((err as Error).message === 'REVERT_CONFLICT') {
+      res.status(409).json({ error: 'Conflit pendant l’annulation. Rafraîchissez la page.' })
+      return
+    }
+    throw err
+  }
+
+  res.json({ ok: true, statut: lastEvent.statut_from })
+})
+
 // Compatibility breakdown — lazy endpoint per (candidature, metric).
 // Drives the "Voir les détails" UI on the % pill.
 protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {

@@ -76,6 +76,36 @@ export default function CandidateDetailPage() {
   } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions)
 
   const [analyzing, setAnalyzing] = useState(false)
+  const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
+
+  const handleRevertStatus = useCallback(async (candidatureId: string) => {
+    if (!confirm('Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n’est envoyé automatiquement.')) return
+    setRevertingStatus(candidatureId)
+    try {
+      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/revert-status`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      const { statut } = await res.json() as { statut: string }
+      setCandidatures(prev => prev.map(c => c.id === candidatureId ? { ...c, statut } : c))
+      // Refresh events + transitions for this candidature
+      const [detail, transitions] = await Promise.all([
+        fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json()),
+        fetch(`/api/recruitment/candidatures/${candidatureId}/transitions`, { credentials: 'include' }).then(r => r.json()),
+      ])
+      if (detail?.events) setEvents(detail.events)
+      if (transitions) setAllowedTransitions(transitions)
+      toast.success(`Transition annulée — retour à ${statut}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setRevertingStatus(null)
+    }
+  }, [setCandidatures, setEvents, setAllowedTransitions])
 
   // Wrap openTransitionDialog to inject candidate name & role & currentStatut
   const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => {
@@ -422,6 +452,30 @@ export default function CandidateDetailPage() {
                             Refuser
                           </Button>
                         )}
+
+                        {/* Revert last transition (within 10 min, non-terminal) */}
+                        {(() => {
+                          const lastStatusChange = cEvents.filter(e => e.type === 'status_change' && e.statutTo).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+                          if (!lastStatusChange) return null
+                          const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
+                          if (ageMs > 10 * 60 * 1000) return null
+                          if (lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse') return null
+                          return (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="justify-start gap-2 mt-2 text-muted-foreground"
+                              disabled={changingStatus || revertingStatus === c.id}
+                              onClick={() => handleRevertStatus(c.id)}
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              {revertingStatus === c.id ? 'Annulation…' : 'Annuler la dernière transition'}
+                              <span className="text-[10px] text-muted-foreground/60 ml-1">
+                                ({Math.max(1, Math.round((10 * 60 * 1000 - ageMs) / 60000))}min restantes)
+                              </span>
+                            </Button>
+                          )
+                        })()}
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">Aucune action disponible</p>
