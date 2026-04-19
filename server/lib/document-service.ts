@@ -134,8 +134,8 @@ export type DownloadDocumentResult = DownloadDocumentResultLocal | DownloadDocum
 
 export async function getDocumentForDownload(docId: string): Promise<DownloadDocumentResult | { error: string; status: number }> {
   const doc = getDb().prepare(
-    'SELECT filename, path FROM candidature_documents WHERE id = ?'
-  ).get(docId) as { filename: string; path: string } | undefined
+    'SELECT filename, display_filename, path FROM candidature_documents WHERE id = ?'
+  ).get(docId) as { filename: string; display_filename: string | null; path: string } | undefined
 
   if (!doc) {
     return { error: 'Document introuvable', status: 404 }
@@ -149,14 +149,16 @@ export async function getDocumentForDownload(docId: string): Promise<DownloadDoc
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
   }
+  // MIME comes from ORIGINAL filename — display_filename is a label, not a contract on file format.
   const ext = doc.filename.split('.').pop()?.toLowerCase() ?? ''
   const contentType = mimeTypes[ext] ?? 'application/octet-stream'
+  const userFacingName = doc.display_filename ?? doc.filename
 
   // GCS path (new) — download from cloud storage
   if (isGcsPath(doc.path)) {
     try {
       const buffer = await downloadFromGcs(doc.path)
-      return { kind: 'gcs', buffer, filename: doc.filename, contentType }
+      return { kind: 'gcs', buffer, filename: userFacingName, contentType }
     } catch (err) {
       console.error(`[DOWNLOAD] GCS download failed for doc ${docId}:`, err)
       return { error: 'Fichier introuvable dans le stockage cloud', status: 404 }
@@ -177,7 +179,7 @@ export async function getDocumentForDownload(docId: string): Promise<DownloadDoc
     return { error: 'Acces refuse', status: 403 }
   }
 
-  return { kind: 'local', filePath: resolvedPath, filename: doc.filename, contentType }
+  return { kind: 'local', filePath: resolvedPath, filename: userFacingName, contentType }
 }
 
 // ─── ZIP generation ──────────────────────────────────────────────────
@@ -203,8 +205,8 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
   }
 
   const docs = getDb().prepare(
-    'SELECT id, type, filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
-  ).all(candidatureId) as { id: string; type: string; filename: string; path: string }[]
+    'SELECT id, type, filename, display_filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
+  ).all(candidatureId) as { id: string; type: string; filename: string; display_filename: string | null; path: string }[]
 
   const events = getDb().prepare(
     'SELECT type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events WHERE candidature_id = ? ORDER BY created_at ASC'
@@ -271,7 +273,7 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
     }
     resume += `\nDOCUMENTS (${docs.length})\n${'-'.repeat(30)}\n`
     for (const doc of docs) {
-      resume += `• ${doc.type}: ${doc.filename}\n`
+      resume += `• ${doc.type}: ${doc.display_filename ?? doc.filename}\n`
     }
     resume += `\n---\nGénéré par Skill Radar — GIE SINAPSE\n`
 

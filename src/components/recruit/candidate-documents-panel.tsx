@@ -1,16 +1,23 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, Upload, FileText, Download, Eye, FolderArchive } from 'lucide-react'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Loader2, Upload, FileText, Download, Eye, Pencil, FolderArchive } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
 
 function isPdf(filename: string): boolean {
   return filename.toLowerCase().endsWith('.pdf')
+}
+
+function effectiveName(doc: CandidatureDocument): string {
+  return doc.display_filename ?? doc.filename
 }
 
 const DOC_TYPE_LABELS: Record<string, string> = {
@@ -54,6 +61,47 @@ export default function CandidateDocumentsPanel({
 }: CandidateDocumentsPanelProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
+  const [renameDoc, setRenameDoc] = useState<CandidatureDocument | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renaming, setRenaming] = useState(false)
+
+  function openRenameDialog(doc: CandidatureDocument): void {
+    setRenameDoc(doc)
+    setRenameValue(effectiveName(doc))
+  }
+
+  async function handleRename(): Promise<void> {
+    if (!renameDoc) return
+    const newName = renameValue.trim()
+    if (newName.length === 0 || newName.length > 200) {
+      toast.error('Le nom doit faire entre 1 et 200 caractères')
+      return
+    }
+    if (newName === effectiveName(renameDoc)) {
+      setRenameDoc(null)
+      return
+    }
+    setRenaming(true)
+    try {
+      const res = await fetch(`/api/recruitment/documents/${renameDoc.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ display_filename: newName }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Erreur' }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      setDocuments(prev => prev.map(d => d.id === renameDoc.id ? { ...d, display_filename: newName } : d))
+      toast.success('Document renommé')
+      setRenameDoc(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur lors du renommage')
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
   const uploadedTypes = new Set(documents.map(d => d.type))
@@ -134,44 +182,57 @@ export default function CandidateDocumentsPanel({
         {/* Document list */}
         {documents.length > 0 ? (
           <div className="space-y-1.5">
-            {documents.map(doc => (
-              <div key={doc.id} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm truncate">{doc.filename}</span>
-                  <Badge variant="secondary" className="text-[10px] shrink-0">
-                    {DOC_TYPE_LABELS[doc.type] ?? doc.type}
-                  </Badge>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDateTime(doc.created_at)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                  {isPdf(doc.filename) && (
+            {documents.map(doc => {
+              const name = effectiveName(doc)
+              return (
+                <div key={doc.id} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm truncate" title={name !== doc.filename ? `Original : ${doc.filename}` : undefined}>{name}</span>
+                    <Badge variant="secondary" className="text-[10px] shrink-0">
+                      {DOC_TYPE_LABELS[doc.type] ?? doc.type}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      {formatDateTime(doc.created_at)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                    {isPdf(doc.filename) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        title="Voir le document"
+                        aria-label={`Voir ${name}`}
+                        onClick={() => setPreviewDoc(doc)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
                       className="h-7 w-7 p-0"
-                      title="Voir le document"
-                      aria-label={`Voir ${doc.filename}`}
-                      onClick={() => setPreviewDoc(doc)}
+                      title="Renommer"
+                      aria-label={`Renommer ${name}`}
+                      onClick={() => openRenameDialog(doc)}
                     >
-                      <Eye className="h-3.5 w-3.5" />
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0"
-                    title="Télécharger le document"
-                    aria-label={`Télécharger ${doc.filename}`}
-                    onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                  </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      title="Télécharger le document"
+                      aria-label={`Télécharger ${name}`}
+                      onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4">
@@ -184,16 +245,45 @@ export default function CandidateDocumentsPanel({
         <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 py-3 border-b shrink-0">
             <DialogTitle className="text-sm font-medium truncate pr-8">
-              {previewDoc?.filename}
+              {previewDoc ? effectiveName(previewDoc) : ''}
             </DialogTitle>
           </DialogHeader>
           {previewDoc && (
             <iframe
               src={`/api/recruitment/documents/${previewDoc.id}/preview`}
-              title={`Aperçu de ${previewDoc.filename}`}
+              title={`Aperçu de ${effectiveName(previewDoc)}`}
               className="flex-1 w-full border-0"
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!renameDoc} onOpenChange={(open) => { if (!open && !renaming) setRenameDoc(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Renommer le document</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="rename-input" className="text-sm">Nouveau nom (avec extension, ex. CV_Jean_Dupont.pdf)</Label>
+            <Input
+              id="rename-input"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              maxLength={200}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter' && !renaming) handleRename() }}
+            />
+            {renameDoc && renameValue.trim() !== renameDoc.filename && (
+              <p className="text-[11px] text-muted-foreground">Original : {renameDoc.filename}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" disabled={renaming} onClick={() => setRenameDoc(null)}>Annuler</Button>
+            <Button disabled={renaming} onClick={handleRename}>
+              {renaming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Enregistrer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>

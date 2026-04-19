@@ -66,6 +66,7 @@ export interface CandidatureDocument {
   id: string
   type: string
   filename: string
+  display_filename?: string | null
   uploaded_by: string
   created_at: string
   scan_status?: 'pending' | 'clean' | 'infected' | 'error' | 'skipped'

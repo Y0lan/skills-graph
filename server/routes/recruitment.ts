@@ -821,10 +821,66 @@ protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
 // List documents for a candidature
 protectedRouter.get('/candidatures/:id/documents', (req, res) => {
   const docs = getDb().prepare(
-    'SELECT id, type, filename, uploaded_by, created_at, scan_status FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC'
-  ).all(req.params.id) as { id: string; type: string; filename: string; uploaded_by: string; created_at: string; scan_status: string | null }[]
+    'SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC'
+  ).all(req.params.id) as { id: string; type: string; filename: string; display_filename: string | null; uploaded_by: string; created_at: string; scan_status: string | null }[]
 
   res.json(docs)
+})
+
+// PATCH document — currently supports renaming via display_filename
+protectedRouter.patch('/documents/:docId', (req, res) => {
+  const body = req.body as { display_filename?: unknown }
+  if (typeof body.display_filename !== 'string') {
+    res.status(400).json({ error: 'display_filename requis (chaîne)' })
+    return
+  }
+
+  const trimmed = body.display_filename.trim()
+  if (trimmed.length === 0 || trimmed.length > 200) {
+    res.status(400).json({ error: 'Le nom doit faire entre 1 et 200 caractères' })
+    return
+  }
+  // Block path separators and ASCII control chars
+  if (/[\\/]/.test(trimmed) || /[\x00-\x1f\x7f]/.test(trimmed)) {
+    res.status(400).json({ error: 'Caractères interdits dans le nom (séparateurs ou contrôle)' })
+    return
+  }
+
+  const existing = getDb().prepare(
+    'SELECT candidature_id, type FROM candidature_documents WHERE id = ?'
+  ).get(req.params.docId) as { candidature_id: string; type: string } | undefined
+
+  if (!existing) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  // Conflict guard within same (candidature, type)
+  const conflict = getDb().prepare(`
+    SELECT 1 FROM candidature_documents
+    WHERE candidature_id = ? AND type = ? AND id != ?
+      AND COALESCE(display_filename, filename) = ?
+    LIMIT 1
+  `).get(existing.candidature_id, existing.type, req.params.docId, trimmed)
+
+  if (conflict) {
+    res.status(409).json({ error: 'Un autre document du même type porte déjà ce nom' })
+    return
+  }
+
+  getDb().prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?').run(trimmed, req.params.docId)
+
+  const user = getUser(req)
+  try {
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+      VALUES (?, 'document', ?, ?)
+    `).run(existing.candidature_id, `Renommé: ${trimmed}`, user.slug || 'unknown')
+  } catch {
+    // Audit non-blocking
+  }
+
+  res.json({ ok: true, display_filename: trimmed })
 })
 
 // Download a document
@@ -1217,8 +1273,8 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
 
       // Get documents
       const docs = getDb().prepare(
-        'SELECT id, type, filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
-      ).all(cand.id as string) as { id: string; type: string; filename: string; path: string }[]
+        'SELECT id, type, filename, display_filename, path FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at ASC'
+      ).all(cand.id as string) as { id: string; type: string; filename: string; display_filename: string | null; path: string }[]
 
       // Get events
       const events = getDb().prepare(
@@ -1274,7 +1330,7 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
       }
       resume += `\nDOCUMENTS (${docs.length})\n${'-'.repeat(30)}\n`
       for (const doc of docs) {
-        resume += `• ${doc.type}: ${doc.filename}\n`
+        resume += `• ${doc.type}: ${doc.display_filename ?? doc.filename}\n`
       }
       resume += `\n---\nGénéré par Skill Radar — GIE SINAPSE\n`
 
