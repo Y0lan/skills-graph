@@ -7,11 +7,25 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 interface FunnelNode { id: string; label: string; count: number }
-interface FunnelLink { source: string; target: string; value: number }
+interface FunnelLink {
+  source: string
+  target: string
+  value: number
+  p50_days_in_source?: number
+  p90_days_in_source?: number
+}
+interface FunnelInsight {
+  type: 'bottleneck' | 'none'
+  source?: string
+  target?: string
+  p50_days?: number
+  message?: string
+}
 interface FunnelPayload {
   nodes: FunnelNode[]
   links: FunnelLink[]
   totals: { all: number; hired: number; refused: number; in_progress: number }
+  insight?: FunnelInsight
 }
 
 type PageState = 'loading' | 'error' | 'loaded'
@@ -123,6 +137,17 @@ export default function RecruitFunnelPage() {
           </div>
         )}
 
+        {/* Insight banner — surfaces the slowest stage */}
+        {state === 'loaded' && data?.insight?.type === 'bottleneck' && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 px-4 py-3 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">{data.insight.message}</p>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">Survolez chaque flèche pour voir la médiane et le P90 du temps passé.</p>
+            </div>
+          </div>
+        )}
+
         {/* Chart */}
         <div className="rounded-lg border bg-card p-4 min-h-[500px]">
           {state === 'loading' && (
@@ -198,13 +223,15 @@ function SankeyChart({ width, height, data }: SankeyChartProps) {
         value: l.value,
         sourceId: l.source,
         targetId: l.target,
+        p50: l.p50_days_in_source,
+        p90: l.p90_days_in_source,
       }))
     return { nodes, links }
   }, [data])
 
   const layout = useMemo(() => {
     if (sankeyData.nodes.length === 0 || sankeyData.links.length === 0) return null
-    const sankeyGen = sankey<{ id: string; name: string; count: number }, { sourceId: string; targetId: string; value: number }>()
+    const sankeyGen = sankey<{ id: string; name: string; count: number }, { sourceId: string; targetId: string; value: number; p50?: number; p90?: number }>()
       .nodeId(d => d.id)
       .nodeAlign(sankeyLeft)
       .nodeWidth(14)
@@ -247,7 +274,9 @@ function SankeyChart({ width, height, data }: SankeyChartProps) {
               strokeWidth={Math.max(1, link.width ?? 1)}
             >
               <title>
-                {`${(link.source as { name: string }).name} → ${(link.target as { name: string }).name}: ${link.value} candidats`}
+                {`${(link.source as { name: string }).name} → ${(link.target as { name: string }).name}: ${link.value} candidat${link.value > 1 ? 's' : ''}`}
+                {(link as { p50?: number; p90?: number }).p50 !== undefined && `\nMédiane temps en ${(link.source as { name: string }).name}: ${(link as { p50?: number }).p50}j`}
+                {(link as { p50?: number; p90?: number }).p90 !== undefined && ` · P90: ${(link as { p90?: number }).p90}j`}
               </title>
             </path>
           )

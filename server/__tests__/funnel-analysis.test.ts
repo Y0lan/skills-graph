@@ -116,9 +116,9 @@ describe('buildFunnel', () => {
 
     const data = buildFunnel({})
     expect(data.links).toHaveLength(3)
-    expect(data.links).toContainEqual({ source: 'postule', target: 'preselectionne', value: 1 })
-    expect(data.links).toContainEqual({ source: 'preselectionne', target: 'skill_radar_envoye', value: 1 })
-    expect(data.links).toContainEqual({ source: 'skill_radar_envoye', target: 'entretien_1', value: 1 })
+    expect(data.links).toContainEqual(expect.objectContaining({ source: 'postule', target: 'preselectionne', value: 1 }))
+    expect(data.links).toContainEqual(expect.objectContaining({ source: 'preselectionne', target: 'skill_radar_envoye', value: 1 }))
+    expect(data.links).toContainEqual(expect.objectContaining({ source: 'skill_radar_envoye', target: 'entretien_1', value: 1 }))
   })
 
   it('sums values when multiple candidatures share the same transition', () => {
@@ -178,7 +178,7 @@ describe('buildFunnel', () => {
     addEvent('c1', 'postule', 'preselectionne')
     const data = buildFunnel({})
     expect(data.links).toHaveLength(1)
-    expect(data.links[0]).toEqual({ source: 'postule', target: 'preselectionne', value: 1 })
+    expect(data.links[0]).toMatchObject({ source: 'postule', target: 'preselectionne', value: 1 })
   })
 
   it('counts a candidature touching a node only once even with re-entry', () => {
