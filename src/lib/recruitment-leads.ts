@@ -1,7 +1,5 @@
 const RECRUITMENT_LEADS = [
   'yolan-maldonado',
-  'pierre-rossato',
-  'alexandre-thomas',
   'olivier-faivre',
   'guillaume-benoit',
 ]

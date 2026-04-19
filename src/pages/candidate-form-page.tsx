@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
@@ -7,6 +7,8 @@ import type { SkillFormValues } from '@/lib/schemas'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Loader2, CheckCircle2, AlertTriangle, Clock, Send } from 'lucide-react'
+import { useCatalog } from '@/hooks/use-catalog'
+import { POLE_LABELS } from '@/lib/constants'
 
 interface CandidateFormData {
   id: string
@@ -15,6 +17,7 @@ interface CandidateFormData {
   submitted: boolean
   aiSuggestions: Record<string, number> | null
   roleCategories: string[] | null
+  categoryIdsByPole: Record<string, string[]> | null
 }
 
 export default function CandidateFormPage() {
@@ -28,6 +31,27 @@ export default function CandidateFormPage() {
   const [submitting, setSubmitting] = useState(false)
   const [started, setStarted] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
+  const { categories: skillCategories } = useCatalog()
+
+  const nonPoleGroups = useMemo(() => {
+    if (!formData?.categoryIdsByPole || !formData?.roleCategories || skillCategories.length === 0) return undefined
+    const roleSet = new Set(formData.roleCategories)
+    const groups: Array<{
+      pole: string
+      label: string
+      categories: Array<{ id: string; label: string; emoji: string; skills: Array<{ id: string; label: string; descriptors: Array<{ level: number; label: string; description: string }> }> }>
+    }> = []
+    for (const [pole, categoryIds] of Object.entries(formData.categoryIdsByPole)) {
+      const extras = categoryIds.filter(cid => !roleSet.has(cid))
+      if (extras.length === 0) continue
+      const cats = extras
+        .map(cid => skillCategories.find(c => c.id === cid))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined)
+      if (cats.length === 0) continue
+      groups.push({ pole, label: POLE_LABELS[pole] ?? pole, categories: cats })
+    }
+    return groups.length > 0 ? groups : undefined
+  }, [formData, skillCategories])
 
   useEffect(() => {
     if (!id) return
@@ -153,6 +177,9 @@ export default function CandidateFormPage() {
                 <li>• Évaluez vos compétences sur une échelle de 0 (inconnu) à 5 (expert)</li>
                 <li>• Soyez honnête — il n'y a pas de mauvaise réponse</li>
                 <li>• Vous pouvez passer les catégories qui ne correspondent pas à votre profil</li>
+                {nonPoleGroups && nonPoleGroups.length > 0 && (
+                  <li>• À la fin, vous pourrez ajouter des compétences hors poste si vous en avez (optionnel)</li>
+                )}
                 <li>• Vos réponses sont sauvegardées automatiquement</li>
               </ul>
             </div>
@@ -210,6 +237,7 @@ export default function CandidateFormPage() {
           onNavigationChange={setWizardNav}
           aiSuggestions={formData.aiSuggestions ?? undefined}
           roleCategories={formData.roleCategories ?? undefined}
+          nonPoleGroups={nonPoleGroups}
         />
       </div>
       <footer className="border-t bg-muted/30 mt-12">

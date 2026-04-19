@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
-import { getDb, getRoleCategories } from '../lib/db.js'
+import { getDb, getRoleCategories, getCategoryIdsByPole } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
@@ -57,6 +57,7 @@ evaluateRouter.get('/:id/form', (req, res) => {
     submitted: !!row.submitted_at,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     roleCategories: row.role_id ? getRoleCategories(row.role_id) : null,
+    categoryIdsByPole: getCategoryIdsByPole(),
     version: row.version,
   })
 })

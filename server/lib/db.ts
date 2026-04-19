@@ -243,7 +243,7 @@ export function initDatabase(): void {
       id TEXT PRIMARY KEY,
       candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
       type TEXT NOT NULL DEFAULT 'other'
-        CHECK(type IN ('aboro', 'cv', 'lettre', 'other')),
+        CHECK(type IN ('aboro', 'cv', 'lettre', 'entretien', 'proposition', 'administratif', 'other')),
       filename TEXT NOT NULL,
       path TEXT NOT NULL,
       uploaded_by TEXT NOT NULL,
@@ -830,4 +830,14 @@ export function softDeleteRole(id: string): boolean {
 export function getRoleCategories(roleId: string): string[] {
   const rows = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(roleId) as { category_id: string }[]
   return rows.map(r => r.category_id)
+}
+
+export function getCategoryIdsByPole(): Record<string, string[]> {
+  const rows = db.prepare('SELECT pole, category_id FROM pole_categories').all() as { pole: string; category_id: string }[]
+  const result: Record<string, string[]> = {}
+  for (const r of rows) {
+    if (!result[r.pole]) result[r.pole] = []
+    result[r.pole].push(r.category_id)
+  }
+  return result
 }
