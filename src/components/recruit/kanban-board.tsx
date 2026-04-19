@@ -57,14 +57,14 @@ export interface KanbanCandidature {
 
 export interface KanbanBoardProps {
   candidatures: KanbanCandidature[]
-  onDelete?: (candidateId: string, candidateName: string) => void
+  onDelete?: (candidatureId: string, candidateName: string, posteTitre: string) => void
 }
 
 // ---------------------------------------------------------------------------
 // Card (clickable link to candidate detail, with optional delete)
 // ---------------------------------------------------------------------------
 
-function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: number; onDelete?: (candidateId: string, candidateName: string) => void }) {
+function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: number; onDelete?: (candidatureId: string, candidateName: string, posteTitre: string) => void }) {
   const daysInStatus = item.lastStatusChange
     ? Math.floor((now - new Date(item.lastStatusChange).getTime()) / 86_400_000)
     : null
@@ -101,7 +101,7 @@ function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: num
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            onDelete(item.candidateId, item.candidateName)
+            onDelete(item.id, item.candidateName, item.posteTitre)
           }}
           className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-opacity"
           title="Supprimer"
@@ -117,7 +117,7 @@ function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: num
 // Column
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ statut, items, now, onDelete }: { statut: string; items: KanbanCandidature[]; now: number; onDelete?: (candidateId: string, candidateName: string) => void }) {
+function KanbanColumn({ statut, items, now, onDelete }: { statut: string; items: KanbanCandidature[]; now: number; onDelete?: (candidatureId: string, candidateName: string, posteTitre: string) => void }) {
   return (
     <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0`}>
       {/* Column header */}

@@ -133,7 +133,7 @@ export default function RecruitPipelinePage() {
   const [downloadingZip, setDownloadingZip] = useState(false)
   const [scrollTrigger, setScrollTrigger] = useState(0)
   const candidaturesRef = useRef<HTMLDivElement>(null)
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<{ candidatureId: string; name: string; posteTitre: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -212,12 +212,12 @@ export default function RecruitPipelinePage() {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const res = await fetch(`/api/candidates/${deleteTarget.id}`, {
+      const res = await fetch(`/api/recruitment/candidatures/${deleteTarget.candidatureId}`, {
         method: 'DELETE',
         credentials: 'include',
       })
       if (!res.ok) throw new Error('Erreur lors de la suppression')
-      toast.success('Candidat supprim\u00e9')
+      toast.success('Candidature supprim\u00e9e')
       setDeleteTarget(null)
       fetchData()
     } catch {
@@ -541,7 +541,7 @@ export default function RecruitPipelinePage() {
               tauxPoste: c.tauxPoste,
               tauxGlobal: c.tauxGlobal,
             }))}
-            onDelete={(candidateId, candidateName) => setDeleteTarget({ id: candidateId, name: candidateName })}
+            onDelete={(candidatureId, candidateName, posteTitre) => setDeleteTarget({ candidatureId, name: candidateName, posteTitre })}
           />
         ) : (
           <div className="space-y-2">
@@ -636,13 +636,13 @@ export default function RecruitPipelinePage() {
         )}
       </main>
 
-      {/* Delete candidate confirmation dialog */}
+      {/* Delete candidature confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer ce candidat ?</AlertDialogTitle>
+            <AlertDialogTitle>Supprimer cette candidature ?</AlertDialogTitle>
             <AlertDialogDescription>
-              Le candidat <strong>{deleteTarget?.name}</strong> et toutes ses candidatures seront supprim{'\u00e9'}s d{'\u00e9'}finitivement.
+              La candidature de <strong>{deleteTarget?.name}</strong> pour <strong>{deleteTarget?.posteTitre}</strong> sera supprim{'\u00e9'}e d{'\u00e9'}finitivement (documents inclus). Les autres candidatures du même candidat ne sont pas affect{'\u00e9'}es.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -203,16 +203,19 @@ export async function processIntake(
               .run(cvText, suggestions ? JSON.stringify(suggestions) : null, candId)
 
             if (suggestions && Object.keys(suggestions).length > 0) {
-              const posteInfo = getDb().prepare(
-                'SELECT p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.id = ?'
-              ).get(cid) as { role_id: string } | undefined
-              if (posteInfo) {
-                const tauxPoste = calculatePosteCompatibility(suggestions, posteInfo.role_id)
-                const tauxEquipe = calculateEquipeCompatibility(suggestions, posteInfo.role_id)
+              // Recompute compat for EVERY candidature of this candidate, not
+              // just the redelivered one — ai_suggestions live on the candidate.
+              const allCandidatures = getDb().prepare(
+                'SELECT c.id, p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.candidate_id = ?'
+              ).all(candId) as { id: string; role_id: string }[]
+              const updateOne = getDb().prepare(
+                'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
+              )
+              for (const c of allCandidatures) {
+                const tauxPoste = calculatePosteCompatibility(suggestions, c.role_id)
+                const tauxEquipe = calculateEquipeCompatibility(suggestions, c.role_id)
                 const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
-                getDb().prepare(
-                  'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-                ).run(tauxPoste, tauxEquipe, tauxGlobal, cid)
+                updateOne.run(tauxPoste, tauxEquipe, tauxGlobal, c.id)
               }
             }
           } catch {
@@ -227,17 +230,27 @@ export async function processIntake(
     return intakeResult
   }
 
-  // Save message as candidate notes (visible in detail page)
+  // CRITICAL: use the resolved candidate id from the transaction, NOT the
+  // freshly-generated `candidateId` variable. When intake reused an existing
+  // candidate (multi-poste case), the freshly-generated id was never inserted —
+  // any UPDATE on it silently affects 0 rows and we'd lose CV / notes / AI.
+  const resolvedCandidateId = intakeResult.candidateId ?? candidateId
+
+  // Save message as candidate notes (visible in detail page) — non-destructive:
+  // append rather than overwrite so multi-poste candidates accumulate context.
   if (message?.trim()) {
-    getDb().prepare('UPDATE candidates SET notes = ? WHERE id = ?')
-      .run(message.trim(), candidateId)
+    const existing = getDb().prepare('SELECT notes FROM candidates WHERE id = ?').get(resolvedCandidateId) as { notes: string | null } | undefined
+    const merged = existing?.notes
+      ? `${existing.notes}\n\n--- ${poste.titre} ---\n${message.trim()}`
+      : message.trim()
+    getDb().prepare('UPDATE candidates SET notes = ? WHERE id = ?').run(merged, resolvedCandidateId)
   }
 
   // Save CV file as downloadable document
   if (cvFile) {
     try {
       await uploadDocument({
-        candidatureId,
+        candidatureId: intakeResult.candidatureId,
         file: { buffer: cvFile.buffer, mimetype: cvFile.mimetype, filename: cvFile.originalname || 'cv.pdf' },
         docType: 'cv',
         userSlug: 'drupal-webhook',
@@ -251,7 +264,7 @@ export async function processIntake(
   if (lettreFile) {
     try {
       await uploadDocument({
-        candidatureId,
+        candidatureId: intakeResult.candidatureId,
         file: { buffer: lettreFile.buffer, mimetype: lettreFile.mimetype, filename: lettreFile.originalname || 'lettre.pdf' },
         docType: 'lettre',
         userSlug: 'drupal-webhook',
@@ -269,16 +282,24 @@ export async function processIntake(
       const result = await extractSkillsFromCv(cvText, catalog)
       const suggestions = result?.ratings ?? null
       getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
-        .run(cvText, suggestions ? JSON.stringify(suggestions) : null, candidateId)
+        .run(cvText, suggestions ? JSON.stringify(suggestions) : null, resolvedCandidateId)
 
-      // Update compatibility scores after CV extraction
+      // Update compatibility scores for EVERY candidature of this candidate, not
+      // just the one that triggered this intake. CV extraction updates the
+      // candidate-level ai_suggestions which feed all postes' compat formulas.
       if (suggestions && Object.keys(suggestions).length > 0) {
-        const tauxPoste = calculatePosteCompatibility(suggestions, poste.role_id)
-        const tauxEquipe = calculateEquipeCompatibility(suggestions, poste.role_id)
-        const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
-        getDb().prepare(
+        const allCandidatures = getDb().prepare(
+          'SELECT c.id, p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.candidate_id = ?'
+        ).all(resolvedCandidateId) as { id: string; role_id: string }[]
+        const updateOne = getDb().prepare(
           'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-        ).run(tauxPoste, tauxEquipe, tauxGlobal, candidatureId)
+        )
+        for (const c of allCandidatures) {
+          const tauxPoste = calculatePosteCompatibility(suggestions, c.role_id)
+          const tauxEquipe = calculateEquipeCompatibility(suggestions, c.role_id)
+          const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
+          updateOne.run(tauxPoste, tauxEquipe, tauxGlobal, c.id)
+        }
       }
     } catch {
       console.error('[INTAKE] CV processing failed')

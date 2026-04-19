@@ -83,23 +83,24 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
 
         aboroProfile = profile
 
-        // Calculate soft skill score from Aboro profile
+        // Calculate soft skill score once from the Aboro profile.
         const softResult = calculateSoftSkillScore(profile)
 
-        // Read current compatibility scores from the candidature
-        const currentScores = getDb().prepare(
-          'SELECT taux_compatibilite_poste, taux_compatibilite_equipe FROM candidatures WHERE id = ?'
-        ).get(candidatureId) as { taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null } | undefined
+        // Apply the score to EVERY candidature of this candidate, not just the
+        // one whose document triggered the extraction. Aboro is per-person, so
+        // a candidate applying to multiple postes gets the same soft score on
+        // each — recompute taux_global per candidature using its own poste/équipe.
+        const candidatureRows = getDb().prepare(
+          'SELECT id, taux_compatibilite_poste, taux_compatibilite_equipe FROM candidatures WHERE candidate_id = ?'
+        ).all(candidature.candidate_id) as { id: string; taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null }[]
 
-        const tauxGlobal = calculateGlobalScore(
-          currentScores?.taux_compatibilite_poste ?? null,
-          currentScores?.taux_compatibilite_equipe ?? null,
-          softResult.score,
-        )
-
-        getDb().prepare(
+        const updateOne = getDb().prepare(
           'UPDATE candidatures SET taux_soft_skills = ?, soft_skill_alerts = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-        ).run(softResult.score, JSON.stringify(softResult.alerts), tauxGlobal, candidatureId)
+        )
+        for (const c of candidatureRows) {
+          const tauxGlobal = calculateGlobalScore(c.taux_compatibilite_poste, c.taux_compatibilite_equipe, softResult.score)
+          updateOne.run(softResult.score, JSON.stringify(softResult.alerts), tauxGlobal, c.id)
+        }
       }
     } catch (err) {
       console.error('[Aboro extraction] Error:', err)

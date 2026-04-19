@@ -157,10 +157,10 @@ export default function RecruitPage() {
   }
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Supprimer le candidat ${name} ?`)) return
+    if (!confirm(`Supprimer le candidat ${name} ?\n\nToutes ses candidatures et documents seront supprimés définitivement. Pour ne supprimer qu’une candidature, utilisez la corbeille sur la fiche du candidat dans la pipeline.`)) return
     try {
       await fetch(`/api/candidates/${id}`, { method: 'DELETE' })
-      toast.success('Candidat supprimé')
+      toast.success('Candidat supprimé (toutes candidatures incluses)')
       fetchCandidates()
     } catch {
       toast.error('Erreur lors de la suppression')

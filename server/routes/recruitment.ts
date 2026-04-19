@@ -604,11 +604,17 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
   const isEmailableStatus = statut !== 'skill_radar_complete'
 
   if (shouldSendEmail && isEmailableStatus) {
+    // IMPORTANT: select the actual poste title for THIS candidature, not the
+    // candidate.role string (which is set at candidate creation and goes stale
+    // for second/subsequent applications since one candidate can apply to many
+    // postes).
     const candidateInfo = getDb().prepare(`
-      SELECT cand.name, cand.email, cand.role, cand.id as candidate_id
-      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      SELECT cand.name, cand.email, cand.id as candidate_id, p.titre AS poste_titre
+      FROM candidatures c
+      JOIN candidates cand ON cand.id = c.candidate_id
+      JOIN postes p ON p.id = c.poste_id
       WHERE c.id = ?
-    `).get(candidatureId) as { name: string; email: string | null; role: string; candidate_id: string } | undefined
+    `).get(candidatureId) as { name: string; email: string | null; candidate_id: string; poste_titre: string } | undefined
 
     if (candidateInfo?.email) {
       const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
@@ -618,7 +624,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         const emailResult = await sendTransitionEmail({
           to: candidateInfo.email,
           candidateName: candidateInfo.name,
-          role: candidateInfo.role,
+          role: candidateInfo.poste_titre,
           statut,
           notes: notes?.trim() || undefined,
           customBody: customBody || undefined,
@@ -633,7 +639,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
           // Get template info for the snapshot
           const template = getEmailTemplate(statut, {
             candidateName: candidateInfo.name,
-            role: candidateInfo.role,
+            role: candidateInfo.poste_titre,
             notes: notes?.trim() || undefined,
             evaluationUrl: statut === 'skill_radar_envoye'
               ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
@@ -663,10 +669,12 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
   // For refuse, notify the lead regardless of whether the candidate has an email
   if (statut === 'refuse') {
     const declineInfo = getDb().prepare(`
-      SELECT cand.name, cand.email, cand.role
-      FROM candidatures c JOIN candidates cand ON cand.id = c.candidate_id
+      SELECT cand.name, cand.email, p.titre AS poste_titre
+      FROM candidatures c
+      JOIN candidates cand ON cand.id = c.candidate_id
+      JOIN postes p ON p.id = c.poste_id
       WHERE c.id = ?
-    `).get(candidatureId) as { name: string; email: string | null; role: string } | undefined
+    `).get(candidatureId) as { name: string; email: string | null; poste_titre: string } | undefined
 
     if (declineInfo) {
       const leadSlug = user.slug || 'unknown'
@@ -674,7 +682,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
       try {
         await sendCandidateDeclined({
           candidateName: declineInfo.name,
-          role: declineInfo.role,
+          role: declineInfo.poste_titre,
           candidateEmail: declineInfo.email || '',
           leadEmail,
           reason: notes?.trim() || undefined,
@@ -1036,6 +1044,44 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     const fs = await import('fs')
     fs.createReadStream(result.filePath).pipe(res)
   }
+})
+
+// Delete a single candidature (NOT the candidate). Use this from any "delete card"
+// UI in the pipeline — the candidate row + their other candidatures stay intact.
+// Documents and events for this candidature are cascade-deleted via FK.
+protectedRouter.delete('/candidatures/:id', mutationRateLimit, (req, res) => {
+  const db = getDb()
+  const cand = db.prepare(`
+    SELECT c.id, c.candidate_id, cand.name, p.titre AS poste_titre
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(req.params.id) as { id: string; candidate_id: string; name: string; poste_titre: string } | undefined
+
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  // Collect document blobs to clean up after the cascade.
+  const docs = db.prepare(
+    'SELECT path FROM candidature_documents WHERE candidature_id = ?'
+  ).all(req.params.id) as { path: string }[]
+
+  db.prepare('DELETE FROM candidatures WHERE id = ?').run(req.params.id)
+
+  // GCS cleanup — best effort, never blocks
+  for (const doc of docs) {
+    if (isGcsPath(doc.path)) continue // GCS objects can be GC'd separately
+    try { import('fs').then(fs => fs.unlinkSync(doc.path)).catch(() => {}) } catch { /* */ }
+  }
+
+  // Audit on the candidate side so the timeline retains the deletion.
+  // Cannot insert into candidature_events (the candidature is gone), so we leave
+  // the candidate.notes alone — the recruiter sees the row vanish from the list.
+
+  res.status(204).send()
 })
 
 // Revert the most recent status change for a candidature (within 10 min, same user).
