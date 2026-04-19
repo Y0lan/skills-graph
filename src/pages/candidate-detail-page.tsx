@@ -249,30 +249,30 @@ export default function CandidateDetailPage() {
             <p className="text-muted-foreground">{candidate.role}</p>
 
             {/* Contact info */}
-            <div className="mt-2 flex flex-wrap gap-3 text-sm text-muted-foreground">
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground max-w-full">
               {candidate.email && (
-                <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground">
-                  <Mail className="h-3.5 w-3.5" /> {candidate.email}
+                <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground min-w-0 max-w-full">
+                  <Mail className="h-3.5 w-3.5 shrink-0" /> <span className="truncate" title={candidate.email}>{candidate.email}</span>
                 </a>
               )}
               {candidate.telephone && (
-                <span className="flex items-center gap-1">
-                  <Phone className="h-3.5 w-3.5" /> {candidate.telephone}
+                <span className="flex items-center gap-1 min-w-0">
+                  <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.telephone}</span>
                 </span>
               )}
               {candidate.pays && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5" /> {candidate.pays}
+                <span className="flex items-center gap-1 min-w-0">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.pays}</span>
                 </span>
               )}
               {candidate.linkedinUrl && (
                 <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                  <Globe className="h-3.5 w-3.5" /> LinkedIn
+                  <Globe className="h-3.5 w-3.5 shrink-0" /> LinkedIn
                 </a>
               )}
               {candidate.githubUrl && (
                 <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                  <Globe className="h-3.5 w-3.5" /> GitHub
+                  <Globe className="h-3.5 w-3.5 shrink-0" /> GitHub
                 </a>
               )}
             </div>

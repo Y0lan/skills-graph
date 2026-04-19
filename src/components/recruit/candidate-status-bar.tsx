@@ -148,9 +148,9 @@ export default function CandidateStatusBar({
 
               {/* Soft skill alerts */}
               {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
+                <div className="mt-2 flex flex-wrap gap-1.5 max-w-full">
                   {c.softSkillAlerts.map((a, i) => (
-                    <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600">
+                    <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600 max-w-full break-words whitespace-normal text-left">
                       {'\u26A0'} {a.message}
                     </Badge>
                   ))}
