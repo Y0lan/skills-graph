@@ -358,6 +358,7 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scanned_at TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN display_filename TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN deleted_at TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_scan_status ON candidature_documents(scan_status)')
 

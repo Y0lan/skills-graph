@@ -781,6 +781,10 @@ protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res)
 })
 
 // Upload document for a candidature (Aboro PDF, etc.)
+// Document types that act as "required slots" — uploading one supersedes the
+// previous active row of the same type (kept linked via replaces_document_id).
+const SLOT_TYPES = new Set(['cv', 'lettre', 'aboro'])
+
 protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req, res) => {
   const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
   if (!exists) {
@@ -800,6 +804,13 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
     const docType = rawType.replace(/[^a-zA-Z0-9_-]/g, '_')
     const user = getUser(req)
 
+    // For slot types, find the existing active doc to supersede.
+    const previousActive = SLOT_TYPES.has(docType)
+      ? getDb().prepare(
+          'SELECT id, filename FROM candidature_documents WHERE candidature_id = ? AND type = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1'
+        ).get(req.params.id, docType) as { id: string; filename: string } | undefined
+      : undefined
+
     const result = await uploadDocument({
       candidatureId: req.params.id as string,
       file,
@@ -807,11 +818,54 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
       userSlug: user.slug || 'unknown',
     })
 
-    res.status(201).json(result)
+    // Link replacement and soft-delete the old slot, atomically.
+    if (previousActive) {
+      const tx = getDb().transaction(() => {
+        getDb().prepare('UPDATE candidature_documents SET replaces_document_id = ? WHERE id = ?').run(previousActive.id, result.id)
+        getDb().prepare('UPDATE candidature_documents SET deleted_at = datetime(\'now\') WHERE id = ?').run(previousActive.id)
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+          VALUES (?, 'document', ?, ?)
+        `).run(req.params.id, `Remplacé: ${previousActive.filename} → ${file.filename}`, user.slug || 'unknown')
+      })
+      tx()
+    }
+
+    res.status(201).json({ ...result, supersededDocumentId: previousActive?.id ?? null })
   } catch {
     console.error('[DOCUMENT_UPLOAD] Upload failed')
     res.status(500).json({ error: 'Erreur upload' })
   }
+})
+
+// Slot view of a candidature's documents — three required slots + admin pool +
+// per-slot supersede history. Used by the candidate detail page document panel.
+protectedRouter.get('/candidatures/:id/documents/slots', (req, res) => {
+  const all = getDb().prepare(`
+    SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status, deleted_at, replaces_document_id
+    FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC
+  `).all(req.params.id) as Array<{
+    id: string; type: string; filename: string; display_filename: string | null;
+    uploaded_by: string; created_at: string; scan_status: string | null;
+    deleted_at: string | null; replaces_document_id: string | null
+  }>
+
+  const active = (type: string) =>
+    all.find(d => d.type === type && d.deleted_at === null) ?? null
+  const history = (type: string) =>
+    all.filter(d => d.type === type && d.deleted_at !== null)
+
+  res.json({
+    cv: active('cv'),
+    lettre: active('lettre'),
+    aboro: active('aboro'),
+    autres: all.filter(d => !SLOT_TYPES.has(d.type) && d.deleted_at === null),
+    history: {
+      cv: history('cv'),
+      lettre: history('lettre'),
+      aboro: history('aboro'),
+    },
+  })
 })
 
 // Get Aboro profile for a candidate
