@@ -70,23 +70,24 @@ const TONE_CLASSES = {
   muted: 'bg-muted text-muted-foreground',
 }
 
-function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
-  const [showAll, setShowAll] = useState(false)
-
-  // Header line: name + status pill
-  const Header = ({ tone, label }: { tone: 'green' | 'red' | 'amber' | 'muted'; label: string }) => (
+function EngineHeader({ engineName, tone, label }: { engineName: string; tone: 'green' | 'red' | 'amber' | 'muted'; label: string }) {
+  return (
     <div className="flex items-center justify-between gap-2">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{summary.name}</span>
+        <span className="text-sm font-medium">{engineName}</span>
         <Badge className={`text-[10px] ${TONE_CLASSES[tone]}`}>{label}</Badge>
       </div>
     </div>
   )
+}
+
+function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
+  const [showAll, setShowAll] = useState(false)
 
   if (!summary.available) {
     return (
       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
-        <Header tone="muted" label="Indisponible" />
+        <EngineHeader engineName={summary.name} tone="muted" label="Indisponible" />
         <p className="text-[11px] text-muted-foreground italic">
           {summary.reason}
         </p>
@@ -97,7 +98,7 @@ function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
   if (summary.name === 'ClamAV') {
     return (
       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
-        <Header tone={summary.clean ? 'green' : 'red'} label={summary.clean ? 'Propre' : `Infecté · ${summary.threats.length}`} />
+        <EngineHeader engineName={summary.name} tone={summary.clean ? 'green' : 'red'} label={summary.clean ? 'Propre' : `Infecté · ${summary.threats.length}`} />
         {!summary.clean && summary.threats.length > 0 && (
           <ul className="rounded border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30 p-2 space-y-0.5 text-[11px] font-mono">
             {summary.threats.map((t, i) => <li key={i}>{t}</li>)}
@@ -116,7 +117,8 @@ function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
 
   return (
     <div className="rounded-md border bg-muted/20 p-3 space-y-2">
-      <Header
+      <EngineHeader
+        engineName={summary.name}
         tone={summary.clean ? 'green' : 'red'}
         label={summary.clean
           ? `${summary.totalEngines} moteurs · 0 détection`
