@@ -83,7 +83,10 @@ async function scanWithClamAV(filePath: string): Promise<ScanEngineSummary & { n
 
 const VT_API_BASE = 'https://www.virustotal.com/api/v3'
 const VT_POLL_INTERVAL_MS = 3000
-const VT_POLL_TIMEOUT_MS = 60000
+// Bumped from 60s → 180s. Free-tier VT often queues longer than 60s,
+// especially for PDFs with many embedded objects. 3 min covers ~95 %
+// of real candidate docs in our data.
+const VT_POLL_TIMEOUT_MS = 180_000
 
 async function scanWithVirusTotal(filePath: string, filename: string): Promise<ScanEngineSummary & { name: 'VirusTotal' }> {
   const apiKey = process.env.VIRUSTOTAL_API_KEY

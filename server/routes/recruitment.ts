@@ -10,7 +10,7 @@ import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTra
 import { previewizeEmailHtml } from '../lib/brand.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
-import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
+import { uploadDocument, getDocumentForDownload, generateCandidatureZip, triggerDocumentScan } from '../lib/document-service.js'
 import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
 import { computeRoleGaps } from '../lib/gap-analysis.js'
 import { getSkillCategories } from '../lib/catalog.js'
@@ -297,6 +297,7 @@ protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
       c.created_at, c.updated_at,
       cand.name, cand.email, cand.ratings, cand.ai_suggestions,
       cand.cv_text IS NOT NULL as has_cv,
+      (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
       cand.submitted_at as evaluation_submitted,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at
     FROM candidatures c
@@ -309,7 +310,7 @@ protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
   `).all(posteId) as (CandidatureRow & {
     name: string; email: string | null;
     ratings: string; ai_suggestions: string | null;
-    has_cv: number; evaluation_submitted: string | null;
+    has_cv: number; has_lettre: number | null; evaluation_submitted: string | null;
     last_event_at: string | null
   })[]
 
@@ -328,6 +329,7 @@ protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
       candidateName: r.name,
       candidateEmail: r.email,
       hasCv: !!r.has_cv,
+      hasLettre: !!r.has_lettre,
       evaluationSubmitted: !!r.evaluation_submitted,
       tauxPoste: r.taux_compatibilite_poste,
       tauxEquipe: r.taux_compatibilite_equipe,
@@ -356,6 +358,7 @@ protectedRouter.get('/candidatures', (req, res) => {
   const { poste, pole, statut, candidateId } = req.query
   let sql = `
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
+      (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
       cand.ai_suggestions, cand.submitted_at as evaluation_submitted,
       p.titre as poste_titre, p.pole as poste_pole,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
@@ -388,7 +391,7 @@ protectedRouter.get('/candidatures', (req, res) => {
   sql += ' ORDER BY c.taux_compatibilite_poste DESC NULLS LAST, c.created_at DESC'
 
   const rows = getDb().prepare(sql).all(...params) as (CandidatureRow & {
-    name: string; email: string | null; has_cv: number;
+    name: string; email: string | null; has_cv: number; has_lettre: number | null;
     ai_suggestions: string | null; evaluation_submitted: string | null;
     poste_titre: string; poste_pole: string;
     taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null;
@@ -408,6 +411,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     candidateName: r.name,
     candidateEmail: r.email,
     hasCv: !!r.has_cv,
+    hasLettre: !!r.has_lettre,
     evaluationSubmitted: !!r.evaluation_submitted,
     tauxPoste: r.taux_compatibilite_poste,
     tauxEquipe: r.taux_compatibilite_equipe,
@@ -1509,6 +1513,29 @@ protectedRouter.get('/documents/:docId/preview', async (req, res) => {
 })
 
 // Get scan status for a document, including any active override.
+// Manual rescan trigger — re-runs ClamAV + VirusTotal on an existing doc.
+// Used by the "Relancer" button in scan-detail-dialog when VT timed out.
+protectedRouter.post('/documents/:docId/rescan', (req, res) => {
+  const doc = getDb().prepare(
+    'SELECT id, path, filename, candidature_id FROM candidature_documents WHERE id = ? AND deleted_at IS NULL'
+  ).get(req.params.docId) as { id: string; path: string; filename: string; candidature_id: string } | undefined
+
+  if (!doc) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  // Reset status to pending so the UI shows the spinner while the scan runs.
+  getDb().prepare('UPDATE candidature_documents SET scan_status = ?, scan_result = NULL WHERE id = ?').run('pending', doc.id)
+
+  // Fire-and-forget — triggerDocumentScan publishes SSE updates + persists the result.
+  triggerDocumentScan(doc.id, doc.path, doc.filename).catch(err =>
+    console.error(`[RESCAN] Document ${doc.id} failed:`, err)
+  )
+
+  res.json({ ok: true, status: 'pending' })
+})
+
 protectedRouter.get('/documents/:docId/scan', (req, res) => {
   const doc = getDb().prepare(
     'SELECT scan_status, scan_result, scanned_at FROM candidature_documents WHERE id = ?'

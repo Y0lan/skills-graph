@@ -307,7 +307,7 @@ export async function generateCandidatureZip(candidatureId: string): Promise<Zip
 
 // ─── Async malware scan ─────────────────────────────────────────────
 
-async function triggerDocumentScan(docId: string, storedPath: string, filename: string): Promise<void> {
+export async function triggerDocumentScan(docId: string, storedPath: string, filename: string): Promise<void> {
   let tempPath: string | null = null
   try {
     // For GCS paths, download to a temp file for scanning
@@ -356,6 +356,21 @@ async function triggerDocumentScan(docId: string, storedPath: string, filename: 
       console.warn(`[SCAN] Document ${docId} (${filename}) — scan skipped (no engines available)`)
     } else {
       console.log(`[SCAN] Document ${docId} (${filename}) — clean (${result.engines.join(', ')})`)
+    }
+
+    // Auto-retry: if VirusTotal hit its poll timeout (analysis still running
+    // on their side), re-poll in 5 minutes. Free-tier VT sometimes queues 2-3
+    // minutes before the analysis completes, and a second upload would eat
+    // another API quota hit. Best effort — if the server restarts, the retry
+    // is lost, which is acceptable for a deliverability signal.
+    const vtEntry = result.engineSummaries.find(e => e.name === 'VirusTotal')
+    if (vtEntry && !vtEntry.available && vtEntry.reason.includes('Délai d’attente dépassé')) {
+      console.log(`[SCAN] Document ${docId} — VT timed out, scheduling auto-retry in 5 min`)
+      setTimeout(() => {
+        triggerDocumentScan(docId, storedPath, filename).catch(err =>
+          console.warn(`[SCAN] VT auto-retry failed for ${docId}:`, err)
+        )
+      }, 5 * 60 * 1000)
     }
   } catch (err) {
     // Mark as error — scan itself failed

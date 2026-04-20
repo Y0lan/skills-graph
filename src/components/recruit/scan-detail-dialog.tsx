@@ -81,16 +81,26 @@ function EngineHeader({ engineName, tone, label }: { engineName: string; tone: '
   )
 }
 
-function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
+function EnginePanel({ summary, onRescan, rescanning }: { summary: ScanEngineSummary; onRescan?: () => void; rescanning?: boolean }) {
   const [showAll, setShowAll] = useState(false)
 
   if (!summary.available) {
+    const isTimeout = summary.reason.includes('Délai d') || summary.reason.toLowerCase().includes('timeout')
     return (
       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
         <EngineHeader engineName={summary.name} tone="muted" label="Indisponible" />
         <p className="text-[11px] text-muted-foreground italic">
           {summary.reason}
         </p>
+        {isTimeout && onRescan && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onRescan} disabled={rescanning}>
+              {rescanning ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : null}
+              Relancer le scan
+            </Button>
+            <p className="text-[10px] text-muted-foreground/70">Auto-retry déjà planifié dans 5 min.</p>
+          </div>
+        )}
       </div>
     )
   }
@@ -165,6 +175,29 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
   const [overrideVerdict, setOverrideVerdict] = useState<'safe' | 'quarantine'>('safe')
   const [overrideReason, setOverrideReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
+
+  async function handleRescan(): Promise<void> {
+    setRescanning(true)
+    try {
+      const res = await fetch(`/api/recruitment/documents/${documentId}/rescan`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      toast.success('Scan relancé — le résultat apparaîtra sous peu')
+      // Optimistic reload: clear data so the loader shows; SSE will drive the
+      // parent dossier badge update; user can reopen the dialog to see the new result.
+      setData(null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Relance échouée')
+    } finally {
+      setRescanning(false)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -259,7 +292,7 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
             {/* Per-engine summaries (ClamAV + VirusTotal panels) */}
             {data.result?.engineSummaries && data.result.engineSummaries.length > 0 ? (
               <div className="space-y-2">
-                {data.result.engineSummaries.map((s, i) => <EnginePanel key={i} summary={s} />)}
+                {data.result.engineSummaries.map((s, i) => <EnginePanel key={i} summary={s} onRescan={handleRescan} rescanning={rescanning} />)}
               </div>
             ) : (
               // Legacy fallback for scan_result rows written before the per-engine refactor.

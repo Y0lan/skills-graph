@@ -57,6 +57,7 @@ interface Candidature {
   candidateName: string
   candidateEmail: string | null
   hasCv: boolean
+  hasLettre: boolean
   evaluationSubmitted: boolean
   tauxPoste: number | null
   tauxEquipe: number | null
@@ -663,6 +664,7 @@ export default function RecruitPipelinePage() {
                           <span>·</span>
                           <span>{formatDate(c.createdAt)}</span>
                           {c.hasCv && <Badge variant="outline" className="text-[10px] px-1 py-0">CV</Badge>}
+                          {c.hasLettre && <Badge variant="outline" className="text-[10px] px-1 py-0">LM</Badge>}
                           {c.evaluationSubmitted && <Badge variant="outline" className="text-[10px] px-1 py-0">Évalué</Badge>}
                           {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
                             <Badge variant="outline" className="text-[10px] border-red-500 text-red-600 dark:border-red-400 dark:text-red-400">
