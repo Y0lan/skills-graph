@@ -116,6 +116,7 @@ export default function CandidateDetailPage() {
     bonusSkills,
     notes, setNotes,
     candidatureDataMap,
+    setCandidatureDataMap,
   } = useCandidateData(id)
 
   const {
@@ -138,7 +139,7 @@ export default function CandidateDetailPage() {
     openTransitionDialog,
     closeTransitionDialog,
     confirmTransition,
-  } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions)
+  } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap)
 
   const [analyzing, setAnalyzing] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
@@ -267,13 +268,21 @@ export default function CandidateDetailPage() {
       ])
       if (detail?.events) setEvents(detail.events)
       if (transitions) setAllowedTransitions(transitions)
+      setCandidatureDataMap(prev => ({
+        ...prev,
+        [candidatureId]: {
+          events: detail?.events ?? prev[candidatureId]?.events ?? [],
+          allowedTransitions: transitions ?? prev[candidatureId]?.allowedTransitions ?? null,
+          documents: detail?.documents ?? prev[candidatureId]?.documents ?? [],
+        },
+      }))
       toast.success(`Transition annulée — retour à ${statut}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur')
     } finally {
       setRevertingStatus(null)
     }
-  }, [setCandidatures, setEvents, setAllowedTransitions])
+  }, [setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
   // Wrap openTransitionDialog to inject candidate name & role & currentStatut
   const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => {

@@ -52,6 +52,7 @@ export function useTransitionState(
   setCandidatures: React.Dispatch<React.SetStateAction<CandidatureInfo[]>>,
   setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>,
   setAllowedTransitions: React.Dispatch<React.SetStateAction<AllowedTransitions | null>>,
+  setCandidatureDataMap?: React.Dispatch<React.SetStateAction<Record<string, import('./use-candidate-data').CandidatureData>>>,
 ): UseTransitionStateReturn {
   const [changingStatus, setChangingStatus] = useState(false)
   const [transitionDialog, setTransitionDialog] = useState<TransitionDialog | null>(null)
@@ -206,6 +207,18 @@ export function useTransitionState(
       ])
       if (detail?.events) setEvents(detail.events)
       if (transitions) setAllowedTransitions(transitions)
+      // Also refresh the per-candidature map the stepper reads from — otherwise
+      // the UI shows stale events/transitions until a manual reload.
+      if (setCandidatureDataMap && (detail?.events || transitions || detail?.documents)) {
+        setCandidatureDataMap(prev => ({
+          ...prev,
+          [candidatureId]: {
+            events: detail?.events ?? prev[candidatureId]?.events ?? [],
+            allowedTransitions: transitions ?? prev[candidatureId]?.allowedTransitions ?? null,
+            documents: detail?.documents ?? prev[candidatureId]?.documents ?? [],
+          },
+        }))
+      }
 
       // If file upload failed but transition succeeded, keep dialog open with error
       if (fileUploadFailed) {
@@ -222,7 +235,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
   return {
     changingStatus,
