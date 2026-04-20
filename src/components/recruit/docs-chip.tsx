@@ -22,10 +22,10 @@ export default function DocsChip({ docsSlotCount }: DocsChipProps) {
       </TooltipTrigger>
       <TooltipContent className="text-xs">
         {count === 2
-          ? 'CV et lettre téléversés.'
+          ? 'CV et lettre de motivation téléversés.'
           : count === 0
-            ? 'Aucun document candidat (CV, lettre) téléversé.'
-            : `${count}/2 documents candidat téléversés (CV, lettre).`}
+            ? 'Aucun document candidat (CV, lettre de motivation) téléversé.'
+            : `${count}/2 documents candidat téléversés (CV, lettre de motivation).`}
       </TooltipContent>
     </Tooltip>
   )
