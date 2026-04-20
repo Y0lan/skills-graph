@@ -11,6 +11,7 @@ import MultiPosteCard from '@/components/recruit/multi-poste-card'
 import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
 import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
 import CandidateDossierCard from '@/components/recruit/candidate-dossier-card'
+import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
 import AboroProfileSection from '@/components/recruit/aboro-profile-section'
@@ -247,8 +248,11 @@ export default function CandidateDetailPage() {
     },
   })
 
-  const handleRevertStatus = useCallback(async (candidatureId: string) => {
-    if (!confirm('Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n’est envoyé automatiquement.')) return
+  const handleRevertStatus = useCallback(async (candidatureId: string, emailAlreadySent: boolean) => {
+    const msg = emailAlreadySent
+      ? "⚠️ L'email a DÉJÀ été envoyé au candidat.\n\nAnnuler la transition ne rappellera pas l'email — le candidat l'a déjà reçu.\n\nContinuer quand même ? (utile uniquement pour corriger l'état interne)"
+      : "Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n'est envoyé automatiquement."
+    if (!confirm(msg)) return
     setRevertingStatus(candidatureId)
     try {
       const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/revert-status`, {
@@ -575,6 +579,9 @@ export default function CandidateDetailPage() {
                 {/* Pipeline stepper */}
                 <CandidatePipelineStepper candidature={c} events={cEvents} />
 
+                {/* Email tracking — shows each email sent + open/bounce status */}
+                <CandidateEmailsCard events={cEvents} />
+
                 {/* 3-column grid: Dossier | Scores | Actions */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t">
                   {/* Dossier */}
@@ -648,16 +655,26 @@ export default function CandidateDetailPage() {
                           const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
                           if (ageMs > 10 * 60 * 1000) return null
                           if (lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse') return null
+                          // An email_sent event is inserted right after the status_change in the
+                          // same request handler — detect it by (a) timestamp ≥ status_change and
+                          // (b) no intervening status_change.
+                          const lastTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
+                          const emailAlreadySent = cEvents.some(e =>
+                            e.type === 'email_sent' &&
+                            new Date(e.createdAt + 'Z').getTime() >= lastTs - 1000
+                          )
                           return (
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="justify-start gap-2 mt-2 text-muted-foreground"
+                              className={`justify-start gap-2 mt-2 ${emailAlreadySent ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
                               disabled={changingStatus || revertingStatus === c.id}
-                              onClick={() => handleRevertStatus(c.id)}
+                              onClick={() => handleRevertStatus(c.id, emailAlreadySent)}
+                              title={emailAlreadySent ? "L'email a déjà été envoyé — le candidat l'a reçu" : undefined}
                             >
                               <RotateCcw className="h-3 w-3" />
                               {revertingStatus === c.id ? 'Annulation…' : 'Annuler la dernière transition'}
+                              {emailAlreadySent && <span className="text-[10px] font-medium">(email envoyé)</span>}
                               <span className="text-[10px] text-muted-foreground/60 ml-1">
                                 ({Math.max(1, Math.round((10 * 60 * 1000 - ageMs) / 60000))}min restantes)
                               </span>
@@ -711,7 +728,40 @@ export default function CandidateDetailPage() {
                     </div>
                   ) : transitionHasEmailTemplate && (
                     <>
-                      {/* Collapsed header */}
+                      {/* Send-email toggle (hidden for refuse — always sends) */}
+                      {transitionDialog?.targetStatut !== 'refuse' && (
+                        <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm flex-1">
+                            <input
+                              type="checkbox"
+                              checked={transitionSendEmail}
+                              onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                              className="rounded border-input"
+                            />
+                            <span className="font-medium">Envoyer l'email au candidat</span>
+                          </label>
+                        </div>
+                      )}
+                      {/* Skip-reason input when toggle off */}
+                      {transitionDialog?.targetStatut !== 'refuse' && !transitionSendEmail && (
+                        <div className="p-3 space-y-1 border-b">
+                          <label htmlFor="skip-email-reason-a" className="text-xs font-medium text-muted-foreground">
+                            Raison de ne pas envoyer (10 caractères min, audit-loggée)
+                          </label>
+                          <Textarea
+                            id="skip-email-reason-a"
+                            value={transitionSkipEmailReason}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipEmailReason(e.target.value)}
+                            placeholder="ex. Email envoyé manuellement hier soir"
+                            rows={2}
+                            maxLength={500}
+                            className="text-sm"
+                          />
+                          <p className="text-[10px] text-muted-foreground">{transitionSkipEmailReason.length}/500</p>
+                        </div>
+                      )}
+                      {/* Collapsed header — hidden when user opted out */}
+                      {(transitionSendEmail || transitionDialog?.targetStatut === 'refuse') && (
                       <button
                         type="button"
                         onClick={() => setTransitionEmailExpanded(!transitionEmailExpanded)}
@@ -727,9 +777,10 @@ export default function CandidateDetailPage() {
                           : <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
                         }
                       </button>
+                      )}
 
                       {/* Expanded content */}
-                      {transitionEmailExpanded && (
+                      {(transitionSendEmail || transitionDialog?.targetStatut === 'refuse') && transitionEmailExpanded && (
                         <div className="px-3 pb-3 space-y-2 border-t">
                           <div className="pt-2">
                             <label className="text-xs font-medium text-muted-foreground">Objet</label>
