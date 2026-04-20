@@ -18,11 +18,148 @@ For every item in the order below:
 
 Skip steps 2 and 4 only when the item is small enough that the codex round-trip costs more than it saves (single file, <50 lines, no schema, no email).
 
-## Optimal order (with reasoning)
+## Already-shipped phases (context for codex / re-readers)
 
-### Tier A — Email pipeline (3 items, share infra)
+- Item 1 Phase 1 — responsive overhaul + fold of Item 14 — `f9c99e8`
+- Item 20 Phase 1 — funnel time-in-stage + bottleneck insight — `63d2c77`
+- Item 21 Phase 1 — pipeline auto-scroll fix — `cc8471f`
 
-Order matters: 17 builds the layout, 18 plugs structured AI output into it, 16 reuses the renderer for previews.
+So this plan ships Phase 2 of those items, NOT Phase 1.
+
+## Required ADRs before Tier A finishes
+
+Codex flagged that several items (3, 8, 9, 15, 16, 18) write to or read from
+sensitive stores or trust boundaries we haven't formalised. Block their merge
+behind two short ADRs:
+
+- **`docs/decisions/2026-XX-authorization-and-audit.md`** — define roles
+  beyond `requireLead` (read-only Franck? per-pôle lead? external recruiter?)
+  + per-candidature ownership rule used by the SSE auth gate (Item 8) and
+  scan overrides (Item 9). Skip-email reasons + revert audit semantics
+  (Item 15, 16) reference this ADR. ~30 min to write, 0 code.
+
+- **`docs/decisions/2026-XX-data-retention-and-erasure.md`** — retention
+  windows + export format + hard-delete trigger for: `candidate_extractions.raw_output`
+  (Item 2/12), AI email drafts (Item 18), refusal reasons (Item 20 P1 already
+  ships these in events), queued emails (Item 16), scan overrides (Item 9 done),
+  full VirusTotal payloads (Item 9 polish). Includes a decision on whether
+  to keep auto-uploading CV/lettre to VirusTotal at all (third-party DPA risk).
+
+These ADRs ship as part of the first PR that touches the affected store.
+
+## Per-category codex review rule
+
+Codex correctly flagged that "skip codex on tactical 1-file edits" is too lax.
+Override: **always** run the codex review pass on any commit that touches:
+
+- auth or route ordering (`server/index.ts`, middleware/, route declarations)
+- MIME / file handling (`server/lib/document-service.ts`, multipart parsing)
+- SSE / streaming response headers
+- email rendering or HTML sanitisation
+- DB CHECK constraints or schema migrations
+- the state machine
+
+For everything else (CSS tweaks, copy changes, single-component edits) the
+"tactical" exemption stands.
+
+## Optimal order (revised after codex challenge)
+
+### Tier A — Email pipeline (REORDERED 17 → 16 → 18)
+
+Codex point: building AI body wrappers (18) before the preview/skip/audit
+primitives (16) risks plumbing structured output through an outgrowing UX.
+Ship preview + confirm gate FIRST, then AI body slots into a stable contract.
+
+All three items share **one renderer contract** — `renderTransitionEmail({statut, candidate, customBody?})` — used identically by preview, dev-emails route, and actual send. Define it once in Item 17.
+
+1. **Item 17 — Brand tokens + `/dev/emails` route + renderer contract**
+
+   *Already in repo (per session memory + grep):* React Email is wired,
+   `server/emails/sinapse-layout.tsx` exists, all six templates use it via
+   `render()` calls in `server/lib/email.ts:33,68,104,125,156,…`. The
+   "migration" part is largely done. What's missing:
+
+   - Centralise hardcoded brand bits (`#008272`, logo URL, sinapse.nc, address)
+     into `server/lib/brand.ts`.
+   - Define and export `renderTransitionEmail({statut, ctx})` in `server/lib/email.ts`
+     so Items 16 and 18 reuse one path.
+   - **Hard-gate** `/dev/emails` route: `NODE_ENV !== 'production'` AND
+     `requireLead` (codex flagged: PII leak risk if mounted in prod with mock data).
+   - Brief `docs/emails.md` listing the 6 templates and how to add a new one.
+
+2. **Item 16 — Email confirm gate + HTML preview + durable delayed send**
+   - Backend: `POST /api/recruitment/emails/preview {candidature_id, transition}`
+     calls `renderTransitionEmail` and returns HTML.
+   - Frontend: `ConfirmEmailDialog` shows HTML in iframe.
+   - Skip-email mandatory reason (≥10 chars), audit-logged.
+   - **Codex fix:** delayed send must survive pod restart. Either use
+     Resend's `scheduled_at` parameter (no in-process queue, no recovery
+     needed) **or** persist a `queued_emails` table with a boot-time
+     "send everything past `due_at`" sweep. Recommend Resend's scheduled
+     send — zero infra cost, vendor handles durability.
+
+3. **Item 18 — AI-body wrapper with structured output**
+   - `server/emails/ai-schema.ts` → `{subject, greeting, main_paragraph, call_to_action}`.
+   - System prompt at `server/prompts/email-generation.md`.
+   - Anthropic structured-output mode; reject + regenerate on schema violation.
+   - Slot the four LLM fields into the EmailLayout via `renderTransitionEmail`.
+   - Recruiter edits logged for audit only (no ML training, codex flagged).
+
+### Tier B — Real-time + analytics (after Tier A's audit ADR is written)
+
+4. **Item 8 — SSE event bus**
+   - Auth ADR must define per-candidature ownership before this ships.
+   - K8s context: prod runs `replicas: 1` + `Recreate` strategy → in-process
+     bus is fine; ADR documents the constraint.
+   - **Codex flag:** prod deployment lacks the ClamAV sidecar present in dev.
+     Verify scan tests cover the VT-only / skipped-scan paths before relying
+     on real-time scan events in prod UX.
+
+5. **Item 20 Phase 2 (cut hard)** — cohort compare ONLY
+   - Phase 1 already shipped. Phase 2 ships the smallest analytic addition:
+     `GET /api/recruitment/funnel/compare?a=&b=` returns two snapshots + diff.
+   - Frontend: two date pickers; Sankey link width = ratio (thicker = improvement, red = regression).
+   - **Defer** forecast / Markov / saved views until recruiters explicitly request them.
+
+### Tier C — Extraction stack (start with a design spike)
+
+Codex point: jumping into Item 2 implementation without first locking down the
+shared schema for runs, source anchors, locks, merge strategies, retention,
+and the ABORO adapter creates churn. Spike first.
+
+6. **Item 2 design spike** — write `docs/decisions/2026-XX-extraction-architecture.md`
+   - `candidate_extractions` schema + per-field locks
+   - Source-span shape (CV) vs paragraph-anchor (ABORO)
+   - Merge strategies (`additive` / `recruiter-curated`)
+   - Retention (defer to data ADR)
+   - Cost accounting
+   - 1-page doc, ~1 hour
+
+7. **Item 2 — CV extraction expansion (split into 3 commits)**
+   - 7a. Schema + extractor refactor (no UI yet)
+   - 7b. Persistence + backfill (separate commit, easy to revert if backfill misbehaves)
+   - 7c. UI panel + cost observability counter
+
+8. **Item 10 — CV transparency UI** (depends on 7c)
+
+9. **Item 11 — ABORO transparency UI** (reuses item 10's drawer + ABORO adapter from spike)
+
+10. **Item 12 — Re-run extraction with merge + history** (depends on 7c)
+
+### Tier D — UI redesigns Phase 2
+
+11. **Item 7 P2 — Slot card UI redesign** (backend already shipped in `619b1c0`)
+    - Confirmed by codex: backend supersede + slots endpoint already in.
+    - This commit is the UI swap on `candidate-detail-page` only.
+
+12. **Item 21 P2 — Kanban drag-drop + smart filter chips**
+    - Drag-drop calls into the confirm gate (Item 16) — gated on Tier A.
+    - Smart filter chips ride on Item 19's enriched payload (already shipped).
+
+13. **Item 1 P2 — Density toggle / command palette / keyboard map**
+    - All three independent, ship one per small commit.
+
+### OLD Tier A (PRE-CODEX) — for diff context
 
 1. **Item 17 — React Email migration inventory + EmailLayout**
    - Why first: 18 and 16 both want a renderable HTML pipeline.
