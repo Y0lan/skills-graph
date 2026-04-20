@@ -8,10 +8,26 @@ import { CandidatureRecue, CandidatureRecueLead } from '../emails/candidature-re
 import { CandidatureRefusee, CandidatureRefuseeLead } from '../emails/candidature-refusee.js'
 import { TransitionNotification } from '../emails/transition-notification.js'
 import { CustomBodyLayout } from '../emails/custom-body-layout.js'
+import { BRAND_LOGO_BUFFER, LOGO_CID } from './brand.js'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const FROM_EMAIL = 'Radar SINAPSE <radar@sinapse.nc>'
+
+// Inline-image attachment, returned only when the rendered HTML actually
+// references the SINAPSE logo via `cid:sinapse-logo`. Templates that do not
+// use the branded layout (e.g. CandidateInvite) get no attachment, so emails
+// stay slim. See server/lib/brand.ts for why CID and not data:/external URL.
+function maybeLogoAttachment(html: string) {
+  if (!BRAND_LOGO_BUFFER) return undefined
+  if (!html.includes(`cid:${LOGO_CID}`)) return undefined
+  return [{
+    filename: 'sinapse-logo.png',
+    content: BRAND_LOGO_BUFFER,
+    contentType: 'image/png',
+    contentId: LOGO_CID,
+  }]
+}
 
 const SANITIZE_OPTIONS = {
   allowedTags: ['p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
@@ -41,6 +57,7 @@ export async function sendCandidateInvite(opts: {
       to: opts.to,
       subject: `Évaluation de compétences — ${opts.role} chez SINAPSE`,
       html,
+      attachments: maybeLogoAttachment(html),
     })
 
     if (error) {
@@ -76,6 +93,7 @@ export async function sendCandidateSubmitted(opts: {
       to: opts.to,
       subject: `${opts.candidateName} a soumis son évaluation`,
       html,
+      attachments: maybeLogoAttachment(html),
     })
 
     if (error) {
@@ -111,6 +129,7 @@ export async function sendApplicationReceived(opts: {
       to: opts.candidateEmail,
       subject: `Candidature reçue — ${opts.role} chez SINAPSE`,
       html,
+      attachments: maybeLogoAttachment(html),
     })
     console.log('[EMAIL] Application received sent to candidate')
   } catch {
@@ -132,6 +151,7 @@ export async function sendApplicationReceived(opts: {
       to: internalRecipients,
       subject: `Nouvelle candidature : ${opts.candidateName} — ${opts.role}`,
       html,
+      attachments: maybeLogoAttachment(html),
     })
     console.log('[EMAIL] Application received sent to lead')
   } catch {
@@ -163,6 +183,7 @@ export async function sendCandidateDeclined(opts: {
         to: opts.candidateEmail,
         subject: `Candidature — ${opts.role} chez SINAPSE`,
         html,
+        attachments: maybeLogoAttachment(html),
       })
       console.log('[EMAIL] Decline sent to candidate')
     } catch {
@@ -184,6 +205,7 @@ export async function sendCandidateDeclined(opts: {
       to: opts.leadEmail,
       subject: `Candidature refusée : ${opts.candidateName} — ${opts.role}`,
       html,
+      attachments: maybeLogoAttachment(html),
     })
     console.log('[EMAIL] Decline confirmation sent to lead')
   } catch {
@@ -238,6 +260,7 @@ export async function sendTransitionNotification(opts: {
       to: opts.to,
       subject,
       html,
+      attachments: maybeLogoAttachment(html),
     })
 
     if (error) {
@@ -440,6 +463,7 @@ export async function sendTransitionEmail(opts: {
       to: opts.to,
       subject,
       html,
+      attachments: maybeLogoAttachment(html),
     })
 
     if (error) {

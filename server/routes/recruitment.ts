@@ -7,6 +7,7 @@ import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
+import { previewizeEmailHtml } from '../lib/brand.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
@@ -1272,7 +1273,7 @@ protectedRouter.post('/emails/preview', (req, res) => {
       res.status(404).json({ error: `Aucun template pour le statut "${body.statut}"` })
       return
     }
-    res.json({ subject: rendered.subject, html: rendered.html })
+    res.json({ subject: rendered.subject, html: previewizeEmailHtml(rendered.html) })
   }).catch(err => {
     console.error('[EMAIL_PREVIEW] failed', err)
     res.status(500).json({ error: 'Échec du rendu du template' })

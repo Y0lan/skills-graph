@@ -6,24 +6,41 @@ import path from 'path'
  * branded server-rendered surface).
  */
 
-// Inline the logo as a data URL. Rationale: emails must NEVER point to
-// radar.sinapse.nc (the only allowed radar URL is the candidate's magic
-// /evaluate link). We don't host the asset on sinapse.nc/Drupal yet, so
-// inlining keeps the email self-contained — no broken images regardless
-// of which environment renders or which client receives.
-function loadLogoDataUrl(): string {
+// Email logo: attached as inline file via Resend, referenced by cid in HTML.
+//
+// History of what failed before this:
+//   1. External URL (radar.sinapse.nc/email-logo-...): forbidden — emails must
+//      never point to radar.sinapse.nc (only the magic /evaluate link does).
+//   2. data: URL in <img src>: Gmail (and Yahoo, iCloud) strip data URLs from
+//      <img src> for spam/security. Logo rendered as a broken-image icon.
+// Current approach: Resend attachment with contentId, referenced as
+// `cid:sinapse-logo`. Universal support across modern email clients.
+//
+// EMAIL_LOGO_URL env var still wins if set — useful once we host the logo on
+// sinapse.nc Drupal (then this file does not need to change).
+export const LOGO_CID = 'sinapse-logo'
+
+function loadLogoBuffer(): Buffer | null {
   const logoPath = process.env.EMAIL_LOGO_PATH
     ?? path.join(process.cwd(), 'public', 'email-logo-sinapse.png')
   try {
-    const buffer = fs.readFileSync(logoPath)
-    return `data:image/png;base64,${buffer.toString('base64')}`
+    return fs.readFileSync(logoPath)
   } catch (err) {
     console.warn(`[brand] failed to load email logo at ${logoPath}:`, (err as Error).message)
-    return ''
+    return null
   }
 }
 
-const LOGO_DATA_URL = loadLogoDataUrl()
+const LOGO_BUFFER = loadLogoBuffer()
+const LOGO_DATA_URL = LOGO_BUFFER
+  ? `data:image/png;base64,${LOGO_BUFFER.toString('base64')}`
+  : ''
+
+/** Buffer for attachment-based embedding (Resend `attachments[].content`). */
+export const BRAND_LOGO_BUFFER = LOGO_BUFFER
+
+/** data: URL for browser-side previews (e.g. /dev/emails). */
+export const BRAND_LOGO_DATA_URL = LOGO_DATA_URL
 
 export const BRAND = {
   // Colors
@@ -52,24 +69,27 @@ export const BRAND = {
   linkedin: 'https://www.linkedin.com/company/sinapse-nc/',
   linkedinLabel: 'LinkedIn',
 
-  // Inlined data URL — see loadLogoDataUrl() above for the rationale.
-  // No external host, no env-specific URL, no broken images. Works in
-  // every email client that supports data: URLs in <img src> (which is
-  // every modern client + Outlook desktop except Outlook 2007/2010,
-  // which we don't target).
-  // Override with EMAIL_LOGO_URL if you ever publish the logo on
-  // sinapse.nc and want to use that instead.
-  logoUrl: process.env.EMAIL_LOGO_URL ?? LOGO_DATA_URL,
+  // Default to cid: reference. Resend attaches the file with the matching
+  // contentId on every send (see sendBrandedEmail in lib/email.ts).
+  // Override with EMAIL_LOGO_URL once the logo is hosted on sinapse.nc.
+  logoUrl: process.env.EMAIL_LOGO_URL ?? `cid:${LOGO_CID}`,
   logoWidthPx: 200,
 
   // Email layout
   emailMaxWidth: 560,
 } as const
 
-/**
- * Convenience: hex color string (no leading #) for places that need it
- * (some legacy email clients).
- */
 export function hex(c: string): string {
   return c.replace(/^#/, '')
+}
+
+/**
+ * Swap `cid:sinapse-logo` references for the inline data URL so the markup
+ * can render in a browser context (preview windows, /dev/emails iframe).
+ * Real email sends keep the cid; the matching attachment is added by
+ * email.ts:maybeLogoAttachment.
+ */
+export function previewizeEmailHtml(html: string): string {
+  if (!LOGO_DATA_URL) return html
+  return html.split(`cid:${LOGO_CID}`).join(LOGO_DATA_URL)
 }

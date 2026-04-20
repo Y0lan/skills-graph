@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { render } from '@react-email/components'
 import { requireLead } from '../middleware/require-lead.js'
 import { renderTransitionEmail } from '../lib/email.js'
+import { previewizeEmailHtml } from '../lib/brand.js'
 import { CandidateInvite } from '../emails/candidate-invite.js'
 import { CandidateSubmitted } from '../emails/candidate-submitted.js'
 import { CandidatureRecue, CandidatureRecueLead } from '../emails/candidature-recue.js'
@@ -129,7 +130,7 @@ devEmailsRouter.get('/:slug', async (req, res) => {
   }
   try {
     const html = await item.render()
-    res.type('html').send(html)
+    res.type('html').send(previewizeEmailHtml(html))
   } catch (err) {
     console.error('[dev-emails] render failed', err)
     res.status(500).type('html').send(`<pre>${(err as Error).message}</pre>`)
