@@ -29,12 +29,75 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2 } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
 import { useNavigate } from 'react-router-dom'
+
+function AiInstructionBar({
+  value,
+  onChange,
+  onApply,
+  onCancel,
+  loading,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onApply: () => void
+  onCancel: () => void
+  loading: boolean
+}) {
+  return (
+    <div className="flex items-start gap-2 p-2 rounded-md border border-primary/30 bg-primary/5">
+      <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 mt-1.5" />
+      <Textarea
+        value={value}
+        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && value.trim() && !loading) {
+            e.preventDefault()
+            onApply()
+          }
+        }}
+        placeholder="Demandez à l'IA de modifier le mail (ex : rends le ton plus chaleureux, ajoute qu'on revient vers lui sous 48h…)"
+        rows={2}
+        className="text-xs resize-none flex-1"
+        disabled={loading}
+        autoFocus
+      />
+      <div className="flex flex-col gap-1 shrink-0">
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 text-xs px-2"
+          onClick={onApply}
+          disabled={loading || !value.trim()}
+        >
+          {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Appliquer'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs px-2"
+          onClick={onCancel}
+          disabled={loading}
+        >
+          Annuler
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export default function CandidateDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -79,6 +142,92 @@ export default function CandidateDetailPage() {
 
   const [analyzing, setAnalyzing] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
+
+  // Gmail-style AI edit + HTML preview shared across transition dialog paths.
+  const [aiInstructionOpen, setAiInstructionOpen] = useState(false)
+  const [aiInstruction, setAiInstruction] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState(false)
+  const [emailPreviewLoading, setEmailPreviewLoading] = useState(false)
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState('')
+  const [emailPreviewSubject, setEmailPreviewSubject] = useState('')
+
+  const resetEmailAssistants = useCallback(() => {
+    setAiInstructionOpen(false)
+    setAiInstruction('')
+    setAiLoading(false)
+    setEmailPreviewOpen(false)
+    setEmailPreviewHtml('')
+    setEmailPreviewSubject('')
+  }, [])
+
+  const handleApplyAi = useCallback(async () => {
+    if (!transitionDialog) return
+    const instruction = aiInstruction.trim()
+    if (!instruction) return
+    setAiLoading(true)
+    try {
+      const res = await fetch('/api/recruitment/emails/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          candidatureId: transitionDialog.candidatureId,
+          statut: transitionDialog.targetStatut,
+          currentBody: transitionEmailBody.trim() || undefined,
+          instruction,
+          contextNote: transitionNotes.trim() || undefined,
+          refuseReason: transitionDialog.targetStatut === 'refuse' ? transitionNotes.trim() : undefined,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      const { bodyMarkdown } = (await res.json()) as { bodyMarkdown: string }
+      setTransitionEmailBody(bodyMarkdown)
+      setAiInstruction('')
+      setAiInstructionOpen(false)
+      toast.success("Email mis à jour par l'IA — relisez avant d'envoyer")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur IA')
+    } finally {
+      setAiLoading(false)
+    }
+  }, [transitionDialog, aiInstruction, transitionEmailBody, transitionNotes, setTransitionEmailBody])
+
+  const handleOpenPreview = useCallback(async () => {
+    if (!transitionDialog) return
+    setEmailPreviewLoading(true)
+    setEmailPreviewOpen(true)
+    setEmailPreviewHtml('')
+    try {
+      const res = await fetch('/api/recruitment/emails/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          candidatureId: transitionDialog.candidatureId,
+          statut: transitionDialog.targetStatut,
+          customBody: transitionEmailBody.trim() || undefined,
+          notes: transitionNotes.trim() || undefined,
+          includeReasonInEmail: transitionIncludeReason,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      const { subject, html } = (await res.json()) as { subject: string; html: string }
+      setEmailPreviewSubject(subject)
+      setEmailPreviewHtml(html)
+    } catch (err) {
+      setEmailPreviewOpen(false)
+      toast.error(err instanceof Error ? err.message : 'Erreur aperçu')
+    } finally {
+      setEmailPreviewLoading(false)
+    }
+  }, [transitionDialog, transitionEmailBody, transitionNotes, transitionIncludeReason])
 
   // Item 8: subscribe to the first candidature's SSE stream so scan + status
   // updates land without manual reload. Multi-candidature candidates only get
@@ -518,7 +667,7 @@ export default function CandidateDetailPage() {
         })}
 
         {/* ── TRANSITION DIALOG ── */}
-        <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) closeTransitionDialog() }}>
+        <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) { closeTransitionDialog(); resetEmailAssistants() } }}>
           <AlertDialogContent size="lg">
             <AlertDialogHeader>
               <AlertDialogTitle>
@@ -590,15 +739,41 @@ export default function CandidateDetailPage() {
                               className="mt-1 text-sm"
                             />
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs text-muted-foreground gap-1.5"
-                            disabled
-                          >
-                            <Wand2 className="h-3 w-3" />
-                            Rediger avec l'IA
-                          </Button>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-muted-foreground gap-1.5 h-7"
+                              onClick={() => setAiInstructionOpen(v => !v)}
+                              disabled={aiLoading}
+                            >
+                              <Wand2 className="h-3 w-3" />
+                              Rédiger avec l'IA
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-muted-foreground gap-1.5 h-7"
+                              onClick={handleOpenPreview}
+                              disabled={emailPreviewLoading}
+                            >
+                              {emailPreviewLoading
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <Mail className="h-3 w-3" />}
+                              Aperçu HTML
+                            </Button>
+                          </div>
+                          {aiInstructionOpen && (
+                            <AiInstructionBar
+                              value={aiInstruction}
+                              onChange={setAiInstruction}
+                              onApply={handleApplyAi}
+                              onCancel={() => { setAiInstructionOpen(false); setAiInstruction('') }}
+                              loading={aiLoading}
+                            />
+                          )}
                         </div>
                       )}
                     </>
@@ -634,76 +809,37 @@ export default function CandidateDetailPage() {
                           variant="outline"
                           size="sm"
                           className="h-7 text-xs"
-                          onClick={async () => {
-                            if (!transitionDialog) return
-                            try {
-                              const res = await fetch('/api/recruitment/emails/ai-generate', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({
-                                  candidatureId: transitionDialog.candidatureId,
-                                  statut: transitionDialog.targetStatut,
-                                  contextNote: transitionNotes.trim() || undefined,
-                                  refuseReason: transitionDialog.targetStatut === 'refuse' ? transitionNotes.trim() : undefined,
-                                }),
-                              })
-                              if (!res.ok) {
-                                const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-                                throw new Error(body.error || `HTTP ${res.status}`)
-                              }
-                              const { bodyMarkdown } = await res.json() as { bodyMarkdown: string }
-                              setTransitionEmailBody(bodyMarkdown)
-                              toast.success('Brouillon IA généré — relisez et éditez avant d’envoyer')
-                            } catch (err) {
-                              toast.error(err instanceof Error ? err.message : 'Erreur génération IA')
-                            }
-                          }}
+                          onClick={() => setAiInstructionOpen(v => !v)}
+                          disabled={aiLoading}
                         >
                           <Wand2 className="h-3 w-3 mr-1" />
-                          Brouillon IA
+                          Rédiger avec l'IA
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="h-7 text-xs"
-                          onClick={async () => {
-                            if (!transitionDialog) return
-                            try {
-                              const res = await fetch('/api/recruitment/emails/preview', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                credentials: 'include',
-                                body: JSON.stringify({
-                                  candidatureId: transitionDialog.candidatureId,
-                                  statut: transitionDialog.targetStatut,
-                                  customBody: transitionEmailBody.trim() || undefined,
-                                  notes: transitionNotes.trim() || undefined,
-                                  includeReasonInEmail: transitionIncludeReason,
-                                }),
-                              })
-                              if (!res.ok) {
-                                const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-                                throw new Error(body.error || `HTTP ${res.status}`)
-                              }
-                              const { subject, html } = await res.json() as { subject: string; html: string }
-                              const w = window.open('', '_blank', 'width=720,height=900')
-                              if (w) {
-                                w.document.write(`<!doctype html><html><head><title>Aperçu — ${subject}</title></head><body>${html}</body></html>`)
-                                w.document.close()
-                              }
-                            } catch (err) {
-                              toast.error(err instanceof Error ? err.message : 'Erreur aperçu')
-                            }
-                          }}
+                          onClick={handleOpenPreview}
+                          disabled={emailPreviewLoading}
                         >
-                          <Mail className="h-3 w-3 mr-1" />
+                          {emailPreviewLoading
+                            ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            : <Mail className="h-3 w-3 mr-1" />}
                           Aperçu HTML
                         </Button>
                       </div>
                     )}
                   </div>
+                  {transitionSendEmail && aiInstructionOpen && (
+                    <AiInstructionBar
+                      value={aiInstruction}
+                      onChange={setAiInstruction}
+                      onApply={handleApplyAi}
+                      onCancel={() => { setAiInstructionOpen(false); setAiInstruction('') }}
+                      loading={aiLoading}
+                    />
+                  )}
                   {!transitionSendEmail && (
                     <div>
                       <label htmlFor="skip-email-reason" className="text-xs font-medium text-muted-foreground">
@@ -866,6 +1002,33 @@ export default function CandidateDetailPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={emailPreviewOpen} onOpenChange={setEmailPreviewOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col gap-3">
+            <DialogHeader>
+              <DialogTitle className="text-base">
+                Aperçu — {emailPreviewSubject || 'Email'}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Rendu HTML complet, tel que le candidat le recevra (en-tête, pied de page et logo inclus).
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 rounded-md border bg-white overflow-hidden">
+              {emailPreviewLoading ? (
+                <div className="flex items-center justify-center py-20">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : (
+                <iframe
+                  title="Aperçu de l'email"
+                  srcDoc={emailPreviewHtml}
+                  className="w-full h-[70vh] bg-white"
+                  sandbox=""
+                />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* ══════════ BELOW THE FOLD ══════════ */}
 

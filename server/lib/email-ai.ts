@@ -42,6 +42,8 @@ export interface GenerateAiEmailParams {
   statut: string
   contextNote?: string
   refuseReason?: string
+  currentBody?: string
+  instruction?: string
 }
 
 export interface GenerateAiEmailResult {
@@ -60,14 +62,18 @@ export async function generateAiEmailDraft(params: GenerateAiEmailParams): Promi
   const systemPrompt = loadSystemPrompt()
 
   const statutContext = STATUT_CONTEXT[params.statut] ?? `Statut: ${params.statut}`
+  const hasModifyInput = Boolean(params.currentBody?.trim() && params.instruction?.trim())
   const userPrompt = [
     `Candidat: ${params.candidateName}`,
     `Poste: ${params.role}`,
     `Statut: ${params.statut} — ${statutContext}`,
     params.contextNote ? `Contexte additionnel du recruteur: ${params.contextNote}` : null,
     params.refuseReason && params.statut === 'refuse' ? `Motif du refus (à intégrer respectueusement): ${params.refuseReason}` : null,
-    '',
-    'Rédige le brouillon en utilisant l’outil submit_email_draft.',
+    hasModifyInput ? `\nBrouillon actuel du recruteur (Markdown) :\n<<<\n${params.currentBody!.trim()}\n>>>` : null,
+    hasModifyInput ? `\nDemande du recruteur (à appliquer au brouillon ci-dessus) : ${params.instruction!.trim()}` : null,
+    hasModifyInput
+      ? '\nRéécris le brouillon en appliquant fidèlement la demande, tout en respectant le ton et les contraintes du système. Conserve les informations factuelles (nom, poste), n’invente rien de nouveau. Sors uniquement via submit_email_draft.'
+      : '\nRédige le brouillon en utilisant l’outil submit_email_draft.',
   ].filter(Boolean).join('\n')
 
   const model = 'claude-haiku-4-5-20251001'

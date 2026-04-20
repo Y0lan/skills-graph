@@ -1191,7 +1191,14 @@ protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
 // the markdown-rendered body that fits the existing customBody field on the
 // transition dialog. Recruiter previews + edits before sending.
 protectedRouter.post('/emails/ai-generate', async (req, res) => {
-  const body = req.body as { candidatureId?: unknown; statut?: unknown; contextNote?: unknown; refuseReason?: unknown }
+  const body = req.body as {
+    candidatureId?: unknown
+    statut?: unknown
+    contextNote?: unknown
+    refuseReason?: unknown
+    currentBody?: unknown
+    instruction?: unknown
+  }
   if (typeof body.candidatureId !== 'string' || typeof body.statut !== 'string') {
     res.status(400).json({ error: 'candidatureId et statut requis' })
     return
@@ -1217,6 +1224,8 @@ protectedRouter.post('/emails/ai-generate', async (req, res) => {
       statut: body.statut,
       contextNote: typeof body.contextNote === 'string' ? body.contextNote.slice(0, 500) : undefined,
       refuseReason: typeof body.refuseReason === 'string' ? body.refuseReason.slice(0, 500) : undefined,
+      currentBody: typeof body.currentBody === 'string' ? body.currentBody.slice(0, 4000) : undefined,
+      instruction: typeof body.instruction === 'string' ? body.instruction.slice(0, 500) : undefined,
     })
     res.json({
       draft: result.draft,
