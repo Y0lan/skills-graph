@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Upload, FileText, FileType2, BrainCircuit, Download, Eye, Pencil, Trash2, FolderArchive, RotateCcw, ChevronRight, ChevronDown, AlertTriangle } from 'lucide-react'
+import { Loader2, Upload, FileText, FileType2, BrainCircuit, Download, Eye, Pencil, Trash2, FolderArchive, RotateCcw, ChevronRight, ChevronDown, AlertTriangle, Tag } from 'lucide-react'
 import ScanBadge from './scan-badge'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
@@ -315,9 +315,17 @@ export default function CandidateDocumentsPanel({
               <span className="text-sm truncate flex-1 min-w-0" title={pendingAdminFile.name}>
                 {pendingAdminFile.name}
               </span>
-              <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>
-                <SelectTrigger className="w-[180px] h-8" aria-label="Catégorie">
-                  <SelectValue placeholder="Catégorie" />
+              <Select value={uploadType || undefined} onValueChange={(v) => { if (v) setUploadType(v) }}>
+                <SelectTrigger
+                  aria-label="Catégorie"
+                  className={
+                    uploadType
+                      ? 'w-[200px] h-9'
+                      : 'w-[220px] h-9 border-primary/60 text-primary font-medium ring-2 ring-primary/20 hover:bg-primary/5'
+                  }
+                >
+                  <Tag className={`h-4 w-4 ${uploadType ? 'text-muted-foreground' : 'text-primary'}`} />
+                  <SelectValue placeholder="Choisir une catégorie…" />
                 </SelectTrigger>
                 <SelectContent>
                   {(['entretien', 'proposition', 'administratif', 'other'] as const).map(t => (
@@ -327,11 +335,12 @@ export default function CandidateDocumentsPanel({
               </Select>
               <Button
                 size="sm"
-                disabled={uploading}
+                disabled={uploading || !uploadType}
                 onClick={async () => {
                   const file = pendingAdminFile
+                  const type = uploadType
                   setPendingAdminFile(null)
-                  await uploadDocument(file, uploadType)
+                  await uploadDocument(file, type)
                 }}
               >
                 {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
@@ -341,7 +350,7 @@ export default function CandidateDocumentsPanel({
                 size="sm"
                 variant="ghost"
                 disabled={uploading}
-                onClick={() => setPendingAdminFile(null)}
+                onClick={() => { setPendingAdminFile(null); setUploadType('') }}
               >
                 Annuler
               </Button>
@@ -358,7 +367,7 @@ export default function CandidateDocumentsPanel({
                   input.accept = '.pdf,.docx,.doc'
                   input.onchange = (e) => {
                     const file = (e.target as HTMLInputElement).files?.[0]
-                    if (file) setPendingAdminFile(file)
+                    if (file) { setUploadType(''); setPendingAdminFile(file) }
                   }
                   input.click()
                 }}
