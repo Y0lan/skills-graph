@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
 import { safeJsonParse } from './types.js'
-import { buildCanonicalFilename, extractExtension, formatDisplayName } from './file-naming.js'
+import { buildCanonicalFilename, formatDisplayName } from './file-naming.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -435,7 +435,7 @@ export function initDatabase(): void {
     for (const d of orphanDocs) {
       if (!d.candidate_name) continue
       const parsed = new Date(d.created_at.replace(' ', 'T') + 'Z')
-      const canonical = buildCanonicalFilename(d.type, d.candidate_name, extractExtension(d.filename), isNaN(+parsed) ? new Date() : parsed)
+      const canonical = buildCanonicalFilename(d.candidate_name, d.filename, isNaN(+parsed) ? new Date() : parsed)
       updateDoc.run(canonical, d.id)
       renamedDocs++
     }
@@ -666,6 +666,16 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN soft_skill_alerts TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_global REAL') } catch { /* already exists */ }
+
+  // Fiche de poste free-text description — fed to the CV-matching LLM prompt
+  // for contextual, role-aware rating + custom skill-radar questions.
+  try { db.exec('ALTER TABLE postes ADD COLUMN description TEXT') } catch { /* already exists */ }
+
+  // CV-extraction enrichment: per-skill reasoning + per-skill questions
+  // generated from CV evidence vs. fiche de poste. Shown to the candidate in
+  // the skill-radar form to validate the auto-filled rating.
+  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_reasoning TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_questions TEXT') } catch { /* already exists */ }
 
   // Scoring weights table (configurable global score formula)
   db.exec(`

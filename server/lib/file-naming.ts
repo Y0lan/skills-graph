@@ -58,18 +58,6 @@ export function formatDisplayName(fullName: string): string {
   return `${cap} ${lastname.toUpperCase()}`
 }
 
-/** Document type (db enum value) → filename category prefix.
- *  Unknown types fall back to "DOCUMENT" so nothing silently drops. */
-const CATEGORY_LABELS: Record<string, string> = {
-  cv: 'CV',
-  lettre: 'LETTRE',
-  aboro: 'ABORO',
-  entretien: 'ENTRETIEN',
-  proposition: 'PROPOSITION',
-  administratif: 'ADMINISTRATIF',
-  other: 'DOCUMENT',
-}
-
 /** Sanitize a name part for use in a filename: uppercase, no accents, letters/digits only. */
 function filenamePart(s: string): string {
   return stripAccents(s)
@@ -78,23 +66,40 @@ function filenamePart(s: string): string {
     .slice(0, 40)
 }
 
-/** Build the canonical display_filename for an uploaded document.
- *  Example: ("cv", "Pierre LEFÈVRE", "pdf", 2026-04-20) → "CV_LEFEVRE_PIERRE_20260420.pdf" */
+/** Sanitize the original filename's stem: keep recognizable chars, strip accents,
+ *  replace unsafe chars with `_`, collapse runs, cap length. Falls back to
+ *  `DOCUMENT` if the stem collapses to empty. */
+function sanitizeStem(stem: string): string {
+  const cleaned = stripAccents(stem)
+    .replace(/[^A-Za-z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 60)
+  return cleaned || 'DOCUMENT'
+}
+
+/** Build the canonical display_filename for an uploaded document. Preserves the
+ *  uploader's original filename stem and suffixes it with candidate + date so
+ *  downloaded files carry identifying context without losing the uploader's
+ *  intent. Category is tracked in the DB and shown as a badge — not in the name.
+ *  Example: ("Pierre LEFÈVRE", "Mon CV.pdf", 2026-04-20) → "Mon_CV_LEFEVRE_PIERRE_20260420.pdf" */
 export function buildCanonicalFilename(
-  docType: string,
   candidateName: string,
-  extension: string,
+  originalFilename: string,
   date: Date = new Date(),
 ): string {
-  const category = CATEGORY_LABELS[docType] ?? 'DOCUMENT'
   const { firstname, lastname } = parseName(candidateName)
   const last = filenamePart(lastname) || 'INCONNU'
   const first = filenamePart(firstname) || 'INCONNU'
   const yyyy = date.getUTCFullYear()
   const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
   const dd = String(date.getUTCDate()).padStart(2, '0')
-  const ext = extension.replace(/^\.*/, '').toLowerCase().slice(0, 8) || 'bin'
-  return `${category}_${last}_${first}_${yyyy}${mm}${dd}.${ext}`
+  const extRaw = extractExtension(originalFilename)
+  const ext = extRaw.toLowerCase().slice(0, 8) || 'bin'
+  const dotIdx = originalFilename.lastIndexOf('.')
+  const rawStem = dotIdx > 0 ? originalFilename.slice(0, dotIdx) : originalFilename
+  const stem = sanitizeStem(rawStem)
+  return `${stem}_${last}_${first}_${yyyy}${mm}${dd}.${ext}`
 }
 
 /** Extract extension from an original filename ("my cv.PDF" → "pdf"). */
