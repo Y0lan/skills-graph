@@ -93,6 +93,7 @@ export default function CandidateDocumentsPanel({
   const [deleting, setDeleting] = useState(false)
   // Replace-on-filled-slot confirmation: stores the pending file + target type.
   const [pendingReplace, setPendingReplace] = useState<{ file: File; slot: SlotType } | null>(null)
+  const [pendingAdminFile, setPendingAdminFile] = useState<File | null>(null)
   // Soft-deleted docs (lazy-fetched when the trash section is opened).
   const [trashOpen, setTrashOpen] = useState(false)
   const [deletedDocs, setDeletedDocs] = useState<CandidatureDocument[]>([])
@@ -308,36 +309,65 @@ export default function CandidateDocumentsPanel({
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
             Autres documents
           </h3>
-          <div className="flex items-center gap-2 mb-3">
-            <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                {(['entretien', 'proposition', 'administratif', 'other'] as const).map(t => (
-                  <SelectItem key={t} value={t}>{DOC_TYPE_LABELS[t]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={uploading}
-              onClick={() => {
-                const input = document.createElement('input')
-                input.type = 'file'
-                input.accept = '.pdf,.docx,.doc'
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0]
-                  if (file) void uploadDocument(file)
-                }
-                input.click()
-              }}
-            >
-              {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-              Ajouter
-            </Button>
-          </div>
+          {pendingAdminFile ? (
+            <div className="flex items-center gap-2 mb-3 p-2 rounded-md border border-border bg-muted/30">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="text-sm truncate flex-1 min-w-0" title={pendingAdminFile.name}>
+                {pendingAdminFile.name}
+              </span>
+              <Select value={uploadType} onValueChange={(v) => { if (v) setUploadType(v) }}>
+                <SelectTrigger className="w-[180px] h-8" aria-label="Catégorie">
+                  <SelectValue placeholder="Catégorie" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(['entretien', 'proposition', 'administratif', 'other'] as const).map(t => (
+                    <SelectItem key={t} value={t}>{DOC_TYPE_LABELS[t]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                disabled={uploading}
+                onClick={async () => {
+                  const file = pendingAdminFile
+                  setPendingAdminFile(null)
+                  await uploadDocument(file, uploadType)
+                }}
+              >
+                {uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                Confirmer
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={uploading}
+                onClick={() => setPendingAdminFile(null)}
+              >
+                Annuler
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-3">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={uploading}
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.pdf,.docx,.doc'
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (file) setPendingAdminFile(file)
+                  }
+                  input.click()
+                }}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Ajouter un document
+              </Button>
+            </div>
+          )}
 
           {adminDocs.length > 0 ? (
             <div className="space-y-1.5">
@@ -399,7 +429,7 @@ export default function CandidateDocumentsPanel({
       {/* ── Dialogs ── */}
 
       <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) setPreviewDoc(null) }}>
-        <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0">
+        <DialogContent className="sm:max-w-6xl w-[95vw] h-[90vh] flex flex-col p-0 gap-0">
           <DialogHeader className="px-6 py-3 border-b shrink-0">
             <DialogTitle className="text-sm font-medium truncate pr-8">
               {previewDoc ? effectiveName(previewDoc) : ''}
@@ -416,7 +446,7 @@ export default function CandidateDocumentsPanel({
       </Dialog>
 
       <Dialog open={!!deleteDoc} onOpenChange={(open) => { if (!open && !deleting) setDeleteDoc(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Supprimer ce document ?</DialogTitle>
           </DialogHeader>
@@ -435,7 +465,7 @@ export default function CandidateDocumentsPanel({
       </Dialog>
 
       <Dialog open={!!renameDoc} onOpenChange={(open) => { if (!open && !renaming) setRenameDoc(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Renommer le document</DialogTitle>
           </DialogHeader>
@@ -464,7 +494,7 @@ export default function CandidateDocumentsPanel({
       </Dialog>
 
       <Dialog open={!!pendingReplace} onOpenChange={(open) => { if (!open) setPendingReplace(null) }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
