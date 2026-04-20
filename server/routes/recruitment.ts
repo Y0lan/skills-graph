@@ -223,6 +223,55 @@ protectedRouter.get('/funnel', (req, res) => {
   res.json(buildFunnel({ days, pole }))
 })
 
+// Item 20 P2: compare two cohorts (e.g. "last 30d" vs "previous 30d", or
+// two arbitrary day-windows). Returns both snapshots plus a per-link diff
+// (B.value - A.value) so the frontend can render either side-by-side
+// Sankeys or a single diff overlay.
+//
+// GET /api/recruitment/funnel/compare?aDays=30&bDays=90&pole=all
+protectedRouter.get('/funnel/compare', (req, res) => {
+  const aRaw = req.query.aDays
+  const bRaw = req.query.bDays
+  const poleRaw = req.query.pole
+  const aDays = typeof aRaw === 'string' && /^\d+$/.test(aRaw) ? Number(aRaw) : null
+  const bDays = typeof bRaw === 'string' && /^\d+$/.test(bRaw) ? Number(bRaw) : null
+  const pole = typeof poleRaw === 'string' ? poleRaw : null
+
+  const a = buildFunnel({ days: aDays, pole })
+  const b = buildFunnel({ days: bDays, pole })
+
+  // Per-link diff: positive = B has more flow than A.
+  type LinkKey = string
+  const keyOf = (l: { source: string; target: string }): LinkKey => `${l.source}→${l.target}`
+  const aMap = new Map<LinkKey, number>()
+  for (const l of a.links) aMap.set(keyOf(l), l.value)
+  const bMap = new Map<LinkKey, number>()
+  for (const l of b.links) bMap.set(keyOf(l), l.value)
+  const allKeys = new Set<LinkKey>([...aMap.keys(), ...bMap.keys()])
+  const linkDiffs: Array<{ source: string; target: string; aValue: number; bValue: number; delta: number; deltaPct: number | null }> = []
+  for (const k of allKeys) {
+    const [source, target] = k.split('→')
+    const av = aMap.get(k) ?? 0
+    const bv = bMap.get(k) ?? 0
+    const delta = bv - av
+    const deltaPct = av > 0 ? Math.round((delta / av) * 1000) / 10 : null
+    linkDiffs.push({ source, target, aValue: av, bValue: bv, delta, deltaPct })
+  }
+  linkDiffs.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta))
+
+  res.json({
+    a: { label: aDays !== null ? `${aDays}j` : 'tout', funnel: a },
+    b: { label: bDays !== null ? `${bDays}j` : 'tout', funnel: b },
+    linkDiffs,
+    totalsDelta: {
+      all: b.totals.all - a.totals.all,
+      hired: b.totals.hired - a.totals.hired,
+      refused: b.totals.refused - a.totals.refused,
+      in_progress: b.totals.in_progress - a.totals.in_progress,
+    },
+  })
+})
+
 // Poste comparison view: enriched candidatures with rank + gaps, plus role categories.
 // Powers the /recruit/reports/comparison/:posteId page.
 protectedRouter.get('/postes/:posteId/comparison', (req, res) => {

@@ -56,11 +56,23 @@ const POLES = [
   { value: 'legacy', label: 'Legacy / Adélia' },
 ]
 
+interface CompareResponse {
+  a: { label: string; funnel: FunnelPayload }
+  b: { label: string; funnel: FunnelPayload }
+  linkDiffs: Array<{ source: string; target: string; aValue: number; bValue: number; delta: number; deltaPct: number | null }>
+  totalsDelta: { all: number; hired: number; refused: number; in_progress: number }
+}
+
 export default function RecruitFunnelPage() {
   const [days, setDays] = useState<number | null>(90)
   const [pole, setPole] = useState<string>('all')
   const [state, setState] = useState<PageState>('loading')
   const [data, setData] = useState<FunnelPayload | null>(null)
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareDays, setCompareDays] = useState<number | null>(365)
+  const [compareData, setCompareData] = useState<CompareResponse | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -84,6 +96,31 @@ export default function RecruitFunnelPage() {
     fetchFunnel()
     return () => { cancelled = true }
   }, [days, pole])
+
+  // Compare-mode fetch
+  useEffect(() => {
+    if (!compareMode) {
+      setCompareData(null)
+      setCompareError(null)
+      return
+    }
+    let cancelled = false
+    setCompareLoading(true)
+    setCompareError(null)
+    const params = new URLSearchParams()
+    if (days !== null) params.set('aDays', String(days))
+    if (compareDays !== null) params.set('bDays', String(compareDays))
+    if (pole !== 'all') params.set('pole', pole)
+    fetch(`/api/recruitment/funnel/compare?${params}`, { credentials: 'include' })
+      .then(async r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json() as Promise<CompareResponse>
+      })
+      .then(d => { if (!cancelled) setCompareData(d) })
+      .catch(err => { if (!cancelled) setCompareError(err instanceof Error ? err.message : 'Erreur') })
+      .finally(() => { if (!cancelled) setCompareLoading(false) })
+    return () => { cancelled = true }
+  }, [compareMode, days, compareDays, pole])
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -125,6 +162,24 @@ export default function RecruitFunnelPage() {
               ))}
             </SelectContent>
           </Select>
+          <Button
+            variant={compareMode ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setCompareMode(!compareMode)}
+            title="Comparer deux fenêtres temporelles côte à côte"
+          >
+            {compareMode ? '× Fermer comparaison' : '⇄ Comparer 2 cohortes'}
+          </Button>
+          {compareMode && (
+            <Select value={String(compareDays ?? 'all')} onValueChange={v => setCompareDays(v === 'all' ? null : Number(v))}>
+              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TIME_RANGES.map(r => (
+                  <SelectItem key={String(r.days ?? 'all')} value={String(r.days ?? 'all')}>vs {r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         {/* Totals */}
@@ -181,7 +236,89 @@ export default function RecruitFunnelPage() {
             </ParentSize>
           )}
         </div>
+
+        {/* Compare-mode panel */}
+        {compareMode && (
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">
+                Comparaison <span className="text-muted-foreground font-normal">— {compareData?.a.label ?? '?'} (A) vs {compareData?.b.label ?? '?'} (B)</span>
+              </h2>
+              {compareLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            </div>
+            {compareError && (
+              <div className="text-sm text-destructive flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" /> {compareError}
+              </div>
+            )}
+            {compareData && !compareLoading && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <DeltaCard label="Total candidats" delta={compareData.totalsDelta.all} />
+                  <DeltaCard label="En cours" delta={compareData.totalsDelta.in_progress} />
+                  <DeltaCard label="Embauchés" delta={compareData.totalsDelta.hired} positiveTone />
+                  <DeltaCard label="Refusés" delta={compareData.totalsDelta.refused} positiveTone={false} />
+                </div>
+
+                <div className="grid lg:grid-cols-2 gap-3 min-h-[420px]">
+                  <div className="rounded border bg-background p-2">
+                    <p className="text-xs text-muted-foreground mb-1">A — {compareData.a.label}</p>
+                    <ParentSize>
+                      {({ width }) => (
+                        <SankeyChart width={Math.max(width, 300)} height={380} data={compareData.a.funnel} />
+                      )}
+                    </ParentSize>
+                  </div>
+                  <div className="rounded border bg-background p-2">
+                    <p className="text-xs text-muted-foreground mb-1">B — {compareData.b.label}</p>
+                    <ParentSize>
+                      {({ width }) => (
+                        <SankeyChart width={Math.max(width, 300)} height={380} data={compareData.b.funnel} />
+                      )}
+                    </ParentSize>
+                  </div>
+                </div>
+
+                {compareData.linkDiffs.filter(d => d.delta !== 0).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Plus gros écarts (B − A)</p>
+                    <div className="space-y-1">
+                      {compareData.linkDiffs.filter(d => d.delta !== 0).slice(0, 8).map((d, i) => {
+                        const direction = d.delta > 0 ? '↑' : '↓'
+                        const tone = d.delta > 0 ? 'text-emerald-600' : 'text-rose-600'
+                        return (
+                          <div key={i} className="flex items-center justify-between text-sm gap-2">
+                            <span className="truncate">{d.source} → {d.target}</span>
+                            <span className={`tabular-nums ${tone}`}>
+                              {direction} {Math.abs(d.delta)} {d.deltaPct !== null ? `(${d.deltaPct > 0 ? '+' : ''}${d.deltaPct}%)` : ''}
+                              <span className="text-[11px] text-muted-foreground ml-1">A:{d.aValue} → B:{d.bValue}</span>
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
+    </div>
+  )
+}
+
+function DeltaCard({ label, delta, positiveTone }: { label: string; delta: number; positiveTone?: boolean }) {
+  const sign = delta > 0 ? '+' : ''
+  // For "hired", a positive delta is good (green). For "refused", positive is bad (red).
+  // For neutral (in_progress, total), we just show the sign.
+  let tone = 'text-foreground'
+  if (positiveTone === true) tone = delta > 0 ? 'text-emerald-600' : delta < 0 ? 'text-rose-600' : 'text-muted-foreground'
+  else if (positiveTone === false) tone = delta > 0 ? 'text-rose-600' : delta < 0 ? 'text-emerald-600' : 'text-muted-foreground'
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`text-xl font-bold tabular-nums ${tone}`}>{sign}{delta}</div>
     </div>
   )
 }
