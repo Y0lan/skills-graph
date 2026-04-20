@@ -15,6 +15,25 @@ export interface ScanDetailDialogProps {
   onOverrideCreated?: () => void
 }
 
+interface ScanEngineResult {
+  engine: string
+  category: string
+  result: string | null
+}
+
+type ScanEngineSummary =
+  | { name: 'ClamAV'; available: false; reason: string }
+  | { name: 'ClamAV'; available: true; clean: boolean; threats: string[] }
+  | { name: 'VirusTotal'; available: false; reason: string }
+  | {
+      name: 'VirusTotal'
+      available: true
+      clean: boolean
+      stats: { malicious: number; suspicious: number; undetected: number; harmless: number; failure?: number }
+      totalEngines: number
+      perEngine: ScanEngineResult[]
+    }
+
 interface ScanData {
   status: 'pending' | 'clean' | 'infected' | 'error' | 'skipped'
   scannedAt: string | null
@@ -23,6 +42,7 @@ interface ScanData {
     scannedAt: string
     engines: string[]
     threats: string[]
+    engineSummaries?: ScanEngineSummary[]
   } | null
   override: {
     id: string
@@ -48,6 +68,91 @@ const TONE_CLASSES = {
   red: 'bg-rose-500/15 text-rose-700 dark:text-rose-400',
   amber: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
   muted: 'bg-muted text-muted-foreground',
+}
+
+function EnginePanel({ summary }: { summary: ScanEngineSummary }) {
+  const [showAll, setShowAll] = useState(false)
+
+  // Header line: name + status pill
+  const Header = ({ tone, label }: { tone: 'green' | 'red' | 'amber' | 'muted'; label: string }) => (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{summary.name}</span>
+        <Badge className={`text-[10px] ${TONE_CLASSES[tone]}`}>{label}</Badge>
+      </div>
+    </div>
+  )
+
+  if (!summary.available) {
+    return (
+      <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+        <Header tone="muted" label="Indisponible" />
+        <p className="text-[11px] text-muted-foreground italic">
+          {summary.reason}
+        </p>
+      </div>
+    )
+  }
+
+  if (summary.name === 'ClamAV') {
+    return (
+      <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+        <Header tone={summary.clean ? 'green' : 'red'} label={summary.clean ? 'Propre' : `Infecté · ${summary.threats.length}`} />
+        {!summary.clean && summary.threats.length > 0 && (
+          <ul className="rounded border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30 p-2 space-y-0.5 text-[11px] font-mono">
+            {summary.threats.map((t, i) => <li key={i}>{t}</li>)}
+          </ul>
+        )}
+        {summary.clean && (
+          <p className="text-[11px] text-muted-foreground">Aucune signature détectée par le moteur local.</p>
+        )}
+      </div>
+    )
+  }
+
+  // VirusTotal — show stats + per-engine grid
+  const detections = summary.perEngine.filter(r => r.category === 'malicious' || r.category === 'suspicious')
+  const visible = showAll ? summary.perEngine : detections.length > 0 ? detections : summary.perEngine.slice(0, 12)
+
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+      <Header
+        tone={summary.clean ? 'green' : 'red'}
+        label={summary.clean
+          ? `${summary.totalEngines} moteurs · 0 détection`
+          : `${summary.totalEngines} moteurs · ${detections.length} détection${detections.length > 1 ? 's' : ''}`}
+      />
+
+      {/* Stats row */}
+      <div className="flex flex-wrap gap-1.5 text-[10px]">
+        <Badge variant="outline" className="text-emerald-600">Propre {summary.stats.harmless + summary.stats.undetected}</Badge>
+        {summary.stats.malicious > 0 && <Badge variant="outline" className="text-rose-600">Malicieux {summary.stats.malicious}</Badge>}
+        {summary.stats.suspicious > 0 && <Badge variant="outline" className="text-amber-600">Suspect {summary.stats.suspicious}</Badge>}
+        {summary.stats.failure ? <Badge variant="outline" className="text-muted-foreground">Échec {summary.stats.failure}</Badge> : null}
+      </div>
+
+      {/* Per-engine grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-64 overflow-y-auto">
+        {visible.map(r => {
+          const tone = r.category === 'malicious' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400'
+            : r.category === 'suspicious' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+            : r.category === 'undetected' || r.category === 'harmless' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+            : 'bg-muted text-muted-foreground'
+          return (
+            <div key={r.engine} className={`text-[10px] rounded px-1.5 py-0.5 truncate ${tone}`} title={r.result ? `${r.engine}: ${r.result}` : r.engine}>
+              {r.engine}{r.result ? `: ${r.result}` : ''}
+            </div>
+          )
+        })}
+      </div>
+
+      {summary.perEngine.length > visible.length && (
+        <Button variant="ghost" size="sm" className="h-6 text-[11px] w-full" onClick={() => setShowAll(s => !s)}>
+          {showAll ? 'Masquer' : `Voir tous les ${summary.perEngine.length} moteurs`}
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export default function ScanDetailDialog({ open, onClose, documentId, filename, onOverrideCreated }: ScanDetailDialogProps) {
@@ -149,28 +254,35 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
               )}
             </div>
 
-            {/* Engines summary */}
-            {data.result && data.result.engines.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Moteurs ({data.result.engines.length})</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.result.engines.map(e => (
-                    <Badge key={e} variant="secondary" className="text-[10px]">{e}</Badge>
-                  ))}
-                </div>
+            {/* Per-engine summaries (ClamAV + VirusTotal panels) */}
+            {data.result?.engineSummaries && data.result.engineSummaries.length > 0 ? (
+              <div className="space-y-2">
+                {data.result.engineSummaries.map((s, i) => <EnginePanel key={i} summary={s} />)}
               </div>
-            )}
-
-            {/* Threats list */}
-            {data.result && data.result.threats.length > 0 && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium uppercase tracking-wide text-rose-600 dark:text-rose-400">Détections ({data.result.threats.length})</p>
-                <ul className="rounded-md border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30 p-3 space-y-1 text-xs">
-                  {data.result.threats.map((t, i) => (
-                    <li key={i} className="font-mono break-words">{t}</li>
-                  ))}
-                </ul>
-              </div>
+            ) : (
+              // Legacy fallback for scan_result rows written before the per-engine refactor.
+              <>
+                {data.result && data.result.engines.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Moteurs ({data.result.engines.length})</p>
+                    <div className="flex flex-wrap gap-1">
+                      {data.result.engines.map(e => (
+                        <Badge key={e} variant="secondary" className="text-[10px]">{e}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {data.result && data.result.threats.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium uppercase tracking-wide text-rose-600 dark:text-rose-400">Détections ({data.result.threats.length})</p>
+                    <ul className="rounded-md border border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30 p-3 space-y-1 text-xs">
+                      {data.result.threats.map((t, i) => (
+                        <li key={i} className="font-mono break-words">{t}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
 
             {/* Active override */}
