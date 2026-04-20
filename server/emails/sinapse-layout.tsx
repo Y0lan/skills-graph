@@ -68,15 +68,25 @@ export function SinapseLayout({ children }: SinapseLayoutProps) {
                             fontFamily: BRAND.fontFamily,
                           }}
                         >
-                          <p
-                            style={{
-                              margin: '0 0 4px 0',
-                              fontSize: '14px',
-                              color: BRAND.text,
-                            }}
+                          <Link
+                            href={BRAND.website}
+                            style={{ textDecoration: 'none', display: 'inline-block' }}
                           >
-                            <strong>{BRAND.team}</strong> &mdash; {BRAND.name}
-                          </p>
+                            <img
+                              src={BRAND.logoUrl}
+                              alt={BRAND.name}
+                              width={BRAND.logoWidthPx}
+                              style={{
+                                display: 'block',
+                                border: 0,
+                                outline: 'none',
+                                width: `${BRAND.logoWidthPx}px`,
+                                maxWidth: `${BRAND.logoWidthPx}px`,
+                                height: 'auto',
+                                marginBottom: '8px',
+                              }}
+                            />
+                          </Link>
                           <p
                             style={{
                               margin: '0 0 12px 0',

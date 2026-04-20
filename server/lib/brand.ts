@@ -32,6 +32,12 @@ export const BRAND = {
   linkedin: 'https://www.linkedin.com/company/sinapse-nc/',
   linkedinLabel: 'LinkedIn',
 
+  // Logo for emails. MUST be a publicly-reachable absolute URL — email
+  // clients can't fetch from localhost or behind auth. Override via
+  // EMAIL_LOGO_URL env var if hosted elsewhere (CDN, marketing site).
+  logoUrl: process.env.EMAIL_LOGO_URL ?? 'https://radar.sinapse.nc/logo-sinapse-crop.png',
+  logoWidthPx: 140,
+
   // Email layout
   emailMaxWidth: 560,
 } as const
