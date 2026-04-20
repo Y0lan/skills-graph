@@ -13,7 +13,7 @@ export default function DocsChip({ docsSlotCount }: DocsChipProps) {
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      <TooltipTrigger className="cursor-help">
         <Badge variant="outline" className={`text-[10px] gap-1 ${tone}`}>
           <FolderOpen className="h-3 w-3" />
           Dossier {count}/3

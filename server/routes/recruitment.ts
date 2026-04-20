@@ -662,9 +662,9 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     // Item 8: publish to the event bus so any open SSE stream refreshes
     // status badges + actions without manual reload.
     recruitmentBus.publish('status_changed', {
-      candidatureId: req.params.id,
+      candidatureId: String(req.params.id),
       statutFrom: current.statut,
-      statutTo: statut,
+      statutTo: String(statut),
       byUserSlug: user.slug || 'unknown',
     })
   } catch (err) {

@@ -2,11 +2,11 @@ import type { Request, Response, NextFunction } from 'express'
 import type { AuthUser } from '../lib/types.js'
 
 // First entry is the default lead used by intake-service for unattributed candidatures.
-export const RECRUITMENT_LEADS = [
+export const RECRUITMENT_LEADS: readonly string[] = [
   'yolan-maldonado',
   'olivier-faivre',
   'guillaume-benoit',
-] as const
+]
 
 export const DEFAULT_LEAD_SLUG = RECRUITMENT_LEADS[0]
 

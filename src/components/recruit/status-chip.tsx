@@ -23,7 +23,7 @@ export default function StatusChip({ statut, enteredStatusAt, compact }: StatusC
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      <TooltipTrigger className="cursor-help">
         <span
           className={`inline-flex items-center gap-1 ${sla.isBreached ? 'ring-1 ring-rose-400 ring-offset-1 ring-offset-background rounded' : ''}`}
         >

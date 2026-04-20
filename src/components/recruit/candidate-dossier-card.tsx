@@ -59,15 +59,12 @@ function ScanBadge({ doc }: { doc: CandidatureDocument }) {
   return (
     <>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="inline-flex cursor-pointer rounded p-0.5 hover:bg-muted/60"
-            aria-label={`Voir le détail du scan de ${doc.filename}`}
-          >
-            {icon}
-          </button>
+        <TooltipTrigger
+          onClick={() => setOpen(true)}
+          className="inline-flex cursor-pointer rounded p-0.5 hover:bg-muted/60"
+          aria-label={`Voir le détail du scan de ${doc.filename}`}
+        >
+          {icon}
         </TooltipTrigger>
         <TooltipContent className="text-xs max-w-[220px]">
           {doc.scan_status === 'clean'

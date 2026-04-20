@@ -10,9 +10,13 @@ import { getDb } from './db.js'
 export const DAILY_RUN_CAP = 50
 
 export class ExtractionBudgetExhausted extends Error {
-  constructor(public readonly userSlug: string, public readonly day: string) {
+  readonly userSlug: string
+  readonly day: string
+  constructor(userSlug: string, day: string) {
     super(`Quota d’extractions atteint pour aujourd’hui (${DAILY_RUN_CAP}/jour). Réessayez demain ou contactez un admin.`)
     this.name = 'ExtractionBudgetExhausted'
+    this.userSlug = userSlug
+    this.day = day
   }
 }
 
