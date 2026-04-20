@@ -228,7 +228,7 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
       type TEXT NOT NULL DEFAULT 'status_change'
-        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','evaluation_reopened','onboarding')),
+        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
       statut_from TEXT,
       statut_to TEXT,
       notes TEXT,
@@ -347,6 +347,34 @@ export function initDatabase(): void {
   // Idempotent: add content_md and email_snapshot if table has new CHECK but missing columns
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN content_md TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN email_snapshot TEXT') } catch { /* already exists */ }
+
+  // Idempotent migration: widen CHECK to add email_clicked / email_delivered / email_complained / email_delay
+  const missingDeliverabilityEventTypes = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return !tableInfo?.sql?.includes("'email_clicked'")
+  })()
+
+  if (missingDeliverabilityEventTypes) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS candidature_events_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'status_change'
+          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
+        statut_from TEXT,
+        statut_to TEXT,
+        notes TEXT,
+        content_md TEXT,
+        email_snapshot TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO candidature_events_new SELECT * FROM candidature_events;
+      DROP TABLE candidature_events;
+      ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
+    `)
+  }
 
   // Idempotent: add event_id FK to candidature_documents for linking files to transition events
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN event_id INTEGER REFERENCES candidature_events(id)') } catch { /* already exists */ }

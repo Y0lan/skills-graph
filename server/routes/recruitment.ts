@@ -2119,39 +2119,64 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
 
   // Process email.clicked events
   if (payload.type === 'email.clicked') {
-    try {
-      const data = payload.data as Record<string, unknown>
-      const emailId = data.email_id as string | undefined
-      if (!emailId) return
+    recordDeliverabilityEvent(payload, 'email_clicked', (emailId) => `Lien cliqué dans l'email (messageId: ${emailId})`)
+  }
 
-      const event = getDb().prepare(`
-        SELECT ce.candidature_id
-        FROM candidature_events ce
-        WHERE ce.type = 'email_sent'
-        AND json_extract(ce.email_snapshot, '$.messageId') = ?
-      `).get(emailId) as { candidature_id: string } | undefined
+  // Process email.delivered events (server accepted the message)
+  if (payload.type === 'email.delivered') {
+    recordDeliverabilityEvent(payload, 'email_delivered', (emailId) => `Email délivré au serveur destinataire (messageId: ${emailId})`)
+  }
 
-      if (!event) return
+  // Process email.complained events (user marked as spam)
+  if (payload.type === 'email.complained') {
+    recordDeliverabilityEvent(payload, 'email_complained', (emailId) => `Email signalé comme spam par le destinataire (messageId: ${emailId})`)
+  }
 
-      // Idempotency check
-      const existing = getDb().prepare(`
-        SELECT id FROM candidature_events
-        WHERE candidature_id = ? AND type = 'email_clicked'
-        AND notes LIKE ?
-      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
-
-      if (!existing) {
-        getDb().prepare(`
-          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-          VALUES (?, 'email_clicked', ?, 'system')
-        `).run(event.candidature_id, `Lien cliqué dans l'email (messageId: ${emailId})`)
-        console.log(`[Webhook] Recorded email_clicked for candidature ${event.candidature_id}`)
-      }
-    } catch {
-      console.error('[WEBHOOK] Error processing email.clicked event')
-    }
+  // Process email.delivery_delayed events (soft bounce / retry)
+  if (payload.type === 'email.delivery_delayed') {
+    recordDeliverabilityEvent(payload, 'email_delay', (emailId) => `Livraison retardée — Resend réessaie (messageId: ${emailId})`)
   }
 })
+
+/** Shared helper: look up the originating email_sent event by messageId, then
+ * insert a deliverability event (open / click / delivered / bounced / etc.)
+ * with idempotency by messageId in notes. */
+function recordDeliverabilityEvent(
+  payload: Record<string, unknown>,
+  eventType: 'email_clicked' | 'email_delivered' | 'email_complained' | 'email_delay',
+  buildNotes: (emailId: string) => string,
+): void {
+  try {
+    const data = payload.data as Record<string, unknown>
+    const emailId = data.email_id as string | undefined
+    if (!emailId) return
+
+    const found = getDb().prepare(`
+      SELECT ce.candidature_id
+      FROM candidature_events ce
+      WHERE ce.type = 'email_sent'
+      AND json_extract(ce.email_snapshot, '$.messageId') = ?
+    `).get(emailId) as { candidature_id: string } | undefined
+
+    if (!found) return
+
+    const existing = getDb().prepare(`
+      SELECT id FROM candidature_events
+      WHERE candidature_id = ? AND type = ?
+      AND notes LIKE ?
+    `).get(found.candidature_id, eventType, `%${emailId}%`) as { id: number } | undefined
+
+    if (!existing) {
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, ?, ?, 'system')
+      `).run(found.candidature_id, eventType, buildNotes(emailId))
+      console.log(`[Webhook] Recorded ${eventType} for candidature ${found.candidature_id}`)
+    }
+  } catch {
+    console.error(`[WEBHOOK] Error processing ${eventType} event`)
+  }
+}
 
 // ─── Pipeline Health Check ──────────────────────────────────────────
 

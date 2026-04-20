@@ -30,11 +30,20 @@ function parseSnapshot(snapshot: string | null): { subject?: string; body?: stri
  * that triggered it (looked up by closest preceding status_change, since the
  * backend inserts email_sent right after status_change in the same handler).
  */
+const DELIVERABILITY_EVENT_TYPES = [
+  'email_open',
+  'email_clicked',
+  'email_delivered',
+  'email_complained',
+  'email_delay',
+  'email_failed',
+] as const
+
 function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
   const sorted = [...events].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const statusMap = new Map<string, Set<string>>()
   for (const e of sorted) {
-    if (e.type === 'email_open' || e.type === 'email_failed' || e.type === 'email_clicked') {
+    if ((DELIVERABILITY_EVENT_TYPES as readonly string[]).includes(e.type)) {
       const match = e.notes?.match(/messageId:\s*([^\s)]+)/)
       if (match) {
         const id = match[1]
@@ -76,8 +85,13 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
 
   if (entries.length === 0) return null
 
-  const openedCount = entries.filter(e => e.statuses.has('email_open')).length
+  // "Lu" = clicked (verified read). We treat clicks as the trustworthy "opened"
+  // signal because the pixel-based email_open is unreliable (Apple MPP inflates
+  // it, Gmail image-blocking deflates it). We still track email_open as a soft
+  // fallback tooltip but do not render it as a strong badge.
+  const readCount = entries.filter(e => e.statuses.has('email_clicked')).length
   const bouncedCount = entries.filter(e => e.statuses.has('email_failed')).length
+  const complainedCount = entries.filter(e => e.statuses.has('email_complained')).length
 
   const toggle = (id: number) => {
     setExpanded(prev => {
@@ -95,7 +109,8 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
         <span className="text-sm font-medium">Emails envoyés</span>
         <span className="text-xs text-muted-foreground">
           {entries.length} envoyé{entries.length > 1 ? 's' : ''}
-          {openedCount > 0 && ` · ${openedCount} ouvert${openedCount > 1 ? 's' : ''}`}
+          {readCount > 0 && ` · ${readCount} lu${readCount > 1 ? 's' : ''}`}
+          {complainedCount > 0 && ` · ${complainedCount} signalé${complainedCount > 1 ? 's' : ''} spam`}
           {bouncedCount > 0 && ` · ${bouncedCount} rebondi${bouncedCount > 1 ? 's' : ''}`}
         </span>
       </div>
@@ -121,27 +136,34 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                   {entry.subject ?? 'Email'}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                    Envoyé
-                  </Badge>
-                  {entry.statuses.has('email_open') && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                      Ouvert
-                    </Badge>
-                  )}
-                  {entry.statuses.has('email_clicked') && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">
-                      Cliqué
-                    </Badge>
-                  )}
-                  {entry.statuses.has('email_failed') && (
+                  {/* Badge hierarchy (weakest → strongest): Envoyé < Livré < Lu.
+                      Bad-path badges (Retardé / Spam / Rebondi) are always shown
+                      when present, regardless of the happy-path state. */}
+                  {entry.statuses.has('email_failed') ? (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
                       Rebondi
                     </Badge>
-                  )}
-                  {!entry.statuses.has('email_open') && !entry.statuses.has('email_failed') && (
+                  ) : entry.statuses.has('email_clicked') ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" title="Le candidat a cliqué un lien dans l'email — ouverture confirmée">
+                      Lu
+                    </Badge>
+                  ) : entry.statuses.has('email_delivered') ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" title="Reçu par le serveur mail du destinataire">
+                      Livré
+                    </Badge>
+                  ) : (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
-                      Non ouvert
+                      Envoyé
+                    </Badge>
+                  )}
+                  {entry.statuses.has('email_complained') && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="Le destinataire a marqué l'email comme spam">
+                      Spam
+                    </Badge>
+                  )}
+                  {entry.statuses.has('email_delay') && !entry.statuses.has('email_delivered') && !entry.statuses.has('email_failed') && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title="Livraison temporairement retardée — Resend réessaie">
+                      Retardé
                     </Badge>
                   )}
                 </span>

@@ -109,7 +109,14 @@ function buildDeliveryStatusMap(events: CandidatureEvent[]): Map<string, Set<str
   const statusMap = new Map<string, Set<string>>()
 
   for (const e of events) {
-    if (e.type === 'email_open' || e.type === 'email_failed' || e.type === 'email_clicked') {
+    if (
+      e.type === 'email_open' ||
+      e.type === 'email_failed' ||
+      e.type === 'email_clicked' ||
+      e.type === 'email_delivered' ||
+      e.type === 'email_complained' ||
+      e.type === 'email_delay'
+    ) {
       // Extract messageId from notes (format: "... (messageId: xxx)")
       const match = e.notes?.match(/messageId:\s*([^\s)]+)/)
       if (match) {
@@ -126,25 +133,36 @@ function buildDeliveryStatusMap(events: CandidatureEvent[]): Map<string, Set<str
 function EmailDeliveryBadges({ messageId, deliveryMap }: { messageId: string | null; deliveryMap: Map<string, Set<string>> }) {
   if (!messageId) return null
   const statuses = deliveryMap.get(messageId)
-
+  // Same hierarchy as CandidateEmailsCard. Click is treated as the confirmed
+  // "read" signal; pixel-based email_open is ignored because it is unreliable
+  // (Apple MPP + Gmail image blocking).
   return (
     <span className="inline-flex items-center gap-1 ml-1">
-      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-        Envoye
-      </Badge>
-      {statuses?.has('email_open') && (
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
-          Ouvert
-        </Badge>
-      )}
-      {statuses?.has('email_failed') && (
+      {statuses?.has('email_failed') ? (
         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
           Rebondi
         </Badge>
+      ) : statuses?.has('email_clicked') ? (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" title="Le candidat a cliqué un lien dans l'email — ouverture confirmée">
+          Lu
+        </Badge>
+      ) : statuses?.has('email_delivered') ? (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" title="Reçu par le serveur mail du destinataire">
+          Livré
+        </Badge>
+      ) : (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
+          Envoyé
+        </Badge>
       )}
-      {statuses?.has('email_clicked') && (
-        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300">
-          Lien clique
+      {statuses?.has('email_complained') && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="Le destinataire a marqué l'email comme spam">
+          Spam
+        </Badge>
+      )}
+      {statuses?.has('email_delay') && !statuses?.has('email_delivered') && !statuses?.has('email_failed') && (
+        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title="Livraison temporairement retardée">
+          Retardé
         </Badge>
       )}
     </span>
@@ -221,11 +239,19 @@ function NoteContent({ content }: { content: string }) {
 
 function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap: Map<string, Set<string>> }) {
   const isDocument = event.type === 'document'
-  const isEmailSent = event.type === 'email_sent' || (event.emailSnapshot && event.type !== 'email_open' && event.type !== 'email_failed' && event.type !== 'email_clicked')
+  const isEmailSent = event.type === 'email_sent'
   const messageId = extractMessageId(event.emailSnapshot)
 
-  // Skip rendering email_open / email_failed / email_clicked rows (shown as badges on the email_sent row)
-  if (event.type === 'email_open' || event.type === 'email_failed' || event.type === 'email_clicked') {
+  // Skip rendering deliverability events as separate rows — they surface as
+  // badges on the parent email_sent row instead.
+  if (
+    event.type === 'email_open' ||
+    event.type === 'email_failed' ||
+    event.type === 'email_clicked' ||
+    event.type === 'email_delivered' ||
+    event.type === 'email_complained' ||
+    event.type === 'email_delay'
+  ) {
     return null
   }
 
