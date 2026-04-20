@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
 import { safeJsonParse } from './types.js'
+import { buildCanonicalFilename, extractExtension, formatDisplayName } from './file-naming.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -398,6 +399,52 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN deleted_at TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
+
+  // ─── Idempotent backfill: canonical display_filename + candidate name ─
+  // Applies the naming convention defined in server/lib/file-naming.ts to
+  // every existing candidate and document. Re-runnable: skips rows already
+  // in canonical form.
+  try {
+    // 1. Normalize candidates.name → "Firstname LASTNAME".
+    const nameRows = db.prepare('SELECT id, name FROM candidates').all() as { id: string; name: string }[]
+    const updateCandidateName = db.prepare('UPDATE candidates SET name = ? WHERE id = ?')
+    let renamedCandidates = 0
+    for (const row of nameRows) {
+      const normalized = formatDisplayName(row.name)
+      if (normalized && normalized !== row.name) {
+        updateCandidateName.run(normalized, row.id)
+        renamedCandidates++
+      }
+    }
+    if (renamedCandidates > 0) {
+      console.log(`[MIGRATION] Normalized ${renamedCandidates} candidate name(s) to "Firstname LASTNAME" format`)
+    }
+
+    // 2. Backfill display_filename for documents where it's NULL.
+    //    Use the document's created_at as the date in the canonical filename so
+    //    retro-named files still match "when it was uploaded".
+    const orphanDocs = db.prepare(`
+      SELECT d.id, d.type, d.filename, d.created_at, cand.name AS candidate_name
+      FROM candidature_documents d
+      JOIN candidatures c ON c.id = d.candidature_id
+      JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE d.display_filename IS NULL
+    `).all() as { id: string; type: string; filename: string; created_at: string; candidate_name: string }[]
+    const updateDoc = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?')
+    let renamedDocs = 0
+    for (const d of orphanDocs) {
+      if (!d.candidate_name) continue
+      const parsed = new Date(d.created_at.replace(' ', 'T') + 'Z')
+      const canonical = buildCanonicalFilename(d.type, d.candidate_name, extractExtension(d.filename), isNaN(+parsed) ? new Date() : parsed)
+      updateDoc.run(canonical, d.id)
+      renamedDocs++
+    }
+    if (renamedDocs > 0) {
+      console.log(`[MIGRATION] Backfilled display_filename for ${renamedDocs} document(s)`)
+    }
+  } catch (err) {
+    console.error('[MIGRATION] File-naming backfill failed (non-blocking):', err)
+  }
 
   // ─── One-shot dedup of candidates by email ──────────────────────────
   // Before the intake fix shipped, applying to two postes with the same email

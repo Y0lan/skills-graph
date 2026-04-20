@@ -1480,11 +1480,10 @@ protectedRouter.get('/documents/:docId/preview', async (req, res) => {
     return
   }
 
-  if (result.contentType !== 'application/pdf') {
-    res.status(406).json({ error: 'Aperçu disponible uniquement pour les PDF', contentType: result.contentType })
-    return
-  }
-
+  // Serve any type with Content-Disposition: inline. PDFs and images render in
+  // the browser; anything else falls back to the browser's default handler
+  // (usually a download prompt), which is exactly what a user asking to "view"
+  // a .docx would get anyway — same UX, no 406.
   const user = getUser(req)
   try {
     getDb().prepare(`

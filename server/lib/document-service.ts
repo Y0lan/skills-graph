@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
+import { buildCanonicalFilename, extractExtension } from './file-naming.js'
 import { extractAboroText, extractAboroProfile, type AboroProfile } from './aboro-extraction.js'
 import { calculateSoftSkillScore } from './soft-skill-scoring.js'
 import { calculateGlobalScore } from './compatibility.js'
@@ -39,12 +40,26 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     file.filename,
   )
 
+  // Compute the canonical display_filename from the candidate's name — the
+  // original filename stays on disk (in `filename`), but UI + downloads use
+  // this renamed version (CV_LEFEVRE_Pierre_20260420.pdf).
+  const candidateRow = getDb().prepare(`
+    SELECT cand.name
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    WHERE c.id = ?
+  `).get(candidatureId) as { name: string } | undefined
+  const candidateName = candidateRow?.name ?? ''
+  const displayFilename = candidateName
+    ? buildCanonicalFilename(docType, candidateName, extractExtension(file.filename))
+    : null
+
   // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)
   const docId = crypto.randomUUID()
   getDb().prepare(`
-    INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(docId, candidatureId, docType, file.filename, storedPath, userSlug)
+    INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by, display_filename)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(docId, candidatureId, docType, file.filename, storedPath, userSlug, displayFilename)
 
   // Log event
   getDb().prepare(`

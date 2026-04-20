@@ -2,7 +2,14 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle, ShieldCheck, ShieldAlert, Loader } from 'lucide-react'
+import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle, ShieldCheck, ShieldAlert, Loader, Settings2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import CandidateDocumentsPanel from './candidate-documents-panel'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -100,6 +107,7 @@ export default function CandidateDossierCard({
   currentStatut,
 }: CandidateDossierCardProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
+  const [panelOpen, setPanelOpen] = useState(false)
 
   // Polling fallback for live scan-status updates. SSE handles most cases, but
   // if the scan finishes within ~1s of upload (typical when only VirusTotal
@@ -153,29 +161,49 @@ export default function CandidateDossierCard({
       {hasCv && (
         <div className="flex flex-wrap gap-2">
           {cvDoc && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Button
                 size="sm"
                 variant="default"
-                onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/download`, '_blank')}
+                onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/preview`, '_blank')}
                 className="gap-2"
+                title="Ouvrir le CV dans un nouvel onglet (aperçu)"
               >
                 <FileText className="h-4 w-4" />
                 Ouvrir CV
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => window.open(`/api/recruitment/documents/${cvDoc.id}/download`, '_blank')}
+                title="Télécharger le CV"
+              >
+                <Download className="h-3.5 w-3.5" />
               </Button>
               <ScanBadge doc={cvDoc} />
             </div>
           )}
           {lettreDoc && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/download`, '_blank')}
+                onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/preview`, '_blank')}
                 className="gap-2"
+                title="Ouvrir la lettre dans un nouvel onglet (aperçu)"
               >
                 <FileText className="h-4 w-4" />
                 Ouvrir Lettre
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => window.open(`/api/recruitment/documents/${lettreDoc.id}/download`, '_blank')}
+                title="Télécharger la lettre"
+              >
+                <Download className="h-3.5 w-3.5" />
               </Button>
               <ScanBadge doc={lettreDoc} />
             </div>
@@ -191,6 +219,16 @@ export default function CandidateDossierCard({
               ZIP
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setPanelOpen(true)}
+            className="gap-1.5 text-xs"
+            title="Voir tous les fichiers, renommer, supprimer"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            Gérer
+          </Button>
         </div>
       )}
 
@@ -201,7 +239,7 @@ export default function CandidateDossierCard({
             <div key={doc.id} className="flex items-center justify-between gap-2 py-1 px-1.5 rounded hover:bg-muted/50 group">
               <div className="flex items-center gap-2 min-w-0">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs truncate">{doc.filename}</span>
+                <span className="text-xs truncate">{doc.display_filename ?? doc.filename}</span>
                 <Badge variant="secondary" className="text-[9px] shrink-0">
                   {DOC_TYPE_LABELS[doc.type] ?? doc.type}
                 </Badge>
@@ -271,6 +309,22 @@ export default function CandidateDossierCard({
           Uploader
         </Button>
       </div>
+
+      {/* Full documents panel — rename, delete, preview, download per file. */}
+      <Dialog open={panelOpen} onOpenChange={setPanelOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Gérer les fichiers</DialogTitle>
+          </DialogHeader>
+          <CandidateDocumentsPanel
+            candidatureId={candidatureId}
+            documents={documents}
+            setDocuments={setDocuments}
+            setEvents={setEvents}
+            currentStatut={currentStatut}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
