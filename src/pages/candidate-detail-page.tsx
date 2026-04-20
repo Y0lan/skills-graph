@@ -11,6 +11,7 @@ import MultiPosteCard from '@/components/recruit/multi-poste-card'
 import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
 import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
 import CandidateDossierCard from '@/components/recruit/candidate-dossier-card'
+import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
@@ -686,6 +687,18 @@ export default function CandidateDetailPage() {
                       <p className="text-xs text-muted-foreground">Aucune action disponible</p>
                     )}
                   </div>
+                </div>
+
+                {/* Full file manager — inline under the 3-col grid. Rename,
+                    delete, preview, download per document (no popup). */}
+                <div className="pt-4 border-t">
+                  <CandidateDocumentsPanel
+                    candidatureId={c.id}
+                    documents={cDocuments}
+                    setDocuments={setDocuments}
+                    setEvents={setEvents}
+                    currentStatut={c.statut}
+                  />
                 </div>
               </CardContent>
             </Card>

@@ -2,14 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle, ShieldCheck, ShieldAlert, Loader, Settings2 } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import CandidateDocumentsPanel from './candidate-documents-panel'
+import { FileText, Download, FolderArchive, Upload, Loader2, AlertTriangle, ShieldCheck, ShieldAlert, Loader } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -107,7 +100,6 @@ export default function CandidateDossierCard({
   currentStatut,
 }: CandidateDossierCardProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
-  const [panelOpen, setPanelOpen] = useState(false)
 
   // Polling fallback for live scan-status updates. SSE handles most cases, but
   // if the scan finishes within ~1s of upload (typical when only VirusTotal
@@ -220,16 +212,6 @@ export default function CandidateDossierCard({
               Tout (.zip)
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setPanelOpen(true)}
-            className="gap-1.5 text-xs"
-            title="Voir tous les fichiers, renommer, supprimer"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            Gérer
-          </Button>
         </div>
       )}
 
@@ -311,21 +293,6 @@ export default function CandidateDossierCard({
         </Button>
       </div>
 
-      {/* Full documents panel — rename, delete, preview, download per file. */}
-      <Dialog open={panelOpen} onOpenChange={setPanelOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Gérer les fichiers</DialogTitle>
-          </DialogHeader>
-          <CandidateDocumentsPanel
-            candidatureId={candidatureId}
-            documents={documents}
-            setDocuments={setDocuments}
-            setEvents={setEvents}
-            currentStatut={currentStatut}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
