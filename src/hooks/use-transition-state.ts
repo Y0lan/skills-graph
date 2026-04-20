@@ -122,7 +122,7 @@ export function useTransitionState(
     setTransitionIncludeReason(false)
     setTransitionEmailSubject('')
     setTransitionEmailBody('')
-    setTransitionEmailExpanded(false)
+    setTransitionEmailExpanded(true)
     setTransitionShowMarkdownPreview(false)
     setTransitionAboroDate('')
     setTransitionHasEmailTemplate(false)
