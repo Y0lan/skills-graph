@@ -129,10 +129,9 @@ export default function CandidateDocumentsPanel({
 
   const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
   const uploadedTypes = new Set(documents.map(d => d.type))
-  // Count only the EXPECTED types that are covered — "2/1" was misleading
-  // when a candidate had an extra doc beyond the checklist (e.g. lettre not
-  // expected at preselectionne stage yet already uploaded).
-  const matchedExpected = expectedTypes.filter(t => uploadedTypes.has(t)).length
+  // Candidate-facing slot count (CV + Lettre) — same semantic as DocsChip on
+  // the recruit list so "Dossier 2/2" there and the panel here agree.
+  const slotCount = ['cv', 'lettre'].filter(t => uploadedTypes.has(t)).length
 
   return (
     <Card className="lg:col-span-2">
@@ -140,7 +139,7 @@ export default function CandidateDocumentsPanel({
         <CardTitle className="text-base">
           Documents
           <span className="text-xs font-normal text-muted-foreground ml-2">
-            {documents.length} déposé{documents.length !== 1 ? 's' : ''} · {matchedExpected}/{expectedTypes.length} attendu{expectedTypes.length !== 1 ? 's' : ''}
+            {slotCount}/2 candidat · {documents.length} total
           </span>
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -160,15 +159,31 @@ export default function CandidateDocumentsPanel({
         </div>
       </CardHeader>
       <CardContent>
-        {/* Expected documents checklist */}
+        {/* Candidate dossier — the three documents the candidate is expected
+            to provide, shown regardless of pipeline stage so the recruiter
+            always knows at a glance which of the core pieces are missing. */}
         <div className="flex flex-wrap gap-1.5 mb-3">
-          {expectedTypes.map(type => {
+          {(['cv', 'lettre', 'aboro'] as const).map(type => {
             const uploaded = uploadedTypes.has(type)
             return (
               <Badge
                 key={type}
                 variant={uploaded ? 'default' : 'outline'}
-                className={uploaded ? 'bg-green-600 hover:bg-green-700 text-[10px]' : 'text-[10px] border-dashed'}
+                className={uploaded ? 'bg-green-600 hover:bg-green-700 text-[10px]' : 'text-[10px] border-dashed text-muted-foreground'}
+              >
+                {uploaded ? '✓' : '○'} {DOC_TYPE_LABELS[type]}
+              </Badge>
+            )
+          })}
+          {/* Stage-specific extras (entretien, proposition, administratif) —
+              only show at later pipeline stages to avoid noise early on. */}
+          {expectedTypes.filter(t => !['cv', 'lettre', 'aboro'].includes(t)).map(type => {
+            const uploaded = uploadedTypes.has(type)
+            return (
+              <Badge
+                key={type}
+                variant={uploaded ? 'default' : 'outline'}
+                className={uploaded ? 'bg-green-600 hover:bg-green-700 text-[10px]' : 'text-[10px] border-dashed text-muted-foreground'}
               >
                 {uploaded ? '✓' : '○'} {DOC_TYPE_LABELS[type] ?? type}
               </Badge>
