@@ -566,7 +566,7 @@ export default function RecruitPage() {
                   <Label>Catégories associées</Label>
                   <span className="text-[11px] text-muted-foreground">{newRoleCategoryIds.length}/{categories.length} sélectionnée{newRoleCategoryIds.length > 1 ? 's' : ''}</span>
                 </div>
-                <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-1">
+                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                   {categories.map(cat => {
                     const checked = newRoleCategoryIds.includes(cat.id)
                     return (

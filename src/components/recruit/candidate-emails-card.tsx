@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Badge } from '@/components/ui/badge'
 import { formatDateTime, STATUT_LABELS } from '@/lib/constants'
+import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
 interface EmailEntry {
@@ -140,31 +141,19 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                       Bad-path badges (Retardé / Spam / Rebondi) are always shown
                       when present, regardless of the happy-path state. */}
                   {entry.statuses.has('email_failed') ? (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
-                      Rebondi
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.bounced}`}>Rebondi</Badge>
                   ) : entry.statuses.has('email_clicked') ? (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" title="Le candidat a cliqué un lien dans l'email — ouverture confirmée">
-                      Lu
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.read}`} title="Le candidat a cliqué un lien dans l'email — ouverture confirmée">Lu</Badge>
                   ) : entry.statuses.has('email_delivered') ? (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" title="Reçu par le serveur mail du destinataire">
-                      Livré
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.delivered}`} title="Reçu par le serveur mail du destinataire">Livré</Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">
-                      Envoyé
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.sent}`}>Envoyé</Badge>
                   )}
                   {entry.statuses.has('email_complained') && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" title="Le destinataire a marqué l'email comme spam">
-                      Spam
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.spam}`} title="Le destinataire a marqué l'email comme spam">Spam</Badge>
                   )}
                   {entry.statuses.has('email_delay') && !entry.statuses.has('email_delivered') && !entry.statuses.has('email_failed') && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" title="Livraison temporairement retardée — Resend réessaie">
-                      Retardé
-                    </Badge>
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.delayed}`} title="Livraison temporairement retardée — Resend réessaie">Retardé</Badge>
                   )}
                 </span>
               </button>
