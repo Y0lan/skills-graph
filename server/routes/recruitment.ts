@@ -1508,9 +1508,18 @@ protectedRouter.get('/documents/:docId/scan', (req, res) => {
     return
   }
 
-  let parsedResult = null
+  // Codex P1: previously fell back to the raw string on parse failure, which
+  // crashed the scan-detail-dialog when it tried to read .engines / .threats.
+  // Now: object on success, null on failure (dialog handles null cleanly).
+  let parsedResult: Record<string, unknown> | null = null
   if (doc.scan_result) {
-    try { parsedResult = JSON.parse(doc.scan_result) } catch { parsedResult = doc.scan_result }
+    try {
+      const parsed = JSON.parse(doc.scan_result)
+      parsedResult = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : null
+    } catch {
+      console.warn(`[SCAN] malformed scan_result on document ${req.params.docId} — surfacing as null`)
+      parsedResult = null
+    }
   }
 
   // Look up active override (if any).
