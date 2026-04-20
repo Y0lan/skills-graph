@@ -37,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2 } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
@@ -730,21 +730,23 @@ export default function CandidateDetailPage() {
                     <>
                       {/* Send-email toggle (hidden for refuse — always sends) */}
                       {transitionDialog?.targetStatut !== 'refuse' && (
-                        <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/20">
-                          <label className="flex items-center gap-2 cursor-pointer text-sm flex-1">
-                            <input
-                              type="checkbox"
-                              checked={transitionSendEmail}
-                              onChange={(e) => setTransitionSendEmail(e.target.checked)}
-                              className="rounded border-input"
-                            />
-                            <span className="font-medium">Envoyer l'email au candidat</span>
-                          </label>
-                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer text-sm px-3 py-2 border-b bg-muted/20">
+                          <input
+                            type="checkbox"
+                            checked={transitionSendEmail}
+                            onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                            className="rounded border-input"
+                          />
+                          <Mail className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium flex-1">Envoyer l'email au candidat</span>
+                          {transitionEmailSubject && transitionSendEmail && (
+                            <span className="text-muted-foreground truncate text-xs max-w-[55%]">— {transitionEmailSubject}</span>
+                          )}
+                        </label>
                       )}
                       {/* Skip-reason input when toggle off */}
                       {transitionDialog?.targetStatut !== 'refuse' && !transitionSendEmail && (
-                        <div className="p-3 space-y-1 border-b">
+                        <div className="p-3 space-y-1">
                           <label htmlFor="skip-email-reason-a" className="text-xs font-medium text-muted-foreground">
                             Raison de ne pas envoyer (10 caractères min, audit-loggée)
                           </label>
@@ -760,36 +762,28 @@ export default function CandidateDetailPage() {
                           <p className="text-[10px] text-muted-foreground">{transitionSkipEmailReason.length}/500</p>
                         </div>
                       )}
-                      {/* Collapsed header — hidden when user opted out */}
-                      {(transitionSendEmail || transitionDialog?.targetStatut === 'refuse') && (
-                      <button
-                        type="button"
-                        onClick={() => setTransitionEmailExpanded(!transitionEmailExpanded)}
-                        className="flex items-center gap-2 w-full px-3 py-2.5 text-sm hover:bg-muted/50 rounded-t-lg transition-colors"
-                      >
-                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <span className="font-medium">Email au candidat</span>
-                        {transitionEmailSubject && (
-                          <span className="text-muted-foreground truncate ml-1 text-xs">— {transitionEmailSubject}</span>
-                        )}
-                        {transitionEmailExpanded
-                          ? <ChevronDown className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
-                          : <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
-                        }
-                      </button>
+                      {/* For refuse only: keep the separate collapsible header (no send toggle) */}
+                      {transitionDialog?.targetStatut === 'refuse' && (
+                        <button
+                          type="button"
+                          onClick={() => setTransitionEmailExpanded(!transitionEmailExpanded)}
+                          className="flex items-center gap-2 w-full px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors"
+                        >
+                          <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="font-medium">Email au candidat</span>
+                          {transitionEmailSubject && (
+                            <span className="text-muted-foreground truncate ml-1 text-xs">— {transitionEmailSubject}</span>
+                          )}
+                          {transitionEmailExpanded
+                            ? <ChevronDown className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
+                            : <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground shrink-0" />
+                          }
+                        </button>
                       )}
 
-                      {/* Expanded content */}
-                      {(transitionSendEmail || transitionDialog?.targetStatut === 'refuse') && transitionEmailExpanded && (
-                        <div className="px-3 pb-3 space-y-2 border-t">
-                          <div className="pt-2">
-                            <label className="text-xs font-medium text-muted-foreground">Objet</label>
-                            <Input
-                              value={transitionEmailSubject}
-                              readOnly
-                              className="mt-1 text-sm bg-muted/30"
-                            />
-                          </div>
+                      {/* Expanded content (auto-open when sending) */}
+                      {(transitionSendEmail || (transitionDialog?.targetStatut === 'refuse' && transitionEmailExpanded)) && (
+                        <div className="px-3 py-3 space-y-2">
                           <div>
                             <label className="text-xs font-medium text-muted-foreground">Corps du message</label>
                             <Textarea
@@ -799,29 +793,29 @@ export default function CandidateDetailPage() {
                               className="mt-1 text-sm"
                             />
                           </div>
-                          <div className="flex items-center gap-1 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              className="text-xs text-muted-foreground gap-1.5 h-7"
+                              className="h-7 text-xs gap-1.5"
                               onClick={() => setAiInstructionOpen(v => !v)}
                               disabled={aiLoading}
                             >
                               <Wand2 className="h-3 w-3" />
-                              Rédiger avec l'IA
+                              Modifier avec l'IA
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              className="text-xs text-muted-foreground gap-1.5 h-7"
+                              className="h-7 text-xs gap-1.5"
                               onClick={handleOpenPreview}
                               disabled={emailPreviewLoading}
                             >
                               {emailPreviewLoading
                                 ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <Mail className="h-3 w-3" />}
+                                : <Eye className="h-3 w-3" />}
                               Aperçu HTML
                             </Button>
                           </div>
@@ -873,7 +867,7 @@ export default function CandidateDetailPage() {
                           disabled={aiLoading}
                         >
                           <Wand2 className="h-3 w-3 mr-1" />
-                          Rédiger avec l'IA
+                          Modifier avec l'IA
                         </Button>
                         <Button
                           type="button"
@@ -885,7 +879,7 @@ export default function CandidateDetailPage() {
                         >
                           {emailPreviewLoading
                             ? <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                            : <Mail className="h-3 w-3 mr-1" />}
+                            : <Eye className="h-3 w-3 mr-1" />}
                           Aperçu HTML
                         </Button>
                       </div>
