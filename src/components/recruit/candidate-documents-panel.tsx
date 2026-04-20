@@ -88,6 +88,7 @@ export default function CandidateDocumentsPanel({
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
   const [renameDoc, setRenameDoc] = useState<CandidatureDocument | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [renameType, setRenameType] = useState<string>('other')
   const [renaming, setRenaming] = useState(false)
   const [deleteDoc, setDeleteDoc] = useState<CandidatureDocument | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -185,6 +186,7 @@ export default function CandidateDocumentsPanel({
   function openRenameDialog(doc: CandidatureDocument): void {
     setRenameDoc(doc)
     setRenameValue(effectiveName(doc))
+    setRenameType(doc.type)
   }
 
   async function handleRename(): Promise<void> {
@@ -194,24 +196,31 @@ export default function CandidateDocumentsPanel({
       toast.error('Le nom doit faire entre 1 et 200 caractères')
       return
     }
-    if (newName === effectiveName(renameDoc)) {
+    const nameChanged = newName !== effectiveName(renameDoc)
+    const typeChanged = renameType !== renameDoc.type
+    if (!nameChanged && !typeChanged) {
       setRenameDoc(null)
       return
     }
     setRenaming(true)
     try {
+      const payload: { display_filename?: string; type?: string } = {}
+      if (nameChanged) payload.display_filename = newName
+      if (typeChanged) payload.type = renameType
       const res = await fetch(`/api/recruitment/documents/${renameDoc.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ display_filename: newName }),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: 'Erreur' }))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
-      syncDocs(prev => prev.map(d => d.id === renameDoc.id ? { ...d, display_filename: newName } : d))
-      toast.success('Document renommé')
+      syncDocs(prev => prev.map(d => d.id === renameDoc.id
+        ? { ...d, display_filename: nameChanged ? newName : d.display_filename, type: typeChanged ? renameType : d.type }
+        : d))
+      toast.success(typeChanged && nameChanged ? 'Document mis à jour' : typeChanged ? 'Catégorie mise à jour' : 'Document renommé')
       setRenameDoc(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors du renommage')
@@ -499,21 +508,41 @@ export default function CandidateDocumentsPanel({
       <Dialog open={!!renameDoc} onOpenChange={(open) => { if (!open && !renaming) setRenameDoc(null) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Renommer le document</DialogTitle>
+            <DialogTitle>Modifier le document</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="rename-input" className="text-sm">Nouveau nom (avec extension, ex. CV_Jean_Dupont.pdf)</Label>
-            <Input
-              id="rename-input"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              maxLength={200}
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter' && !renaming) void handleRename() }}
-            />
-            {renameDoc && renameValue.trim() !== renameDoc.filename && (
-              <p className="text-[11px] text-muted-foreground">Original : {renameDoc.filename}</p>
-            )}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="rename-input" className="text-sm">Nom (avec extension, ex. CV_Jean_Dupont.pdf)</Label>
+              <Input
+                id="rename-input"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                maxLength={200}
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter' && !renaming) void handleRename() }}
+              />
+              {renameDoc && renameValue.trim() !== renameDoc.filename && (
+                <p className="text-[11px] text-muted-foreground">Original : {renameDoc.filename}</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rename-type" className="text-sm">Catégorie</Label>
+              <Select value={renameType} onValueChange={(v) => { if (v) setRenameType(v) }} disabled={renaming}>
+                <SelectTrigger id="rename-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(DOC_TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {renameDoc && renameType !== renameDoc.type && (
+                <p className="text-[11px] text-muted-foreground">
+                  Déplacer vers « {DOC_TYPE_LABELS[renameType] ?? renameType} »
+                </p>
+              )}
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" disabled={renaming} onClick={() => setRenameDoc(null)}>Annuler</Button>

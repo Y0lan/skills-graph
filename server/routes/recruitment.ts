@@ -1055,61 +1055,103 @@ protectedRouter.post('/documents/:docId/restore', (req, res) => {
 })
 
 // PATCH document — currently supports renaming via display_filename
+const ALLOWED_DOC_TYPES = new Set(['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif', 'other'])
+
 protectedRouter.patch('/documents/:docId', (req, res) => {
-  const body = req.body as { display_filename?: unknown }
-  if (typeof body.display_filename !== 'string') {
-    res.status(400).json({ error: 'display_filename requis (chaîne)' })
+  const body = req.body as { display_filename?: unknown; type?: unknown }
+  const hasName = typeof body.display_filename === 'string'
+  const hasType = typeof body.type === 'string'
+  if (!hasName && !hasType) {
+    res.status(400).json({ error: 'display_filename ou type requis' })
     return
   }
 
-  const trimmed = body.display_filename.trim()
-  if (trimmed.length === 0 || trimmed.length > 200) {
-    res.status(400).json({ error: 'Le nom doit faire entre 1 et 200 caractères' })
-    return
+  let trimmed: string | null = null
+  if (hasName) {
+    trimmed = (body.display_filename as string).trim()
+    if (trimmed.length === 0 || trimmed.length > 200) {
+      res.status(400).json({ error: 'Le nom doit faire entre 1 et 200 caractères' })
+      return
+    }
+    // Block path separators and ASCII control chars (intentional — these are
+    // exactly what we want to block in a stored filename).
+    // eslint-disable-next-line no-control-regex
+    if (/[\\/]/.test(trimmed) || /[\x00-\x1f\x7f]/.test(trimmed)) {
+      res.status(400).json({ error: 'Caractères interdits dans le nom (séparateurs ou contrôle)' })
+      return
+    }
   }
-  // Block path separators and ASCII control chars (intentional — these are
-  // exactly what we want to block in a stored filename).
-  // eslint-disable-next-line no-control-regex
-  if (/[\\/]/.test(trimmed) || /[\x00-\x1f\x7f]/.test(trimmed)) {
-    res.status(400).json({ error: 'Caractères interdits dans le nom (séparateurs ou contrôle)' })
-    return
+
+  let newType: string | null = null
+  if (hasType) {
+    newType = body.type as string
+    if (!ALLOWED_DOC_TYPES.has(newType)) {
+      res.status(400).json({ error: 'Type invalide' })
+      return
+    }
   }
 
   const existing = getDb().prepare(
-    'SELECT candidature_id, type FROM candidature_documents WHERE id = ?'
-  ).get(req.params.docId) as { candidature_id: string; type: string } | undefined
+    'SELECT candidature_id, type, display_filename, filename FROM candidature_documents WHERE id = ? AND deleted_at IS NULL'
+  ).get(req.params.docId) as { candidature_id: string; type: string; display_filename: string | null; filename: string } | undefined
 
   if (!existing) {
     res.status(404).json({ error: 'Document introuvable' })
     return
   }
 
-  // Conflict guard within same (candidature, type)
+  const effectiveType = newType ?? existing.type
+  const typeChanged = hasType && newType !== existing.type
+
+  // Moving into a slot (cv/lettre/aboro) must not collide with an already-filled slot.
+  if (typeChanged && SLOT_TYPES.has(effectiveType)) {
+    const filled = getDb().prepare(
+      'SELECT 1 FROM candidature_documents WHERE candidature_id = ? AND type = ? AND id != ? AND deleted_at IS NULL LIMIT 1'
+    ).get(existing.candidature_id, effectiveType, req.params.docId)
+    if (filled) {
+      res.status(409).json({ error: `Le slot « ${effectiveType} » est déjà occupé — supprimez ou remplacez le document existant avant de reclasser.` })
+      return
+    }
+  }
+
+  const nameForCheck = trimmed ?? (existing.display_filename ?? existing.filename)
   const conflict = getDb().prepare(`
     SELECT 1 FROM candidature_documents
     WHERE candidature_id = ? AND type = ? AND id != ?
       AND COALESCE(display_filename, filename) = ?
     LIMIT 1
-  `).get(existing.candidature_id, existing.type, req.params.docId, trimmed)
+  `).get(existing.candidature_id, effectiveType, req.params.docId, nameForCheck)
 
   if (conflict) {
     res.status(409).json({ error: 'Un autre document du même type porte déjà ce nom' })
     return
   }
 
-  getDb().prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?').run(trimmed, req.params.docId)
-
-  const user = getUser(req)
-  try {
-    getDb().prepare(`
-      INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-      VALUES (?, 'document', ?, ?)
-    `).run(existing.candidature_id, `Renommé: ${trimmed}`, user.slug || 'unknown')
-  } catch {
-    // Audit non-blocking
+  const updates: string[] = []
+  const values: unknown[] = []
+  if (hasName) { updates.push('display_filename = ?'); values.push(trimmed) }
+  if (typeChanged) { updates.push('type = ?'); values.push(newType) }
+  if (updates.length > 0) {
+    values.push(req.params.docId)
+    getDb().prepare(`UPDATE candidature_documents SET ${updates.join(', ')} WHERE id = ?`).run(...values)
   }
 
-  res.json({ ok: true, display_filename: trimmed })
+  const user = getUser(req)
+  const noteParts: string[] = []
+  if (hasName && trimmed !== (existing.display_filename ?? existing.filename)) noteParts.push(`Renommé: ${trimmed}`)
+  if (typeChanged) noteParts.push(`Type: ${existing.type} → ${newType}`)
+  if (noteParts.length > 0) {
+    try {
+      getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, 'document', ?, ?)
+      `).run(existing.candidature_id, noteParts.join(' | '), user.slug || 'unknown')
+    } catch {
+      // Audit non-blocking
+    }
+  }
+
+  res.json({ ok: true, display_filename: trimmed ?? existing.display_filename, type: effectiveType })
 })
 
 // Download a document
