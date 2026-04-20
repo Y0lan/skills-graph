@@ -186,26 +186,17 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
 
         {data && overrideMode && (
           <div className="space-y-3">
-            <p className="text-sm">
-              Créer un override pour ce document. Doit être justifié et expire dans 30 jours.
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant={overrideVerdict === 'safe' ? 'default' : 'outline'}
-                onClick={() => setOverrideVerdict('safe')}
-                className="gap-2"
-              >
-                <ShieldCheck className="h-4 w-4" /> Forcer safe
-              </Button>
-              <Button
-                type="button"
-                variant={overrideVerdict === 'quarantine' ? 'destructive' : 'outline'}
-                onClick={() => setOverrideVerdict('quarantine')}
-                className="gap-2"
-              >
-                <ShieldAlert className="h-4 w-4" /> Forcer quarantine
-              </Button>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+              <p className="font-medium">
+                {overrideVerdict === 'safe'
+                  ? 'Déclarer ce document comme faux positif'
+                  : 'Marquer ce document comme suspect'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {overrideVerdict === 'safe'
+                  ? 'Le verdict du scan reste « infected » dans l’historique, mais l’override l’affiche comme propre pendant 30 jours. Audit-loggué avec votre raison.'
+                  : 'Le verdict du scan reste « clean » dans l’historique, mais l’override l’affiche comme suspect pendant 30 jours. À utiliser si vous avez un doute malgré le scan propre.'}
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="override-reason" className="text-xs">Raison (10 caractères min, audit-loggée)</Label>
@@ -213,7 +204,9 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
                 id="override-reason"
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
-                placeholder="ex. Faux positif confirmé après analyse manuelle du PDF"
+                placeholder={overrideVerdict === 'safe'
+                  ? 'ex. PDF analysé manuellement, ouvert dans un sandbox — pas de menace réelle.'
+                  : 'ex. Format douteux, le candidat a été contacté pour un nouveau fichier.'}
                 rows={3}
                 maxLength={500}
               />
@@ -226,9 +219,40 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
           {data && !overrideMode && (
             <>
               <Button variant="outline" onClick={onClose}>Fermer</Button>
-              <Button variant="outline" onClick={() => setOverrideMode(true)}>
-                Créer un override
-              </Button>
+              {/* Smart-default: clean files only get "Quarantine" (you don't need
+                  to force-safe a clean one); infected files only get "Forcer safe"
+                  (declare false positive). Pending/error/skipped get both. */}
+              {data.status === 'clean' && (
+                <Button
+                  variant="outline"
+                  className="text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                  onClick={() => { setOverrideVerdict('quarantine'); setOverrideMode(true) }}
+                  title="Marquer ce document comme suspect malgré le scan propre"
+                >
+                  <ShieldAlert className="h-4 w-4 mr-1.5" />
+                  Marquer comme suspect
+                </Button>
+              )}
+              {data.status === 'infected' && (
+                <Button
+                  variant="outline"
+                  className="text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                  onClick={() => { setOverrideVerdict('safe'); setOverrideMode(true) }}
+                  title="Déclarer un faux positif après vérification manuelle"
+                >
+                  <ShieldCheck className="h-4 w-4 mr-1.5" />
+                  Déclarer faux positif
+                </Button>
+              )}
+              {(data.status !== 'clean' && data.status !== 'infected') && (
+                <Button
+                  variant="outline"
+                  onClick={() => setOverrideMode(true)}
+                  title="Forcer un verdict manuellement"
+                >
+                  Forcer un verdict
+                </Button>
+              )}
             </>
           )}
           {data && overrideMode && (
@@ -236,7 +260,7 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
               <Button variant="outline" disabled={submitting} onClick={() => setOverrideMode(false)}>Retour</Button>
               <Button disabled={submitting || overrideReason.trim().length < 10} onClick={submitOverride}>
                 {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Enregistrer l’override
+                Enregistrer
               </Button>
             </>
           )}

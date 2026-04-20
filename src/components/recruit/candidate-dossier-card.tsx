@@ -32,7 +32,7 @@ const EXPECTED_DOCUMENTS: Record<string, string[]> = {
   embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
 }
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ScanDetailDialog from './scan-detail-dialog'
 
 function ScanBadge({ doc }: { doc: CandidatureDocument }) {
@@ -100,6 +100,28 @@ export default function CandidateDossierCard({
   currentStatut,
 }: CandidateDossierCardProps) {
   const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents)
+
+  // Polling fallback for live scan-status updates. SSE handles most cases, but
+  // if the scan finishes within ~1s of upload (typical when only VirusTotal
+  // runs without ClamAV) the SSE connection may not be open yet. Poll every
+  // 3s while ANY document is still pending; stops automatically once all
+  // resolve.
+  useEffect(() => {
+    const pendingDocs = documents.filter(d => d.scan_status === 'pending' || d.scan_status === undefined || d.scan_status === null)
+    if (pendingDocs.length === 0) return
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, { credentials: 'include' })
+        if (!res.ok) return
+        const fresh = await res.json() as CandidatureDocument[]
+        setDocuments(prev => prev.map(d => {
+          const updated = fresh.find(f => f.id === d.id)
+          return updated ? { ...d, scan_status: updated.scan_status } : d
+        }))
+      } catch { /* ignore */ }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [documents, candidatureId, setDocuments])
 
   const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
   const uploadedTypes = new Set(documents.map(d => d.type))
