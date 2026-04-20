@@ -154,8 +154,13 @@ app.use('/api/recruitment', recruitmentRouter)
 // lead session even in dev (codex flagged: PII risk if a real candidate's
 // data is mocked through it). See docs/decisions/2026-04-20-data-retention…md.
 if (process.env.NODE_ENV !== 'production') {
-  const { devEmailsRouter } = await import('./routes/dev-emails.js')
-  app.use('/dev/emails', devEmailsRouter)
+  try {
+    const { devEmailsRouter } = await import('./routes/dev-emails.js')
+    app.use('/dev/emails', devEmailsRouter)
+    console.log('[INIT] /dev/emails preview tool mounted (dev-only)')
+  } catch (err) {
+    console.warn('[INIT] /dev/emails not mounted:', (err as Error).message)
+  }
 }
 
 // Global error handler — catch any unhandled route errors
