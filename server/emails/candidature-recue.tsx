@@ -16,26 +16,20 @@ export function CandidatureRecue({ candidateName }: CandidatureRecueProps) {
         transverses, briques fondamentales du SI CAFAT.
       </p>
       <p style={{ margin: '0 0 16px 0' }}>
+        Votre candidature a bien &eacute;t&eacute; enregistr&eacute;e. Notre
+        &eacute;quipe va l&apos;&eacute;tudier dans les prochains jours.
+      </p>
+      <p style={{ margin: '0 0 16px 0' }}>
+        Si votre profil est retenu pour la suite du processus, nous vous
+        adresserons par email un lien personnel vers notre questionnaire
+        d&apos;auto-&eacute;valuation des comp&eacute;tences. Vous n&apos;avez
+        donc rien &agrave; remplir d&egrave;s maintenant&nbsp;: nous reviendrons
+        vers vous le moment venu.
+      </p>
+      <p style={{ margin: '0 0 16px 0' }}>
         Le GIE SINAPSE intervient en tant qu&apos;assistant &agrave;
         ma&icirc;trise d&apos;ouvrage pour le compte de la CAFAT sur ce
         programme structurant, pilier de sa transformation digitale.
-      </p>
-      <p style={{ margin: '0 0 16px 0' }}>
-        Afin de garantir un traitement &eacute;quitable et structur&eacute; des
-        candidatures, celles-ci doivent imp&eacute;rativement &ecirc;tre
-        d&eacute;pos&eacute;es via notre site internet&nbsp;:
-      </p>
-      <p style={{ margin: '0 0 16px 0' }}>
-        <a href="https://www.sinapse.nc" style={{ color: '#008272' }}>
-          https://www.sinapse.nc
-        </a>
-      </p>
-      <p style={{ margin: '0 0 16px 0' }}>
-        Nous vous invitons &agrave; compl&eacute;ter l&apos;ensemble du parcours
-        de candidature avec la plus grande attention, en particulier le
-        questionnaire, qui constitue un &eacute;l&eacute;ment d&eacute;terminant
-        dans l&apos;analyse de l&apos;ad&eacute;quation entre votre profil et
-        les enjeux port&eacute;s par SINAPSE.
       </p>
       <p style={{ margin: '0 0 16px 0' }}>
         En l&apos;absence de r&eacute;ponse de notre part dans un d&eacute;lai
