@@ -1,9 +1,29 @@
+import fs from 'fs'
+import path from 'path'
+
 /**
  * SINAPSE brand tokens — single source of truth for emails (and any future
- * branded server-rendered surface). Keep this file dependency-free so it
- * can be imported from React Email components, plain strings, and tests
- * without dragging in heavy modules.
+ * branded server-rendered surface).
  */
+
+// Inline the logo as a data URL. Rationale: emails must NEVER point to
+// radar.sinapse.nc (the only allowed radar URL is the candidate's magic
+// /evaluate link). We don't host the asset on sinapse.nc/Drupal yet, so
+// inlining keeps the email self-contained — no broken images regardless
+// of which environment renders or which client receives.
+function loadLogoDataUrl(): string {
+  const logoPath = process.env.EMAIL_LOGO_PATH
+    ?? path.join(process.cwd(), 'public', 'email-logo-sinapse.png')
+  try {
+    const buffer = fs.readFileSync(logoPath)
+    return `data:image/png;base64,${buffer.toString('base64')}`
+  } catch (err) {
+    console.warn(`[brand] failed to load email logo at ${logoPath}:`, (err as Error).message)
+    return ''
+  }
+}
+
+const LOGO_DATA_URL = loadLogoDataUrl()
 
 export const BRAND = {
   // Colors
@@ -32,21 +52,14 @@ export const BRAND = {
   linkedin: 'https://www.linkedin.com/company/sinapse-nc/',
   linkedinLabel: 'LinkedIn',
 
-  // Logo for emails. MUST be a publicly-reachable absolute URL — email
-  // clients can't fetch from localhost or behind auth. Resolution order:
-  //   1. EMAIL_LOGO_URL env var (explicit override, e.g. CDN)
-  //   2. BETTER_AUTH_URL + /email-logo-sinapse.png (auto: dev → dev host,
-  //      prod → prod host — matches whatever environment the server runs in)
-  //   3. https://radar.sinapse.nc/... (last-resort fallback)
-  // PNG generated from logo-sinapse-horizontal.svg via rsvg-convert at 400px
-  // wide (2x retina for crisp 200px display). 3.125:1 aspect, ~10KB, RGBA
-  // with alpha so it sits cleanly on the white email background.
-  logoUrl: (() => {
-    if (process.env.EMAIL_LOGO_URL) return process.env.EMAIL_LOGO_URL
-    const base = process.env.BETTER_AUTH_URL?.replace(/\/$/, '')
-    if (base) return `${base}/email-logo-sinapse.png`
-    return 'https://radar.sinapse.nc/email-logo-sinapse.png'
-  })(),
+  // Inlined data URL — see loadLogoDataUrl() above for the rationale.
+  // No external host, no env-specific URL, no broken images. Works in
+  // every email client that supports data: URLs in <img src> (which is
+  // every modern client + Outlook desktop except Outlook 2007/2010,
+  // which we don't target).
+  // Override with EMAIL_LOGO_URL if you ever publish the logo on
+  // sinapse.nc and want to use that instead.
+  logoUrl: process.env.EMAIL_LOGO_URL ?? LOGO_DATA_URL,
   logoWidthPx: 200,
 
   // Email layout
