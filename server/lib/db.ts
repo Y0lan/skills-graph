@@ -348,32 +348,42 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN content_md TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN email_snapshot TEXT') } catch { /* already exists */ }
 
-  // Idempotent migration: widen CHECK to add email_clicked / email_delivered / email_complained / email_delay
+  // Idempotent migration: widen CHECK to add email_clicked / email_delivered / email_complained / email_delay.
+  // Wrapped in an explicit transaction so a pod crash between DROP and RENAME
+  // cannot leave the schema in an unrecoverable "main table gone, temp table
+  // orphaned" state. `DROP TABLE IF EXISTS candidature_events_new` first cleans
+  // up any orphan temp table left by a prior crashed attempt.
   const missingDeliverabilityEventTypes = (() => {
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !tableInfo?.sql?.includes("'email_clicked'")
+    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_clicked'")
   })()
 
   if (missingDeliverabilityEventTypes) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS candidature_events_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-        type TEXT NOT NULL DEFAULT 'status_change'
-          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
-        statut_from TEXT,
-        statut_to TEXT,
-        notes TEXT,
-        content_md TEXT,
-        email_snapshot TEXT,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO candidature_events_new SELECT * FROM candidature_events;
-      DROP TABLE candidature_events;
-      ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
-    `)
+    db.exec('DROP TABLE IF EXISTS candidature_events_new')
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE candidature_events_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+          type TEXT NOT NULL DEFAULT 'status_change'
+            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
+          statut_from TEXT,
+          statut_to TEXT,
+          notes TEXT,
+          content_md TEXT,
+          email_snapshot TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at)
+          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
+          FROM candidature_events;
+        DROP TABLE candidature_events;
+        ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      `)
+    })
+    migrate()
+    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
   }
 
   // Idempotent: add event_id FK to candidature_documents for linking files to transition events

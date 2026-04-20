@@ -334,13 +334,19 @@ export async function processIntake(
   // Send application received emails (candidate + default lead)
   if (email?.trim()) {
     const leadEmail = `${DEFAULT_LEAD_SLUG.replaceAll('-', '.')}@sinapse.nc`
-    sendApplicationReceived({
-      candidateName: fullName,
-      role: poste.titre,
-      candidateEmail: email.trim(),
-      leadEmail,
-      candidatureId: intakeResult.candidatureId,
-    }).catch(() => console.error('[INTAKE] Application email failed'))
+    // Skip resend on idempotent replay — if the caller submits the same intake
+    // twice (Drupal webhook retry, manual retry), sendApplicationReceived would
+    // otherwise dispatch a second "Candidature reçue" email AND record a second
+    // email_sent event. Both are undesirable.
+    if (!intakeResult.updated) {
+      sendApplicationReceived({
+        candidateName: fullName,
+        role: poste.titre,
+        candidateEmail: email.trim(),
+        leadEmail,
+        candidatureId: intakeResult.candidatureId,
+      }).catch(() => console.error('[INTAKE] Application email failed'))
+    }
   }
 
   return intakeResult

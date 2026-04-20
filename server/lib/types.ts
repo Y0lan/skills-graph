@@ -98,6 +98,8 @@ export interface CandidatureEventRow {
   statut_from: string | null
   statut_to: string | null
   notes: string | null
+  content_md: string | null
+  email_snapshot: string | null
   created_by: string
   created_at: string
 }

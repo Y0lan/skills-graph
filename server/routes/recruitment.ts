@@ -502,6 +502,8 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
       statutFrom: e.statut_from,
       statutTo: e.statut_to,
       notes: e.notes,
+      contentMd: e.content_md,
+      emailSnapshot: e.email_snapshot,
       createdBy: e.created_by,
       createdAt: e.created_at,
     })),
@@ -2010,7 +2012,12 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
 
   if (svixId && svixTimestamp && svixSignature) {
     try {
-      const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : JSON.stringify(req.body)
+      // Prefer the raw body captured by the JSON parser's `verify` hook in
+      // server/index.ts. Fall back to stringify only if unavailable (e.g.
+      // the webhook registered express.raw() at route level — not the case
+      // anymore but kept for defensive compat).
+      const rawBody = (req as { rawBody?: string }).rawBody
+        ?? (Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : JSON.stringify(req.body))
       const wh = new Webhook(RESEND_WEBHOOK_SECRET)
       payload = wh.verify(rawBody, {
         'svix-id': svixId,
@@ -2036,8 +2043,8 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
     return
   }
 
-  // Return 200 immediately, process async
-  res.status(200).json({ ok: true })
+  // Process synchronously BEFORE acking so a DB failure returns 5xx and Resend
+  // retries. Acking before persistence silently loses events on crash.
 
   // Process email.opened events
   if (payload.type === 'email.opened') {
@@ -2136,6 +2143,18 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
   if (payload.type === 'email.delivery_delayed') {
     recordDeliverabilityEvent(payload, 'email_delay', (emailId) => `Livraison retardée — Resend réessaie (messageId: ${emailId})`)
   }
+
+  // Process email.failed / email.suppressed (hard failures from Resend-side),
+  // recorded under the same email_failed type as bounces so the UI surfaces
+  // the same "Rebondi" badge.
+  if (payload.type === 'email.failed' || payload.type === 'email.suppressed') {
+    recordDeliverabilityEvent(payload, 'email_failed', (emailId) => {
+      const reason = (payload.data as Record<string, unknown>)?.reason ?? payload.type
+      return `Envoi ${payload.type === 'email.suppressed' ? 'supprimé' : 'échoué'} — ${String(reason).slice(0, 100)} (messageId: ${emailId})`
+    })
+  }
+
+  res.status(200).json({ ok: true })
 })
 
 /** Shared helper: look up the originating email_sent event by messageId, then
@@ -2143,7 +2162,7 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
  * with idempotency by messageId in notes. */
 function recordDeliverabilityEvent(
   payload: Record<string, unknown>,
-  eventType: 'email_clicked' | 'email_delivered' | 'email_complained' | 'email_delay',
+  eventType: 'email_clicked' | 'email_delivered' | 'email_complained' | 'email_delay' | 'email_failed',
   buildNotes: (emailId: string) => string,
 ): void {
   try {

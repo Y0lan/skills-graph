@@ -85,7 +85,18 @@ app.all('/api/auth/{*splat}', async (req, res, _next) => {
   }
 })
 
-app.use(express.json({ limit: '1mb' }))
+// Capture the raw JSON body on the Resend webhook path so Svix signature
+// verification can use it verbatim. Without this, `express.json()` consumes
+// the stream and we fall back to `JSON.stringify(req.body)` — byte-identical
+// is not guaranteed, so signatures can fail intermittently.
+app.use(express.json({
+  limit: '1mb',
+  verify: (req: { url?: string; rawBody?: string }, _res, buf: Buffer) => {
+    if (req.url?.includes('/recruitment/webhooks/resend')) {
+      req.rawBody = buf.toString('utf-8')
+    }
+  },
+}))
 
 // Server-level timeout: 120s (generous for CV extraction via Anthropic API)
 // This prevents truly hung connections, not normal long operations
