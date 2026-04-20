@@ -1065,6 +1065,53 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
   }
 })
 
+// Item 18: AI-generated email body draft. Returns the four schema fields plus
+// the markdown-rendered body that fits the existing customBody field on the
+// transition dialog. Recruiter previews + edits before sending.
+protectedRouter.post('/emails/ai-generate', async (req, res) => {
+  const body = req.body as { candidatureId?: unknown; statut?: unknown; contextNote?: unknown; refuseReason?: unknown }
+  if (typeof body.candidatureId !== 'string' || typeof body.statut !== 'string') {
+    res.status(400).json({ error: 'candidatureId et statut requis' })
+    return
+  }
+  const cand = getDb().prepare(`
+    SELECT cand.name, p.titre AS poste_titre
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(body.candidatureId) as { name: string; poste_titre: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  try {
+    const { generateAiEmailDraft } = await import('../lib/email-ai.js')
+    const { draftToMarkdown } = await import('../emails/ai-schema.js')
+    const result = await generateAiEmailDraft({
+      candidateName: cand.name,
+      role: cand.poste_titre,
+      statut: body.statut,
+      contextNote: typeof body.contextNote === 'string' ? body.contextNote.slice(0, 500) : undefined,
+      refuseReason: typeof body.refuseReason === 'string' ? body.refuseReason.slice(0, 500) : undefined,
+    })
+    res.json({
+      draft: result.draft,
+      bodyMarkdown: draftToMarkdown(result.draft),
+      meta: {
+        promptVersion: result.promptVersion,
+        modelVersion: result.modelVersion,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      },
+    })
+  } catch (err) {
+    console.error('[EMAIL_AI] failed', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Échec génération IA' })
+  }
+})
+
 // Render the email a recruiter is about to send. Pure preview — no Resend call.
 // Item 16: lets ConfirmEmailDialog show the actual HTML the candidate will see,
 // not a markdown approximation, before the recruiter clicks "Envoyer & avancer".

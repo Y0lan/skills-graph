@@ -610,44 +610,80 @@ export default function CandidateDetailPage() {
                       </span>
                     </label>
                     {transitionSendEmail && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={async () => {
-                          if (!transitionDialog) return
-                          try {
-                            const res = await fetch('/api/recruitment/emails/preview', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              credentials: 'include',
-                              body: JSON.stringify({
-                                candidatureId: transitionDialog.candidatureId,
-                                statut: transitionDialog.targetStatut,
-                                customBody: transitionEmailBody.trim() || undefined,
-                                notes: transitionNotes.trim() || undefined,
-                                includeReasonInEmail: transitionIncludeReason,
-                              }),
-                            })
-                            if (!res.ok) {
-                              const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-                              throw new Error(body.error || `HTTP ${res.status}`)
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={async () => {
+                            if (!transitionDialog) return
+                            try {
+                              const res = await fetch('/api/recruitment/emails/ai-generate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                  candidatureId: transitionDialog.candidatureId,
+                                  statut: transitionDialog.targetStatut,
+                                  contextNote: transitionNotes.trim() || undefined,
+                                  refuseReason: transitionDialog.targetStatut === 'refuse' ? transitionNotes.trim() : undefined,
+                                }),
+                              })
+                              if (!res.ok) {
+                                const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+                                throw new Error(body.error || `HTTP ${res.status}`)
+                              }
+                              const { bodyMarkdown } = await res.json() as { bodyMarkdown: string }
+                              setTransitionEmailBody(bodyMarkdown)
+                              toast.success('Brouillon IA généré — relisez et éditez avant d’envoyer')
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Erreur génération IA')
                             }
-                            const { subject, html } = await res.json() as { subject: string; html: string }
-                            const w = window.open('', '_blank', 'width=720,height=900')
-                            if (w) {
-                              w.document.write(`<!doctype html><html><head><title>Aperçu — ${subject}</title></head><body>${html}</body></html>`)
-                              w.document.close()
+                          }}
+                        >
+                          <Wand2 className="h-3 w-3 mr-1" />
+                          Brouillon IA
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={async () => {
+                            if (!transitionDialog) return
+                            try {
+                              const res = await fetch('/api/recruitment/emails/preview', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                  candidatureId: transitionDialog.candidatureId,
+                                  statut: transitionDialog.targetStatut,
+                                  customBody: transitionEmailBody.trim() || undefined,
+                                  notes: transitionNotes.trim() || undefined,
+                                  includeReasonInEmail: transitionIncludeReason,
+                                }),
+                              })
+                              if (!res.ok) {
+                                const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+                                throw new Error(body.error || `HTTP ${res.status}`)
+                              }
+                              const { subject, html } = await res.json() as { subject: string; html: string }
+                              const w = window.open('', '_blank', 'width=720,height=900')
+                              if (w) {
+                                w.document.write(`<!doctype html><html><head><title>Aperçu — ${subject}</title></head><body>${html}</body></html>`)
+                                w.document.close()
+                              }
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Erreur aperçu')
                             }
-                          } catch (err) {
-                            toast.error(err instanceof Error ? err.message : 'Erreur aperçu')
-                          }
-                        }}
-                      >
-                        <Mail className="h-3 w-3 mr-1" />
-                        Aperçu HTML
-                      </Button>
+                          }}
+                        >
+                          <Mail className="h-3 w-3 mr-1" />
+                          Aperçu HTML
+                        </Button>
+                      </div>
                     )}
                   </div>
                   {!transitionSendEmail && (
