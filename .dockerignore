@@ -1,12 +1,29 @@
 node_modules
 dist
+dist-server
 .env
 .env.*
 .git
 .gitignore
+# Server data: SQLite DBs and generated files live here — only whitelist the
+# source files we actually need in the build (team-roster compiled by tsc,
+# targets.json read by aggregates.ts at runtime).
 server/data/
 !server/data/team-roster.ts
-*.md
+!server/data/targets.json
+# Local artifacts — never into the build context (and so never into the
+# registry build cache exported by cache-to,mode=max).
+*.db
+*.db-*
+*.sqlite
+test-results/
+.playwright-mcp/
+context/
+temp.md
+# Markdown files at root (README, CHANGELOG, TODOS). Use a non-recursive
+# pattern so server/prompts/*.md still ships — AI email generation reads
+# them at runtime via fs.readFileSync.
+/*.md
 .vscode
 .idea
 .DS_Store

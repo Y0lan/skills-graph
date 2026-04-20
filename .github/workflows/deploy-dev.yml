@@ -53,8 +53,16 @@ jobs:
           tags: |
             asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
             asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Registry-backed cache survives the 7-day GHA cache expiry and has
+          # no 10 GB size cap — layers for the builder stage (node_modules,
+          # apt, vite build) persist across CI runs and branches. GHA cache
+          # kept as a warm-start fallback for first runs without the registry.
+          cache-from: |
+            type=registry,ref=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:buildcache
+            type=gha
+          cache-to: |
+            type=registry,ref=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:buildcache,mode=max
+            type=gha,mode=max
 
   deploy-dev:
     needs: [test, build]
@@ -90,16 +98,19 @@ jobs:
         run: |
           kubectl -n apps port-forward deploy/skill-radar 9090:8080 &
           PF_PID=$!
-          sleep 5
-          for i in $(seq 1 12); do
+          sleep 3
+          # Keep a generous budget — Litestream restore on a cold pod can take
+          # tens of seconds for a large DB. rollout-status waits for Ready but
+          # port-forward + curl has its own races worth buffering against.
+          for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health" 2>/dev/null || echo "000")
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
               kill $PF_PID 2>/dev/null || true
               exit 0
             fi
-            echo "Attempt $i: HTTP $STATUS — retrying in 5s..."
-            sleep 5
+            echo "Attempt $i: HTTP $STATUS — retrying in 4s..."
+            sleep 4
           done
           kill $PF_PID 2>/dev/null || true
-          echo "Health check failed after 12 attempts" && exit 1
+          echo "Health check failed after 10 attempts" && exit 1
