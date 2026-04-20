@@ -304,17 +304,17 @@ export default function RecruitPage() {
               Évaluez les candidats sur les mêmes compétences que l'équipe
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Link to="/recruit/pipeline">
               <Button variant="outline"><Building2 className="mr-2 h-4 w-4" /> Pipeline</Button>
             </Link>
             <Link to="/recruit/funnel">
               <Button variant="outline"><GitBranch className="mr-2 h-4 w-4" /> Funnel</Button>
             </Link>
-          <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreationResult(null) }}>
-            <AlertDialogTrigger>
-              <Button><Plus className="mr-2 h-4 w-4" /> Nouveau candidat</Button>
-            </AlertDialogTrigger>
+            <AlertDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreationResult(null) }}>
+              <AlertDialogTrigger>
+                <Button><Plus className="mr-2 h-4 w-4" /> Nouveau candidat</Button>
+              </AlertDialogTrigger>
             <AlertDialogContent>
               {creationResult ? (
                 <>
@@ -455,38 +455,56 @@ export default function RecruitPage() {
                   </AlertDialogFooter>
                 </>
               )}
-            </AlertDialogContent>
-          </AlertDialog>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowRoleManager(!showRoleManager)}
+              className="text-muted-foreground hover:text-foreground"
+              title={showRoleManager ? 'Masquer les rôles personnalisés' : 'Gérer les rôles personnalisés'}
+              aria-expanded={showRoleManager}
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Rôles
+              {roles.filter(r => r.createdBy !== 'system').length > 0 && (
+                <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+                  {roles.filter(r => r.createdBy !== 'system').length}
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
 
-        {/* Role management */}
-        <div className="mt-6 rounded-lg border bg-muted/30 p-4">
-          <button
-            onClick={() => setShowRoleManager(!showRoleManager)}
-            className="flex w-full items-center gap-2 text-sm font-medium"
-          >
-            <Settings className="h-4 w-4" />
-            Rôles personnalisés ({roles.filter(r => r.createdBy !== 'system').length})
-            <span className="ml-auto text-xs text-muted-foreground">{showRoleManager ? '▾' : '▸'}</span>
-          </button>
-          {showRoleManager && (
-            <div className="mt-3 space-y-2">
-              {roles.filter(r => r.createdBy !== 'system').map(r => (
-                <div key={r.id} className="flex items-center gap-2 rounded-md bg-background px-3 py-2 text-sm">
-                  <span className="flex-1 font-medium">{r.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {r.categoryIds.map(cid => categories.find(c => c.id === cid)?.label).filter(Boolean).join(' · ')}
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={() => openEditRole(r)} className="h-7 px-2 text-xs">Modifier</Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDeleteRole(r.id, r.label)} className="h-7 px-2 text-xs text-destructive">Supprimer</Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={openNewRole} className="mt-2">
+        {/* Role management panel — only visible when toggled */}
+        {showRoleManager && (
+          <div className="mt-4 rounded-md border border-border/50 bg-muted/20 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-medium">Rôles personnalisés</span>
+              <Button variant="outline" size="sm" onClick={openNewRole} className="h-7">
                 <Plus className="mr-1 h-3 w-3" /> Ajouter un rôle
               </Button>
             </div>
-          )}
-        </div>
+            {roles.filter(r => r.createdBy !== 'system').length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground">
+                Aucun rôle personnalisé. Cliquez sur « Ajouter un rôle » pour créer un poste sur mesure.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {roles.filter(r => r.createdBy !== 'system').map(r => (
+                  <div key={r.id} className="flex items-center gap-2 rounded-md bg-background px-3 py-2 text-sm">
+                    <span className="flex-1 font-medium">{r.label}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {r.categoryIds.map(cid => categories.find(c => c.id === cid)?.label).filter(Boolean).join(' · ')}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => openEditRole(r)} className="h-7 px-2 text-xs">Modifier</Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteRole(r.id, r.label)} className="h-7 px-2 text-xs text-destructive">Supprimer</Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Role create/edit dialog */}
         <AlertDialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
@@ -527,7 +545,6 @@ export default function RecruitPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-          </div>
 
         {loading ? (
           <div className="mt-12 flex justify-center">

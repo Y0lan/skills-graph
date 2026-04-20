@@ -359,7 +359,7 @@ protectedRouter.get('/candidatures', (req, res) => {
       p.titre as poste_titre, p.pole as poste_pole,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id AND ce.type = 'status_change' AND ce.statut_to = c.statut) as entered_status_at,
-      (SELECT COUNT(DISTINCT cd.type) FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.deleted_at IS NULL AND cd.type IN ('cv', 'lettre', 'aboro')) as docs_slot_count
+      (SELECT COUNT(DISTINCT cd.type) FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.deleted_at IS NULL AND cd.type IN ('cv', 'lettre')) as docs_slot_count
     FROM candidatures c
     JOIN candidates cand ON cand.id = c.candidate_id
     JOIN postes p ON p.id = c.poste_id

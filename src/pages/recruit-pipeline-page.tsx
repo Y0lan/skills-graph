@@ -311,13 +311,13 @@ export default function RecruitPipelinePage() {
       if (days < 7) return false
       if (c.statut === 'embauche' || c.statut === 'refuse') return false
     }
-    if (chipDocsMissing && c.docsSlotCount >= 3) return false
+    if (chipDocsMissing && c.docsSlotCount >= 2) return false
     if (chipNeedsAction) {
       // "Needs action" = stuck + docs missing + has soft skill alerts (any)
       const enteredAt = c.enteredStatusAt ?? c.createdAt
       const days = (Date.now() - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
       const isStuck = days >= 7 && c.statut !== 'embauche' && c.statut !== 'refuse'
-      const docsIncomplete = c.docsSlotCount < 3
+      const docsIncomplete = c.docsSlotCount < 2
       const hasAlerts = (c.softSkillAlerts?.length ?? 0) > 0
       if (!isStuck && !docsIncomplete && !hasAlerts) return false
     }
