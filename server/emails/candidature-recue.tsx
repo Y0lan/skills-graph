@@ -20,16 +20,22 @@ export function CandidatureRecue({ candidateName }: CandidatureRecueProps) {
         &eacute;quipe va l&apos;&eacute;tudier dans les prochains jours.
       </p>
       <p style={{ margin: '0 0 16px 0' }}>
-        Si votre profil est retenu pour la suite du processus, nous vous
-        adresserons par email un lien personnel vers notre questionnaire
-        d&apos;auto-&eacute;valuation des comp&eacute;tences. Vous n&apos;avez
-        donc rien &agrave; remplir d&egrave;s maintenant&nbsp;: nous reviendrons
-        vers vous le moment venu.
+        <strong>Vous n&apos;avez rien &agrave; remplir &agrave; ce stade.</strong>
+        {' '}Si votre profil correspond &agrave; nos besoins, nous reviendrons
+        vers vous par email avec un lien personnel vers un questionnaire
+        d&apos;auto-&eacute;valuation des comp&eacute;tences.
+      </p>
+      <p style={{ margin: '0 0 16px 0' }}>
+        Ce questionnaire sera &agrave; remplir avec la plus grande
+        honn&ecirc;tet&eacute;&nbsp;: chacune de vos r&eacute;ponses pourra
+        &ecirc;tre discut&eacute;e et challeng&eacute;e lors d&apos;un entretien
+        avec notre &eacute;quipe technique.
       </p>
       <p style={{ margin: '0 0 16px 0' }}>
         Le GIE SINAPSE intervient en tant qu&apos;assistant &agrave;
-        ma&icirc;trise d&apos;ouvrage pour le compte de la CAFAT sur ce
-        programme structurant, pilier de sa transformation digitale.
+        ma&icirc;trise d&apos;ouvrage pour le compte de la CAFAT sur un
+        programme structurant de transformation num&eacute;rique de la
+        protection sociale.
       </p>
       <p style={{ margin: '0 0 16px 0' }}>
         En l&apos;absence de r&eacute;ponse de notre part dans un d&eacute;lai
