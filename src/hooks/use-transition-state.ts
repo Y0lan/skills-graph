@@ -25,6 +25,8 @@ export interface UseTransitionStateReturn {
   setTransitionFile: React.Dispatch<React.SetStateAction<File | null>>
   transitionSendEmail: boolean
   setTransitionSendEmail: React.Dispatch<React.SetStateAction<boolean>>
+  transitionSkipEmailReason: string
+  setTransitionSkipEmailReason: React.Dispatch<React.SetStateAction<string>>
   transitionIncludeReason: boolean
   setTransitionIncludeReason: React.Dispatch<React.SetStateAction<boolean>>
   transitionEmailSubject: string
@@ -57,6 +59,7 @@ export function useTransitionState(
   const [transitionSkipReason, setTransitionSkipReason] = useState('')
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
   const [transitionSendEmail, setTransitionSendEmail] = useState(true)
+  const [transitionSkipEmailReason, setTransitionSkipEmailReason] = useState('')
   const [transitionIncludeReason, setTransitionIncludeReason] = useState(false)
   const [transitionEmailSubject, setTransitionEmailSubject] = useState('')
   const [transitionEmailBody, setTransitionEmailBody] = useState('')
@@ -115,6 +118,7 @@ export function useTransitionState(
     setTransitionSkipReason('')
     setTransitionFile(null)
     setTransitionSendEmail(true)
+    setTransitionSkipEmailReason('')
     setTransitionIncludeReason(false)
     setTransitionEmailSubject('')
     setTransitionEmailBody('')
@@ -177,6 +181,9 @@ export function useTransitionState(
           notes: transitionNotes.trim() || undefined,
           skipReason: isSkip ? transitionSkipReason.trim() : undefined,
           sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
+          skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
+            ? transitionSkipEmailReason.trim() || undefined
+            : undefined,
           includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
           customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
           aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
@@ -215,7 +222,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions])
 
   return {
     changingStatus,
@@ -228,6 +235,8 @@ export function useTransitionState(
     setTransitionFile,
     transitionSendEmail,
     setTransitionSendEmail,
+    transitionSkipEmailReason,
+    setTransitionSkipEmailReason,
     transitionIncludeReason,
     setTransitionIncludeReason,
     transitionEmailSubject,

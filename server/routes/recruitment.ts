@@ -6,7 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate } from '../lib/email.js'
+import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip } from '../lib/document-service.js'
@@ -521,7 +521,7 @@ protectedRouter.get('/email-template/:statut', (req, res) => {
 
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req, res) => {
-  const { statut, currentStatut: clientStatut, notes, skipReason, sendEmail, includeReasonInEmail, customBody } = req.body
+  const { statut, currentStatut: clientStatut, notes, skipReason, sendEmail, includeReasonInEmail, customBody, skipEmailReason } = req.body
 
   if (!statut || typeof statut !== 'string') {
     res.status(400).json({ error: 'Statut requis' })
@@ -568,6 +568,20 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     return
   }
 
+  // Item 16 + Auth ADR: when the recruiter advances a forward statut and
+  // explicitly opts OUT of sending the candidate email, a reason ≥ 10 chars
+  // is mandatory and gets audit-logged. The check applies only to statuts
+  // that have a candidate-facing email (i.e., not skill_radar_complete which
+  // never emails the candidate, and not refuse which always sends).
+  const isEmailableStatusForSkipCheck = statut !== 'skill_radar_complete' && statut !== 'refuse'
+  if (isEmailableStatusForSkipCheck && sendEmail === false) {
+    const reason = typeof skipEmailReason === 'string' ? skipEmailReason.trim() : ''
+    if (reason.length < 10) {
+      res.status(400).json({ error: 'Une raison d’au moins 10 caractères est requise pour avancer sans envoyer d’email.' })
+      return
+    }
+  }
+
   const user = getUser(req)
 
   try {
@@ -580,9 +594,14 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         throw new Error('STATUS_CONFLICT')
       }
 
-      const eventNotes = isSkip
+      let eventNotes = isSkip
         ? `[Saut: ${getSkippedSteps(current.statut, statut).join(' → ')}] ${skipReason?.trim() ?? ''}\n${notes?.trim() ?? ''}`.trim()
         : notes?.trim() || null
+
+      // Append skip-email reason to the audit trail if the recruiter opted out.
+      if (isEmailableStatusForSkipCheck && sendEmail === false && typeof skipEmailReason === 'string' && skipEmailReason.trim()) {
+        eventNotes = `${eventNotes ? eventNotes + '\n' : ''}[Email non envoyé — raison: ${skipEmailReason.trim()}]`
+      }
 
       getDb().prepare(`
         INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
@@ -1044,6 +1063,52 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     const fs = await import('fs')
     fs.createReadStream(result.filePath).pipe(res)
   }
+})
+
+// Render the email a recruiter is about to send. Pure preview — no Resend call.
+// Item 16: lets ConfirmEmailDialog show the actual HTML the candidate will see,
+// not a markdown approximation, before the recruiter clicks "Envoyer & avancer".
+protectedRouter.post('/emails/preview', (req, res) => {
+  const body = req.body as { candidatureId?: unknown; statut?: unknown; customBody?: unknown; includeReasonInEmail?: unknown; notes?: unknown }
+  if (typeof body.candidatureId !== 'string' || typeof body.statut !== 'string') {
+    res.status(400).json({ error: 'candidatureId et statut requis' })
+    return
+  }
+
+  const cand = getDb().prepare(`
+    SELECT cand.name, cand.id AS candidate_id, p.titre AS poste_titre
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(body.candidatureId) as { name: string; candidate_id: string; poste_titre: string } | undefined
+
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
+  renderTransitionEmail({
+    candidateName: cand.name,
+    role: cand.poste_titre,
+    statut: body.statut,
+    notes: typeof body.notes === 'string' ? body.notes : undefined,
+    customBody: typeof body.customBody === 'string' ? body.customBody : undefined,
+    includeReasonInEmail: !!body.includeReasonInEmail,
+    evaluationUrl: body.statut === 'skill_radar_envoye'
+      ? `${baseUrl}/evaluate/${cand.candidate_id}`
+      : undefined,
+  }).then(rendered => {
+    if (!rendered) {
+      res.status(404).json({ error: `Aucun template pour le statut "${body.statut}"` })
+      return
+    }
+    res.json({ subject: rendered.subject, html: rendered.html })
+  }).catch(err => {
+    console.error('[EMAIL_PREVIEW] failed', err)
+    res.status(500).json({ error: 'Échec du rendu du template' })
+  })
 })
 
 // Delete a single candidature (NOT the candidate). Use this from any "delete card"

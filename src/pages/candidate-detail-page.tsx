@@ -61,6 +61,7 @@ export default function CandidateDetailPage() {
     transitionSkipReason, setTransitionSkipReason,
     transitionFile, setTransitionFile,
     transitionSendEmail, setTransitionSendEmail,
+    transitionSkipEmailReason, setTransitionSkipEmailReason,
     transitionIncludeReason, setTransitionIncludeReason,
     transitionEmailSubject,
     transitionEmailBody, setTransitionEmailBody,
@@ -593,19 +594,80 @@ export default function CandidateDetailPage() {
                 !transitionHasEmailTemplate &&
                 !transitionEmailLoading &&
                 transitionDialog.targetStatut !== 'refuse' && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={transitionSendEmail}
-                    onChange={(e) => setTransitionSendEmail(e.target.checked)}
-                    className="rounded border-input"
-                  />
-                  <span className="text-sm">
-                    {transitionDialog.targetStatut === 'skill_radar_envoye'
-                      ? "Envoyer le lien d'evaluation par email au candidat"
-                      : 'Envoyer un email de notification au candidat'}
-                  </span>
-                </label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer flex-1">
+                      <input
+                        type="checkbox"
+                        checked={transitionSendEmail}
+                        onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      <span className="text-sm">
+                        {transitionDialog.targetStatut === 'skill_radar_envoye'
+                          ? "Envoyer le lien d'évaluation par email au candidat"
+                          : 'Envoyer un email de notification au candidat'}
+                      </span>
+                    </label>
+                    {transitionSendEmail && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={async () => {
+                          if (!transitionDialog) return
+                          try {
+                            const res = await fetch('/api/recruitment/emails/preview', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
+                              body: JSON.stringify({
+                                candidatureId: transitionDialog.candidatureId,
+                                statut: transitionDialog.targetStatut,
+                                customBody: transitionEmailBody.trim() || undefined,
+                                notes: transitionNotes.trim() || undefined,
+                                includeReasonInEmail: transitionIncludeReason,
+                              }),
+                            })
+                            if (!res.ok) {
+                              const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+                              throw new Error(body.error || `HTTP ${res.status}`)
+                            }
+                            const { subject, html } = await res.json() as { subject: string; html: string }
+                            const w = window.open('', '_blank', 'width=720,height=900')
+                            if (w) {
+                              w.document.write(`<!doctype html><html><head><title>Aperçu — ${subject}</title></head><body>${html}</body></html>`)
+                              w.document.close()
+                            }
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : 'Erreur aperçu')
+                          }
+                        }}
+                      >
+                        <Mail className="h-3 w-3 mr-1" />
+                        Aperçu HTML
+                      </Button>
+                    )}
+                  </div>
+                  {!transitionSendEmail && (
+                    <div>
+                      <label htmlFor="skip-email-reason" className="text-xs font-medium text-muted-foreground">
+                        Raison de ne pas envoyer (10 caractères min, audit-loggée)
+                      </label>
+                      <Textarea
+                        id="skip-email-reason"
+                        value={transitionSkipEmailReason}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTransitionSkipEmailReason(e.target.value)}
+                        placeholder="ex. Email envoyé manuellement à Marie hier soir"
+                        rows={2}
+                        maxLength={500}
+                        className="mt-1 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{transitionSkipEmailReason.length}/500</p>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Include reason checkbox for refuse */}
