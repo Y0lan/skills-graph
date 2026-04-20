@@ -701,6 +701,7 @@ export default function CandidateDetailPage() {
                     documents={cDocuments}
                     setDocuments={setDocuments}
                     setEvents={setEvents}
+                    setCandidatureDataMap={setCandidatureDataMap}
                     currentStatut={c.statut}
                   />
                 </div>

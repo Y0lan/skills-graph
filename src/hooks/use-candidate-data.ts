@@ -71,6 +71,8 @@ export interface CandidatureDocument {
   created_at: string
   scan_status?: 'pending' | 'clean' | 'infected' | 'error' | 'skipped'
   scanned_at?: string
+  deleted_at?: string | null
+  size_bytes?: number | null
 }
 
 export interface AboroProfile {
