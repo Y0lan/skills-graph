@@ -1515,18 +1515,35 @@ protectedRouter.get('/documents/:docId/preview', async (req, res) => {
 // Get scan status for a document, including any active override.
 // Manual rescan trigger — re-runs ClamAV + VirusTotal on an existing doc.
 // Used by the "Relancer" button in scan-detail-dialog when VT timed out.
-protectedRouter.post('/documents/:docId/rescan', (req, res) => {
+// Rate-limited (mutationRateLimit) + in-flight guarded to protect the VT
+// quota from loop-clicks and from the auto-retry scheduler racing the user.
+protectedRouter.post('/documents/:docId/rescan', mutationRateLimit, (req, res) => {
   const doc = getDb().prepare(
-    'SELECT id, path, filename, candidature_id FROM candidature_documents WHERE id = ? AND deleted_at IS NULL'
-  ).get(req.params.docId) as { id: string; path: string; filename: string; candidature_id: string } | undefined
+    'SELECT id, path, filename, candidature_id, scan_status, scanned_at FROM candidature_documents WHERE id = ? AND deleted_at IS NULL'
+  ).get(req.params.docId) as { id: string; path: string; filename: string; candidature_id: string; scan_status: string | null; scanned_at: string | null } | undefined
 
   if (!doc) {
     res.status(404).json({ error: 'Document introuvable' })
     return
   }
 
-  // Reset status to pending so the UI shows the spinner while the scan runs.
-  getDb().prepare('UPDATE candidature_documents SET scan_status = ?, scan_result = NULL WHERE id = ?').run('pending', doc.id)
+  // In-flight guard: a scan is already running if scan_status is 'pending'
+  // AND it was updated recently (5 min). Older 'pending' rows are treated
+  // as stuck and re-triggering is allowed. Prevents concurrent scans from
+  // racing their UPDATEs — last-writer-wins was corrupting the result.
+  if (doc.scan_status === 'pending' && doc.scanned_at) {
+    const pendingFor = Date.now() - new Date(doc.scanned_at.replace(' ', 'T') + 'Z').getTime()
+    if (pendingFor < 5 * 60 * 1000) {
+      res.status(409).json({ error: 'Un scan est déjà en cours pour ce document', status: 'pending' })
+      return
+    }
+  }
+
+  // Reset status to pending AND stamp scanned_at so the in-flight guard
+  // above works (previous writer only set scanned_at on completion).
+  getDb().prepare(
+    "UPDATE candidature_documents SET scan_status = 'pending', scan_result = NULL, scanned_at = datetime('now') WHERE id = ?"
+  ).run(doc.id)
 
   // Fire-and-forget — triggerDocumentScan publishes SSE updates + persists the result.
   triggerDocumentScan(doc.id, doc.path, doc.filename).catch(err =>

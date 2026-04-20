@@ -23,7 +23,17 @@ interface ScanEngineResult {
 
 type ScanEngineSummary =
   | { name: 'ClamAV'; available: false; reason: string }
-  | { name: 'ClamAV'; available: true; clean: boolean; threats: string[] }
+  | {
+      name: 'ClamAV'
+      available: true
+      clean: boolean
+      threats: string[]
+      daemonVersion?: string
+      signatureVersion?: string
+      signatureDate?: string
+      scanDurationMs?: number
+      fileSizeBytes?: number
+    }
   | { name: 'VirusTotal'; available: false; reason: string }
   | {
       name: 'VirusTotal'
@@ -106,6 +116,13 @@ function EnginePanel({ summary, onRescan, rescanning }: { summary: ScanEngineSum
   }
 
   if (summary.name === 'ClamAV') {
+    const fmtSize = (n?: number): string | null => {
+      if (n == null) return null
+      if (n < 1024) return `${n} B`
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+      return `${(n / 1024 / 1024).toFixed(2)} MB`
+    }
+    const sizeLabel = fmtSize(summary.fileSizeBytes)
     return (
       <div className="rounded-md border bg-muted/20 p-3 space-y-2">
         <EngineHeader engineName={summary.name} tone={summary.clean ? 'green' : 'red'} label={summary.clean ? 'Propre' : `Infecté · ${summary.threats.length}`} />
@@ -116,6 +133,39 @@ function EnginePanel({ summary, onRescan, rescanning }: { summary: ScanEngineSum
         )}
         {summary.clean && (
           <p className="text-[11px] text-muted-foreground">Aucune signature détectée par le moteur local.</p>
+        )}
+        {/* Technical detail — mirrors the depth VirusTotal provides with its
+            per-engine grid, so the recruiter can verify the scan is current. */}
+        {(summary.daemonVersion || summary.signatureVersion || summary.scanDurationMs != null || sizeLabel) && (
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground pt-1 border-t border-muted">
+            {summary.daemonVersion && (
+              <>
+                <dt className="font-medium">Moteur :</dt>
+                <dd className="font-mono">{summary.daemonVersion}</dd>
+              </>
+            )}
+            {summary.signatureVersion && (
+              <>
+                <dt className="font-medium">Signatures :</dt>
+                <dd className="font-mono">
+                  {summary.signatureVersion}
+                  {summary.signatureDate && <span className="text-muted-foreground/70"> · {summary.signatureDate}</span>}
+                </dd>
+              </>
+            )}
+            {summary.scanDurationMs != null && (
+              <>
+                <dt className="font-medium">Durée :</dt>
+                <dd className="font-mono">{summary.scanDurationMs} ms</dd>
+              </>
+            )}
+            {sizeLabel && (
+              <>
+                <dt className="font-medium">Taille :</dt>
+                <dd className="font-mono">{sizeLabel}</dd>
+              </>
+            )}
+          </dl>
         )}
       </div>
     )
@@ -189,9 +239,16 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
         throw new Error(body.error || `HTTP ${res.status}`)
       }
       toast.success('Scan relancé — le résultat apparaîtra sous peu')
-      // Optimistic reload: clear data so the loader shows; SSE will drive the
-      // parent dossier badge update; user can reopen the dialog to see the new result.
+      // Optimistic reload: trigger the loading spinner, then refetch the
+      // scan status. The SSE stream on the parent page refreshes the badge;
+      // this dialog also re-reads once the user leaves it open.
       setData(null)
+      setLoading(true)
+      const res2 = await fetch(`/api/recruitment/documents/${documentId}/scan`, { credentials: 'include' })
+      if (res2.ok) {
+        setData(await res2.json() as ScanData)
+      }
+      setLoading(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Relance échouée')
     } finally {

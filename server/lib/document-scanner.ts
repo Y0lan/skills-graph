@@ -19,7 +19,22 @@ export interface ScanEngineResult {
  */
 export type ScanEngineSummary =
   | { name: 'ClamAV'; available: false; reason: string }
-  | { name: 'ClamAV'; available: true; clean: boolean; threats: string[] }
+  | {
+      name: 'ClamAV'
+      available: true
+      clean: boolean
+      threats: string[]
+      /** Daemon version, e.g. "ClamAV 1.0.0". Parsed from getVersion() output. */
+      daemonVersion?: string
+      /** Signature database name + revision, e.g. "daily-27143". */
+      signatureVersion?: string
+      /** Signature database publish date (as reported by daemon). */
+      signatureDate?: string
+      /** Scan wall-clock duration in milliseconds. */
+      scanDurationMs?: number
+      /** Bytes scanned (source file size). */
+      fileSizeBytes?: number
+    }
   | { name: 'VirusTotal'; available: false; reason: string }
   | {
       name: 'VirusTotal'
@@ -42,6 +57,18 @@ export interface ScanResult {
 
 // ─── ClamAV scan (local daemon) ─────────────────────────────────────
 
+/** ClamAV getVersion() returns a single string like
+ *   "ClamAV 1.0.0/daily-27143/Thu Apr 18 14:30:00 2026"
+ * separated by forward slashes. Some builds omit the date part. */
+function parseClamAvVersion(raw: string): { daemonVersion: string; signatureVersion?: string; signatureDate?: string } {
+  const parts = raw.trim().split('/')
+  return {
+    daemonVersion: parts[0]?.trim() || 'ClamAV',
+    signatureVersion: parts[1]?.trim() || undefined,
+    signatureDate: parts.slice(2).join('/').trim() || undefined,
+  }
+}
+
 async function scanWithClamAV(filePath: string): Promise<ScanEngineSummary & { name: 'ClamAV' }> {
   try {
     // Dynamic import — clamscan has no type definitions
@@ -62,12 +89,33 @@ async function scanWithClamAV(filePath: string): Promise<ScanEngineSummary & { n
       },
     })
 
+    // Get daemon/signature version in parallel with the scan — best effort.
+    const versionPromise = (async () => {
+      try {
+        // @ts-expect-error clamscan has no TypeScript types
+        const raw = await clamscan.getVersion()
+        return typeof raw === 'string' ? parseClamAvVersion(raw) : undefined
+      } catch { return undefined }
+    })()
+    const fileSizeBytes = (() => {
+      try { return fs.statSync(filePath).size } catch { return undefined }
+    })()
+
+    const start = performance.now()
     const { isInfected, viruses } = await clamscan.isInfected(filePath)
+    const scanDurationMs = Math.round(performance.now() - start)
+    const version = await versionPromise
+
     return {
       name: 'ClamAV',
       available: true,
       clean: !isInfected,
       threats: viruses ?? [],
+      daemonVersion: version?.daemonVersion,
+      signatureVersion: version?.signatureVersion,
+      signatureDate: version?.signatureDate,
+      scanDurationMs,
+      fileSizeBytes,
     }
   } catch (err) {
     console.warn('[SCAN] ClamAV not available — skipping local scan')
