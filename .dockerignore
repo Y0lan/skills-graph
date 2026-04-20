@@ -27,3 +27,5 @@ temp.md
 .vscode
 .idea
 .DS_Store
+# cache-validation: trivial touch to measure 2nd-run build time with a warm
+# registry cache. Remove after confirming the expected speedup.
