@@ -121,6 +121,15 @@ export default function RecruitPipelinePage() {
   const [filterPole, setFilterPole] = useState<string>('all')
   const [filterPoste, setFilterPoste] = useState<string>('all')
   const [filterStatut, setFilterStatut] = useState<string>('all')
+  // Item 21 P2 smart filter chips — multi-select, AND-combined.
+  const [chipStuck, setChipStuck] = useState(false)
+  const [chipDocsMissing, setChipDocsMissing] = useState(false)
+  const [chipNeedsAction, setChipNeedsAction] = useState(false)
+  // Item 1 P2 density toggle — persisted per user.
+  const [density, setDensity] = useState<'compact' | 'comfortable'>(() =>
+    (localStorage.getItem('pipeline-density') as 'compact' | 'comfortable') ?? 'comfortable'
+  )
+  useEffect(() => { localStorage.setItem('pipeline-density', density) }, [density])
   const [weightsOpen, setWeightsOpen] = useState(false)
   const [weightPoste, setWeightPoste] = useState(50)
   const [weightEquipe, setWeightEquipe] = useState(20)
@@ -294,8 +303,28 @@ export default function RecruitPipelinePage() {
     if (filterPole !== 'all' && c.postePole !== filterPole) return false
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
+    // Smart chip filters
+    if (chipStuck) {
+      // Reuse the SLA helper — same source of truth as StatusChip's red ring.
+      const enteredAt = c.enteredStatusAt ?? c.createdAt
+      const days = (Date.now() - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      if (days < 7) return false
+      if (c.statut === 'embauche' || c.statut === 'refuse') return false
+    }
+    if (chipDocsMissing && c.docsSlotCount >= 3) return false
+    if (chipNeedsAction) {
+      // "Needs action" = stuck + docs missing + has soft skill alerts (any)
+      const enteredAt = c.enteredStatusAt ?? c.createdAt
+      const days = (Date.now() - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      const isStuck = days >= 7 && c.statut !== 'embauche' && c.statut !== 'refuse'
+      const docsIncomplete = c.docsSlotCount < 3
+      const hasAlerts = (c.softSkillAlerts?.length ?? 0) > 0
+      if (!isStuck && !docsIncomplete && !hasAlerts) return false
+    }
     return true
   })
+
+  const activeChipCount = (chipStuck ? 1 : 0) + (chipDocsMissing ? 1 : 0) + (chipNeedsAction ? 1 : 0)
 
   return (
     <div className="min-h-screen">
@@ -484,17 +513,42 @@ export default function RecruitPipelinePage() {
             </SelectContent>
           </Select>
 
-          {(filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all') && (
+          {(filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all' || activeChipCount > 0) && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => { setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all') }}
+              onClick={() => {
+                setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all')
+                setChipStuck(false); setChipDocsMissing(false); setChipNeedsAction(false)
+              }}
             >
               Réinitialiser
             </Button>
           )}
 
+          {/* Density toggle (Item 1 P2) — applies to list mode rows */}
           <div className="inline-flex rounded-md border border-border ml-auto">
+            <Button
+              variant={density === 'comfortable' ? 'default' : 'ghost'}
+              size="sm"
+              className="gap-1.5 rounded-r-none text-xs"
+              onClick={() => setDensity('comfortable')}
+              title="Densité confortable"
+            >
+              ☷
+            </Button>
+            <Button
+              variant={density === 'compact' ? 'default' : 'ghost'}
+              size="sm"
+              className="gap-1.5 rounded-l-none text-xs"
+              onClick={() => setDensity('compact')}
+              title="Densité compacte"
+            >
+              ≡
+            </Button>
+          </div>
+
+          <div className="inline-flex rounded-md border border-border">
             <Button
               variant={viewMode === 'list' ? 'default' : 'ghost'}
               size="sm"
@@ -518,6 +572,38 @@ export default function RecruitPipelinePage() {
           <Link to="/recruit" className="text-sm text-muted-foreground hover:text-foreground hover:underline">
             {filtered.length} candidature{filtered.length !== 1 ? 's' : ''}
           </Link>
+        </div>
+
+        {/* Smart filter chips (Item 21 P2) — multi-select, AND-combined. */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Filtres rapides</span>
+          <Button
+            variant={chipStuck ? 'default' : 'outline'}
+            size="sm"
+            className="h-6 text-[11px] px-2"
+            onClick={() => setChipStuck(!chipStuck)}
+            title="Candidatures en attente depuis plus de 7 jours"
+          >
+            ⏱ Bloquées &gt; 7j
+          </Button>
+          <Button
+            variant={chipDocsMissing ? 'default' : 'outline'}
+            size="sm"
+            className="h-6 text-[11px] px-2"
+            onClick={() => setChipDocsMissing(!chipDocsMissing)}
+            title="Dossier incomplet (CV/Lettre/ABORO)"
+          >
+            📂 Dossier incomplet
+          </Button>
+          <Button
+            variant={chipNeedsAction ? 'default' : 'outline'}
+            size="sm"
+            className="h-6 text-[11px] px-2"
+            onClick={() => setChipNeedsAction(!chipNeedsAction)}
+            title="Bloqué OU dossier incomplet OU alerte soft skill"
+          >
+            🚨 Action requise
+          </Button>
         </div>
 
         {/* Candidatures — list or kanban */}
@@ -561,7 +647,7 @@ export default function RecruitPipelinePage() {
                   className="block flex-1 min-w-0"
                 >
                 <Card className={`hover:bg-muted/30 transition-colors ${selectedIds.has(c.id) ? 'ring-1 ring-primary/50' : ''}`}>
-                  <CardContent className="py-3 px-4">
+                  <CardContent className={density === 'compact' ? 'py-1.5 px-3' : 'py-3 px-4'}>
                     <div className="flex items-center gap-4">
                       {/* Name + meta */}
                       <div className="flex-1 min-w-0">
