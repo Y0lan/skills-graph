@@ -33,12 +33,20 @@ export const BRAND = {
   linkedinLabel: 'LinkedIn',
 
   // Logo for emails. MUST be a publicly-reachable absolute URL — email
-  // clients can't fetch from localhost or behind auth. Override via
-  // EMAIL_LOGO_URL env var if hosted elsewhere (CDN, marketing site).
+  // clients can't fetch from localhost or behind auth. Resolution order:
+  //   1. EMAIL_LOGO_URL env var (explicit override, e.g. CDN)
+  //   2. BETTER_AUTH_URL + /email-logo-sinapse.png (auto: dev → dev host,
+  //      prod → prod host — matches whatever environment the server runs in)
+  //   3. https://radar.sinapse.nc/... (last-resort fallback)
   // PNG generated from logo-sinapse-horizontal.svg via rsvg-convert at 400px
   // wide (2x retina for crisp 200px display). 3.125:1 aspect, ~10KB, RGBA
   // with alpha so it sits cleanly on the white email background.
-  logoUrl: process.env.EMAIL_LOGO_URL ?? 'https://radar.sinapse.nc/email-logo-sinapse.png',
+  logoUrl: (() => {
+    if (process.env.EMAIL_LOGO_URL) return process.env.EMAIL_LOGO_URL
+    const base = process.env.BETTER_AUTH_URL?.replace(/\/$/, '')
+    if (base) return `${base}/email-logo-sinapse.png`
+    return 'https://radar.sinapse.nc/email-logo-sinapse.png'
+  })(),
   logoWidthPx: 200,
 
   // Email layout
