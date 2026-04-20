@@ -513,6 +513,54 @@ export function initDatabase(): void {
     console.error('[DEDUP] UNIQUE index on candidates(email) failed (likely duplicates remain):', err)
   }
 
+  // ─── Item 2 / 10 / 11 / 12 — extraction stack ──────────────────────
+  // Schema only. Extractor refactor + UI ride on top in follow-up commits.
+  // Spec: docs/decisions/2026-04-20-extraction-architecture.md
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidate_extractions (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      type TEXT NOT NULL CHECK(type IN ('cv', 'aboro')),
+      run_id TEXT NOT NULL,
+      prompt_version INTEGER NOT NULL,
+      model_version TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      raw_output TEXT NOT NULL,
+      parsed_output TEXT NOT NULL,
+      merge_strategy TEXT NOT NULL DEFAULT 'additive'
+        CHECK(merge_strategy IN ('additive', 'recruiter-curated', 'replace')),
+      cost_eur REAL,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidate_extractions_candidate ON candidate_extractions(candidate_id, type, created_at DESC)')
+  db.exec('CREATE INDEX IF NOT EXISTS idx_candidate_extractions_run ON candidate_extractions(run_id)')
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidate_field_overrides (
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      field_name TEXT NOT NULL,
+      value TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('recruiter', 'extraction')),
+      locked_by TEXT,
+      locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (candidate_id, field_name)
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS extraction_usage (
+      user_slug TEXT NOT NULL,
+      day TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      tokens_spent INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_slug, day)
+    )
+  `)
+
   // Scan verdict overrides — recruiter can mark a flagged file as safe
   // (or quarantine a clean one) for a bounded incident window.
   db.exec(`
