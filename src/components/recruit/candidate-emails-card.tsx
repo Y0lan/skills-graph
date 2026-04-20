@@ -146,9 +146,25 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                   )}
                 </span>
               </button>
-              {isOpen && entry.body && (
-                <div className="px-3 pb-3 pt-1 text-sm prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 border-t bg-muted/20">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.body}</ReactMarkdown>
+              {isOpen && (
+                <div className="px-3 pb-3 pt-2 text-sm border-t bg-muted/20 space-y-2">
+                  {entry.subject && (
+                    <p className="text-xs"><span className="text-muted-foreground">Objet : </span><span className="font-medium">{entry.subject}</span></p>
+                  )}
+                  {entry.body ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.body}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <p className="text-xs italic text-muted-foreground">
+                      Corps non sauvegardé (email généré par template automatique — non éditable).
+                    </p>
+                  )}
+                  {entry.messageId && (
+                    <p className="text-[10px] text-muted-foreground/70 font-mono truncate">
+                      Message ID : {entry.messageId}
+                    </p>
+                  )}
                 </div>
               )}
             </li>

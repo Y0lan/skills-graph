@@ -339,6 +339,7 @@ export async function processIntake(
       role: poste.titre,
       candidateEmail: email.trim(),
       leadEmail,
+      candidatureId: intakeResult.candidatureId,
     }).catch(() => console.error('[INTAKE] Application email failed'))
   }
 

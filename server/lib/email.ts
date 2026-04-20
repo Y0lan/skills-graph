@@ -2,6 +2,7 @@ import { Resend } from 'resend'
 import { marked } from 'marked'
 import sanitizeHtml from 'sanitize-html'
 import { render } from '@react-email/components'
+import { getDb } from './db.js'
 import { CandidateInvite } from '../emails/candidate-invite.js'
 import { CandidateSubmitted } from '../emails/candidate-submitted.js'
 import { CandidatureRecue, CandidatureRecueLead } from '../emails/candidature-recue.js'
@@ -114,24 +115,43 @@ export async function sendApplicationReceived(opts: {
   role: string
   candidateEmail: string
   leadEmail: string
+  /** When set, a candidature_events row of type 'email_sent' is inserted on success
+   * so the frontend tracking card surfaces this email alongside the transition ones. */
+  candidatureId?: string
 }) {
   if (!process.env.RESEND_API_KEY) return null
 
   // Email to candidate
+  const candidateSubject = `Candidature reçue — ${opts.role} chez SINAPSE`
   try {
     const html = await render(CandidatureRecue({
       candidateName: opts.candidateName,
       role: opts.role,
     }))
 
-    await resend.emails.send({
+    const { data } = await resend.emails.send({
       from: FROM_EMAIL,
       to: opts.candidateEmail,
-      subject: `Candidature reçue — ${opts.role} chez SINAPSE`,
+      subject: candidateSubject,
       html,
       attachments: maybeLogoAttachment(html),
     })
     console.log('[EMAIL] Application received sent to candidate')
+
+    if (opts.candidatureId && data?.id) {
+      try {
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+          VALUES (?, 'email_sent', ?, ?, 'system')
+        `).run(
+          opts.candidatureId,
+          `Confirmation de candidature envoyée à ${opts.candidateEmail}`,
+          JSON.stringify({ subject: candidateSubject, body: null, messageId: data.id }),
+        )
+      } catch {
+        console.error('[EMAIL] Failed to record email_sent event for application-received')
+      }
+    }
   } catch {
     console.error('[EMAIL] Failed to send application received (candidate)')
   }
