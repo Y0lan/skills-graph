@@ -500,17 +500,29 @@ export default function CandidateDetailPage() {
             </div>
           </div>
 
-          {/* Status badges */}
+          {/* Status badges. The Skill Radar chip only shows when it is
+              actionable: one of the candidatures has reached skill_radar_envoye
+              and the candidate has not yet submitted. Before that stage the
+              pipeline stepper already communicates state — a global
+              "En attente" there is noise. */}
           <div className="flex items-center gap-2 flex-wrap">
-            {isPending ? (
-              <Badge variant="secondary">
-                <Clock className="mr-1 h-3 w-3" /> En attente
-              </Badge>
-            ) : candidate.aiReport ? (
-              <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
-            ) : (
-              <Badge variant="default" className="bg-primary">Soumis</Badge>
-            )}
+            {(() => {
+              const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
+              if (awaitingRadar) {
+                return (
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title="Le Skill Radar a été envoyé au candidat, on attend qu'il complète l'auto-évaluation">
+                    <Clock className="mr-1 h-3 w-3" /> Skill Radar en attente
+                  </Badge>
+                )
+              }
+              if (candidate.submittedAt && candidate.aiReport) {
+                return <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
+              }
+              if (candidate.submittedAt) {
+                return <Badge variant="default" className="bg-primary">Skill Radar soumis</Badge>
+              }
+              return null
+            })()}
             {candidate.canal && (
               <Badge variant="outline" className="text-xs">
                 {CANAL_LABELS[candidate.canal] ?? candidate.canal}

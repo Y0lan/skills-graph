@@ -11,6 +11,21 @@ export const STATUT_LABELS: Record<string, string> = {
   refuse: 'Refusé',
 }
 
+/** One-line explanation of each pipeline stage, shown in the stepper tooltip.
+ *  Kept terse — reads like a legend, not a spec. */
+export const STATUT_DESCRIPTIONS: Record<string, string> = {
+  postule: 'Candidature reçue. Étape initiale de chaque candidat.',
+  preselectionne: 'Profil validé par le recruteur après lecture du dossier.',
+  skill_radar_envoye: 'Lien vers le formulaire d\'auto-évaluation envoyé au candidat.',
+  skill_radar_complete: 'Le candidat a soumis son auto-évaluation. Radar disponible.',
+  entretien_1: 'Premier entretien planifié (BENOIT + SAVALLE).',
+  aboro: 'Test de personnalité SWIPE/Âboro (optionnel, payant).',
+  entretien_2: 'Second entretien, approfondissement.',
+  proposition: 'Proposition d\'embauche émise.',
+  embauche: 'Candidat signé — terminal.',
+  refuse: 'Candidature déclinée — terminal (possible depuis toute étape).',
+}
+
 export const STATUT_COLORS: Record<string, string> = {
   postule: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   preselectionne: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',

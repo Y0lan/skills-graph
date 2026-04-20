@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { Check, X, SkipForward } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, formatDateShort } from '@/lib/constants'
+import { Check, X, SkipForward, HelpCircle } from 'lucide-react'
+import { STATUT_LABELS, STATUT_COLORS, STATUT_DESCRIPTIONS, formatDateShort } from '@/lib/constants'
 import type { CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
 
 /** Pipeline column order — mirrors kanban-board.tsx */
@@ -190,14 +190,36 @@ export default function CandidatePipelineStepper({ candidature, events }: Candid
         </div>
       </div>
 
-      {/* Last event + next action */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+      {/* Last event + next action + stages legend */}
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground items-center">
         {lastEvent && (
           <span>Dernier evenement : {lastEvent}</span>
         )}
         {nextAction && (
           <span className="text-primary font-medium">Action suivante : {nextAction}</span>
         )}
+        <Tooltip>
+          <TooltipTrigger className="inline-flex items-center gap-1 text-muted-foreground/70 hover:text-foreground cursor-help ml-auto">
+            <HelpCircle className="h-3.5 w-3.5" />
+            <span className="text-[11px]">Légende des étapes</span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm text-xs p-3 space-y-1.5">
+            <p className="font-medium mb-1">Les 9 étapes du pipeline</p>
+            {COLUMN_ORDER.map(s => (
+              <div key={s} className="flex gap-2">
+                <span className="font-medium shrink-0 w-32">{STATUT_LABELS[s]}</span>
+                <span className="text-muted-foreground">{STATUT_DESCRIPTIONS[s]}</span>
+              </div>
+            ))}
+            <div className="flex gap-2 pt-1 border-t">
+              <span className="font-medium shrink-0 w-32 text-red-600 dark:text-red-400">{STATUT_LABELS.refuse}</span>
+              <span className="text-muted-foreground">{STATUT_DESCRIPTIONS.refuse}</span>
+            </div>
+            <p className="pt-2 text-[11px] text-muted-foreground/80">
+              <strong>Transitions :</strong> avance normale (« Action suivante »), saut (ex. « sauter Skill Radar envoyé »), annulation (dans les 10 min) ou refus.
+            </p>
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )
