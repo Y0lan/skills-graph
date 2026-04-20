@@ -372,6 +372,46 @@ async function wrapInEmailLayout(htmlContent: string): Promise<string> {
   return await render(CustomBodyLayout({ bodyHtml: htmlContent }))
 }
 
+/**
+ * Pure renderer for transition emails — no side effects, no Resend call.
+ * SHARED by sendTransitionEmail (real send), the /api/recruitment/emails/preview
+ * endpoint (Item 16), the /dev/emails inspector route (Item 17), and the
+ * AI body wrapper (Item 18). Returns null when the statut has no template.
+ */
+export async function renderTransitionEmail(opts: {
+  candidateName: string
+  role: string
+  statut: string
+  notes?: string
+  customBody?: string
+  includeReasonInEmail?: boolean
+  evaluationUrl?: string
+}): Promise<{ subject: string; html: string } | null> {
+  if (opts.customBody) {
+    const rawHtml = await marked.parse(opts.customBody)
+    const cleanHtml = sanitizeHtml(rawHtml, SANITIZE_OPTIONS)
+    const html = await wrapInEmailLayout(cleanHtml)
+    const template = getEmailTemplate(opts.statut, {
+      candidateName: opts.candidateName,
+      role: opts.role,
+      notes: opts.notes,
+      evaluationUrl: opts.evaluationUrl,
+    })
+    const subject = template?.subject ?? `${opts.role} — SINAPSE`
+    return { subject, html }
+  }
+
+  const defaultEmail = await buildDefaultHtml(opts.statut, {
+    candidateName: opts.candidateName,
+    role: opts.role,
+    notes: opts.notes,
+    includeReasonInEmail: opts.includeReasonInEmail,
+    evaluationUrl: opts.evaluationUrl,
+  })
+  if (!defaultEmail) return null
+  return defaultEmail
+}
+
 export async function sendTransitionEmail(opts: {
   to: string
   candidateName: string
@@ -387,41 +427,12 @@ export async function sendTransitionEmail(opts: {
     return { sent: false }
   }
 
-  let subject: string
-  let html: string
-
-  if (opts.customBody) {
-    // Use custom body: markdown → HTML → sanitize, wrapped in email layout
-    const rawHtml = await marked.parse(opts.customBody)
-    const cleanHtml = sanitizeHtml(rawHtml, SANITIZE_OPTIONS)
-    html = await wrapInEmailLayout(cleanHtml)
-
-    // Still need a subject — get it from the template
-    const template = getEmailTemplate(opts.statut, {
-      candidateName: opts.candidateName,
-      role: opts.role,
-      notes: opts.notes,
-      evaluationUrl: opts.evaluationUrl,
-    })
-    subject = template?.subject ?? `${opts.role} — SINAPSE`
-  } else {
-    // Use default template (identical to existing behavior)
-    const defaultEmail = await buildDefaultHtml(opts.statut, {
-      candidateName: opts.candidateName,
-      role: opts.role,
-      notes: opts.notes,
-      includeReasonInEmail: opts.includeReasonInEmail,
-      evaluationUrl: opts.evaluationUrl,
-    })
-
-    if (!defaultEmail) {
-      console.warn(`[EMAIL] No template for statut "${opts.statut}" — skipping`)
-      return { sent: false }
-    }
-
-    subject = defaultEmail.subject
-    html = defaultEmail.html
+  const rendered = await renderTransitionEmail(opts)
+  if (!rendered) {
+    console.warn(`[EMAIL] No template for statut "${opts.statut}" — skipping`)
+    return { sent: false }
   }
+  const { subject, html } = rendered
 
   try {
     const { data, error } = await resend.emails.send({

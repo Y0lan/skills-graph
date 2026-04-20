@@ -148,6 +148,16 @@ app.use('/api/evaluate', evaluateRouter)
 app.use('/api/roles', rolesRouter)
 app.use('/api/recruitment', recruitmentRouter)
 
+// Dev-only email inspector — renders every transition template + the standalone
+// templates with mock data so a designer can iterate without sending real
+// emails. Hard-gated: NEVER mounted in production AND requires a recruitment
+// lead session even in dev (codex flagged: PII risk if a real candidate's
+// data is mocked through it). See docs/decisions/2026-04-20-data-retention…md.
+if (process.env.NODE_ENV !== 'production') {
+  const { devEmailsRouter } = await import('./routes/dev-emails.js')
+  app.use('/dev/emails', devEmailsRouter)
+}
+
 // Global error handler — catch any unhandled route errors
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {

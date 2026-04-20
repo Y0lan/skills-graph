@@ -4,6 +4,7 @@ import {
   Body,
   Link,
 } from '@react-email/components'
+import { BRAND } from '../lib/brand.js'
 
 interface SinapseLayoutProps {
   children: React.ReactNode
@@ -16,25 +17,25 @@ export function SinapseLayout({ children }: SinapseLayoutProps) {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </Head>
-      <Body style={{ margin: 0, padding: 0, background: '#f4f4f5' }}>
+      <Body style={{ margin: 0, padding: 0, background: BRAND.background }}>
         <table
           role="presentation"
           width="100%"
           cellPadding={0}
           cellSpacing={0}
-          style={{ background: '#f4f4f5' }}
+          style={{ background: BRAND.background }}
         >
           <tr>
             <td align="center" style={{ padding: '32px 16px' }}>
               <table
                 role="presentation"
-                width={560}
+                width={BRAND.emailMaxWidth}
                 cellPadding={0}
                 cellSpacing={0}
                 style={{
-                  maxWidth: '560px',
+                  maxWidth: `${BRAND.emailMaxWidth}px`,
                   width: '100%',
-                  background: '#ffffff',
+                  background: BRAND.surface,
                   borderRadius: '8px',
                 }}
               >
@@ -42,11 +43,10 @@ export function SinapseLayout({ children }: SinapseLayoutProps) {
                   <td
                     style={{
                       padding: '40px 32px 24px 32px',
-                      fontFamily:
-                        "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
-                      color: '#1a1a1a',
-                      fontSize: '15px',
-                      lineHeight: '1.7',
+                      fontFamily: BRAND.fontFamily,
+                      color: BRAND.text,
+                      fontSize: BRAND.fontSize,
+                      lineHeight: BRAND.lineHeight,
                     }}
                   >
                     {children}
@@ -63,69 +63,65 @@ export function SinapseLayout({ children }: SinapseLayoutProps) {
                       <tr>
                         <td
                           style={{
-                            borderLeft: '2px solid #008272',
+                            borderLeft: `2px solid ${BRAND.primary}`,
                             padding: '16px 0 16px 16px',
-                            fontFamily:
-                              "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+                            fontFamily: BRAND.fontFamily,
                           }}
                         >
                           <p
                             style={{
                               margin: '0 0 4px 0',
                               fontSize: '14px',
-                              color: '#1a1a1a',
+                              color: BRAND.text,
                             }}
                           >
-                            <strong>Team</strong> &mdash; GIE SINAPSE
+                            <strong>{BRAND.team}</strong> &mdash; {BRAND.name}
                           </p>
                           <p
                             style={{
                               margin: '0 0 12px 0',
                               fontSize: '12px',
-                              color: '#666',
+                              color: BRAND.muted,
                               fontStyle: 'italic',
                             }}
                           >
-                            Du code et du sens &middot; Transformation
-                            num&eacute;rique de la protection sociale de
-                            Nouvelle Cal&eacute;donie
+                            {BRAND.tagline}
                           </p>
                           <p
                             style={{
                               margin: '0 0 4px 0',
                               fontSize: '12px',
-                              color: '#666',
+                              color: BRAND.muted,
                             }}
                           >
                             <Link
-                              href="https://www.sinapse.nc"
+                              href={BRAND.website}
                               style={{
-                                color: '#008272',
+                                color: BRAND.primary,
                                 textDecoration: 'none',
                               }}
                             >
-                              www.sinapse.nc
+                              {BRAND.websiteLabel}
                             </Link>{' '}
                             &middot;{' '}
                             <Link
-                              href="https://www.linkedin.com/company/sinapse-nc/"
+                              href={BRAND.linkedin}
                               style={{
-                                color: '#008272',
+                                color: BRAND.primary,
                                 textDecoration: 'none',
                               }}
                             >
-                              LinkedIn
+                              {BRAND.linkedinLabel}
                             </Link>
                           </p>
                           <p
                             style={{
                               margin: 0,
                               fontSize: '11px',
-                              color: '#999',
+                              color: BRAND.subtle,
                             }}
                           >
-                            BP L5 98849 NOUMEA CEDEX,
-                            Nouvelle-Cal&eacute;donie
+                            {BRAND.address}
                           </p>
                         </td>
                       </tr>
