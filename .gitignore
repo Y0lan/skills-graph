@@ -44,3 +44,18 @@ k8s-dev/secret.yaml
 .gstack/
 .worktrees/
 .superpowers/
+
+# Local dev artifacts
+.codex
+.playwright-mcp/
+test-results/
+temp.md
+radian-graph.db
+
+# Context PDFs and source bundles (kept out of repo)
+context/*.pdf
+context/*.docx
+context/*.zip
+
+# Obsidian vault metadata
+specs/.obsidian/
