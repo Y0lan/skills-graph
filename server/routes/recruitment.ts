@@ -1060,7 +1060,9 @@ protectedRouter.patch('/documents/:docId', (req, res) => {
     res.status(400).json({ error: 'Le nom doit faire entre 1 et 200 caractères' })
     return
   }
-  // Block path separators and ASCII control chars
+  // Block path separators and ASCII control chars (intentional — these are
+  // exactly what we want to block in a stored filename).
+  // eslint-disable-next-line no-control-regex
   if (/[\\/]/.test(trimmed) || /[\x00-\x1f\x7f]/.test(trimmed)) {
     res.status(400).json({ error: 'Caractères interdits dans le nom (séparateurs ou contrôle)' })
     return
