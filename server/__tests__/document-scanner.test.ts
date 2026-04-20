@@ -77,18 +77,41 @@ describe('Document Scanner', () => {
     expect(result.threats).toEqual([])
   })
 
-  it('returns infected immediately when ClamAV finds threat (skips VirusTotal)', async () => {
+  it('returns infected with both engines in parallel when ClamAV detects', async () => {
+    // After commit 09032c5: scanDocument runs ClamAV + VT in parallel so the
+    // dialog shows BOTH outcomes even when one engine catches first. Old
+    // behavior was sequential short-circuit; intentional change for the
+    // 'full details' UX requirement.
     mockInit.mockResolvedValueOnce({ isInfected: mockIsInfected })
     mockIsInfected.mockResolvedValueOnce({ isInfected: true, viruses: ['Eicar-Test-Signature'] })
     process.env.VIRUSTOTAL_API_KEY = 'vt-key-123'
 
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ data: { id: 'analysis-1' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          data: {
+            attributes: {
+              status: 'completed',
+              stats: { malicious: 0, suspicious: 0, undetected: 5, harmless: 55 },
+              results: {},
+            },
+          },
+        }),
+      })
+
     const result = await scanDocument('/tmp/malware.exe', 'malware.exe')
 
     expect(result.safe).toBe(false)
-    expect(result.engines).toEqual(['ClamAV'])
-    expect(result.threats).toEqual(['ClamAV: Eicar-Test-Signature'])
-    // VirusTotal should NOT be called — ClamAV already found a threat
-    expect(mockFetch).not.toHaveBeenCalled()
+    expect(result.engines).toContain('ClamAV')
+    expect(result.engines.some(e => e.startsWith('VirusTotal'))).toBe(true)
+    expect(result.threats).toContain('ClamAV: Eicar-Test-Signature')
+    expect(result.engineSummaries).toBeDefined()
+    expect(result.engineSummaries?.length).toBe(2)
   })
 
   it('calls VirusTotal when ClamAV is clean and VT key is set', async () => {
