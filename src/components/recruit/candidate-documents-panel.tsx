@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2, Upload, FileText, Download, Eye, Pencil, Trash2, FolderArchive } from 'lucide-react'
+import ScanBadge from './scan-badge'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
 import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
@@ -239,6 +240,7 @@ export default function CandidateDocumentsPanel({
                     <span className="text-[10px] text-muted-foreground shrink-0">
                       {formatDateTime(doc.created_at)}
                     </span>
+                    <ScanBadge doc={doc} />
                   </div>
                   <div className="flex items-center gap-0.5">
                     {isPdf(doc.filename) && (

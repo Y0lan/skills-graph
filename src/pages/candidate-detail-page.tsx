@@ -10,7 +10,6 @@ import FitReport from '@/components/recruit/fit-report'
 import MultiPosteCard from '@/components/recruit/multi-poste-card'
 import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
 import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
-import CandidateDossierCard from '@/components/recruit/candidate-dossier-card'
 import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
@@ -583,17 +582,10 @@ export default function CandidateDetailPage() {
                 {/* Email tracking — shows each email sent + open/bounce status */}
                 <CandidateEmailsCard events={cEvents} />
 
-                {/* 3-column grid: Dossier | Scores | Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t">
-                  {/* Dossier */}
-                  <CandidateDossierCard
-                    candidatureId={c.id}
-                    documents={cDocuments}
-                    setDocuments={setDocuments}
-                    setEvents={setEvents}
-                    currentStatut={c.statut}
-                  />
-
+                {/* 2-column grid: Scores | Actions. Documents live in their
+                    own full-width panel below — the old Dossier quick-actions
+                    row duplicated the panel's functionality. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
                   {/* Scores */}
                   <CandidateScoreSummary
                     tauxPoste={c.tauxPoste}
