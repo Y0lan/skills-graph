@@ -214,9 +214,10 @@ export default function CandidateDossierCard({
               variant="outline"
               onClick={() => window.open(`/api/recruitment/candidatures/${candidatureId}/documents/zip`, '_blank')}
               className="gap-2"
+              title="Télécharger tous les documents en un fichier .zip"
             >
               <FolderArchive className="h-3.5 w-3.5" />
-              ZIP
+              Tout (.zip)
             </Button>
           )}
           <Button

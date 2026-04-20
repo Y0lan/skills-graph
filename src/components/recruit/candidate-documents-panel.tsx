@@ -129,6 +129,10 @@ export default function CandidateDocumentsPanel({
 
   const expectedTypes = currentStatut ? (EXPECTED_DOCUMENTS[currentStatut] ?? ['cv']) : ['cv']
   const uploadedTypes = new Set(documents.map(d => d.type))
+  // Count only the EXPECTED types that are covered — "2/1" was misleading
+  // when a candidate had an extra doc beyond the checklist (e.g. lettre not
+  // expected at preselectionne stage yet already uploaded).
+  const matchedExpected = expectedTypes.filter(t => uploadedTypes.has(t)).length
 
   return (
     <Card className="lg:col-span-2">
@@ -136,7 +140,7 @@ export default function CandidateDocumentsPanel({
         <CardTitle className="text-base">
           Documents
           <span className="text-xs font-normal text-muted-foreground ml-2">
-            {documents.length}/{expectedTypes.length} attendus
+            {documents.length} déposé{documents.length !== 1 ? 's' : ''} · {matchedExpected}/{expectedTypes.length} attendu{expectedTypes.length !== 1 ? 's' : ''}
           </span>
         </CardTitle>
         <div className="flex items-center gap-2">
@@ -147,9 +151,10 @@ export default function CandidateDocumentsPanel({
               onClick={() => {
                 window.open(`/api/recruitment/candidatures/${candidatureId}/documents/zip`, '_blank')
               }}
+              title="Télécharger tous les documents en un fichier .zip"
             >
               <FolderArchive className="mr-2 h-4 w-4" />
-              Télécharger tout (.zip)
+              Tout télécharger (.zip)
             </Button>
           )}
         </div>
@@ -220,7 +225,7 @@ export default function CandidateDocumentsPanel({
                       {formatDateTime(doc.created_at)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  <div className="flex items-center gap-0.5">
                     {isPdf(doc.filename) && (
                       <Button
                         size="sm"
