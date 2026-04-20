@@ -137,6 +137,29 @@ export default function CandidateDocumentsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documents.length])
 
+  // Poll while any visible document's antivirus scan is still pending, so the
+  // badge resolves without a manual reload. Stops as soon as all scans settle.
+  const hasPendingScan = documents.some(
+    d => !d.deleted_at && (!d.scan_status || d.scan_status === 'pending')
+  )
+  useEffect(() => {
+    if (!hasPendingScan) return
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, { credentials: 'include' })
+        if (!res.ok || cancelled) return
+        const all = await res.json() as CandidatureDocument[]
+        const live = all.filter(d => !d.deleted_at)
+        syncDocs(live)
+      } catch {
+        // Transient error — keep polling; next tick will retry.
+      }
+    }
+    const id = setInterval(tick, 3000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [hasPendingScan, candidatureId, syncDocs])
+
   async function handleDelete(): Promise<void> {
     if (!deleteDoc) return
     setDeleting(true)
