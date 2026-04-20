@@ -32,6 +32,7 @@ import {
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2 } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
+import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
 import { useNavigate } from 'react-router-dom'
 
@@ -78,6 +79,23 @@ export default function CandidateDetailPage() {
 
   const [analyzing, setAnalyzing] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
+
+  // Item 8: subscribe to the first candidature's SSE stream so scan + status
+  // updates land without manual reload. Multi-candidature candidates only get
+  // live updates on the first candidature today (the typical case is one
+  // candidature per person).
+  useCandidatureEventStream(candidatures[0]?.id, {
+    onDocumentScanUpdated: (p) => {
+      setDocuments(prev => prev.map(d => d.id === p.documentId
+        ? { ...d, scan_status: p.scanStatus as 'pending' | 'clean' | 'infected' | 'error' | 'skipped' }
+        : d))
+    },
+    onStatusChanged: (p) => {
+      setCandidatures(prev => prev.map(c => c.id === candidatures[0]?.id
+        ? { ...c, statut: p.statutTo }
+        : c))
+    },
+  })
 
   const handleRevertStatus = useCallback(async (candidatureId: string) => {
     if (!confirm('Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n’est envoyé automatiquement.')) return

@@ -315,6 +315,25 @@ async function triggerDocumentScan(docId: string, storedPath: string, filename: 
       'UPDATE candidature_documents SET scan_status = ?, scan_result = ?, scanned_at = ? WHERE id = ?'
     ).run(scanStatus, JSON.stringify(result), result.scannedAt, docId)
 
+    // Item 8: publish to the event bus so any open SSE stream on the
+    // candidature page refreshes the badge without a manual reload.
+    try {
+      const ctx = getDb().prepare(
+        'SELECT candidature_id FROM candidature_documents WHERE id = ?'
+      ).get(docId) as { candidature_id: string } | undefined
+      if (ctx) {
+        const { recruitmentBus } = await import('./event-bus.js')
+        recruitmentBus.publish('document_scan_updated', {
+          candidatureId: ctx.candidature_id,
+          documentId: docId,
+          scanStatus: scanStatus as 'clean' | 'infected' | 'skipped',
+          filename,
+        })
+      }
+    } catch (err) {
+      console.warn('[SCAN] event publish failed', err)
+    }
+
     if (!result.safe) {
       console.error(`[SCAN] Document ${docId} (${filename}) is INFECTED — threats: ${result.threats.join(', ')}`)
       // NOTE: File is kept for forensic review, but marked as infected in DB
@@ -329,6 +348,21 @@ async function triggerDocumentScan(docId: string, storedPath: string, filename: 
       "UPDATE candidature_documents SET scan_status = 'error', scan_result = ?, scanned_at = ? WHERE id = ?"
     ).run(JSON.stringify({ error: (err as Error).message }), new Date().toISOString(), docId)
     console.error(`[SCAN] Document ${docId} scan error:`, err)
+    // Publish error so UI can show it without reload too.
+    try {
+      const ctx = getDb().prepare(
+        'SELECT candidature_id FROM candidature_documents WHERE id = ?'
+      ).get(docId) as { candidature_id: string } | undefined
+      if (ctx) {
+        const { recruitmentBus } = await import('./event-bus.js')
+        recruitmentBus.publish('document_scan_updated', {
+          candidatureId: ctx.candidature_id,
+          documentId: docId,
+          scanStatus: 'error',
+          filename,
+        })
+      }
+    } catch { /* */ }
   } finally {
     // Clean up temp file
     if (tempPath) {

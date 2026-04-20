@@ -17,6 +17,7 @@ import { getRoleCategories } from '../lib/db.js'
 import { buildFunnel } from '../lib/funnel-analysis.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
+import { recruitmentBus, type RecruitmentEventMap } from '../lib/event-bus.js'
 import { Webhook } from 'svix'
 import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 import { TRANSITION_MAP, NOTES_REQUIRED, getAllowedTransitions, isSkipTransition, getSkippedSteps } from '../lib/state-machine.js'
@@ -657,6 +658,15 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
     })()
+
+    // Item 8: publish to the event bus so any open SSE stream refreshes
+    // status badges + actions without manual reload.
+    recruitmentBus.publish('status_changed', {
+      candidatureId: req.params.id,
+      statutFrom: current.statut,
+      statutTo: statut,
+      byUserSlug: user.slug || 'unknown',
+    })
   } catch (err) {
     if ((err as Error).message === 'STATUS_CONFLICT') {
       res.status(409).json({ error: 'Le statut a été modifié par un autre utilisateur. Veuillez rafraîchir.' })
@@ -1112,6 +1122,66 @@ protectedRouter.get('/documents/:docId/download', async (req, res) => {
     const fs = await import('fs')
     fs.createReadStream(result.filePath).pipe(res)
   }
+})
+
+// Item 8: Server-Sent Events stream for live updates on a candidature page.
+// Channels: document_scan_updated, extraction_run_completed, status_changed.
+// Auth: requireLead (already applied via protectedRouter). Per-candidature
+// existence check so a closed candidature returns 404 cleanly. Heartbeats
+// every 15 s keep the connection alive through GKE/proxy idle timeouts.
+//
+// Codex flagged: this works for prod's single-replica deployment. When we
+// scale out, replace the in-process bus with Cloud Pub/Sub. See ADR.
+protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
+  const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!exists) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no') // disables Nginx buffering if ever in front
+  res.flushHeaders()
+
+  const candidatureId = req.params.id
+  const send = <K extends keyof RecruitmentEventMap>(event: K, payload: RecruitmentEventMap[K]): void => {
+    try {
+      res.write(`event: ${event}\n`)
+      res.write(`data: ${JSON.stringify(payload)}\n\n`)
+    } catch (err) {
+      console.error('[SSE] write failed', err)
+    }
+  }
+
+  // Initial hello so the client knows the connection is live.
+  send('status_changed', { candidatureId, statutFrom: null, statutTo: '__connected__', byUserSlug: 'system' })
+
+  // Subscribe to all three channels, filter by candidatureId.
+  const offDocs = recruitmentBus.subscribe('document_scan_updated', (p) => {
+    if (p.candidatureId === candidatureId) send('document_scan_updated', p)
+  })
+  const offExtraction = recruitmentBus.subscribe('extraction_run_completed', (p) => {
+    if (p.candidatureId === candidatureId) send('extraction_run_completed', p)
+  })
+  const offStatus = recruitmentBus.subscribe('status_changed', (p) => {
+    if (p.candidatureId === candidatureId) send('status_changed', p)
+  })
+
+  // Heartbeat — comment line, ignored by EventSource but keeps proxies happy.
+  const heartbeat = setInterval(() => {
+    try { res.write(`: keep-alive ${Date.now()}\n\n`) } catch { /* socket closed; cleanup will fire */ }
+  }, 15_000)
+
+  const cleanup = () => {
+    clearInterval(heartbeat)
+    offDocs()
+    offExtraction()
+    offStatus()
+  }
+  req.on('close', cleanup)
+  req.on('error', cleanup)
 })
 
 // Item 18: AI-generated email body draft. Returns the four schema fields plus
