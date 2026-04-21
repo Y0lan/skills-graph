@@ -110,6 +110,43 @@ export async function sendCandidateSubmitted(opts: {
   }
 }
 
+/**
+ * Markdown equivalent of the CandidatureRecue React template. Persisted
+ * in candidature_events.email_snapshot.body so recruiters can see what
+ * the candidate actually received without re-rendering the HTML.
+ */
+function renderApplicationReceivedMarkdown(candidateName: string): string {
+  return [
+    `Bonjour ${candidateName},`,
+    ``,
+    `Nous vous remercions vivement pour l'intérêt que vous portez au GIE SINAPSE et à son projet de refonte des parcours des travailleurs indépendants, des employeurs ainsi que des socles transverses, briques fondamentales du SI CAFAT.`,
+    ``,
+    `Votre candidature a bien été enregistrée. Notre équipe va l'étudier dans les prochains jours.`,
+    ``,
+    `**Vous n'avez rien à remplir à ce stade.** Si votre profil correspond à nos besoins, nous reviendrons vers vous par email avec un lien personnel vers un questionnaire d'auto-évaluation des compétences.`,
+    ``,
+    `Ce questionnaire sera à remplir avec la plus grande honnêteté : chacune de vos réponses pourra être discutée et challengée lors d'un entretien avec notre équipe technique.`,
+    ``,
+    `Le GIE SINAPSE intervient en tant qu'assistant à maîtrise d'ouvrage pour le compte de la CAFAT sur un programme structurant de transformation numérique de la protection sociale.`,
+    ``,
+    `En l'absence de réponse de notre part dans un délai de 15 jours, vous pourrez considérer que nous ne sommes pas en mesure de donner une suite favorable à votre candidature.`,
+    ``,
+    `Nous vous remercions pour votre démarche et vous souhaitons pleine réussite dans vos projets professionnels.`,
+    ``,
+    `Cordialement,`,
+  ].join('\n')
+}
+
+function renderApplicationReceivedLeadMarkdown(candidateName: string, role: string): string {
+  return [
+    `# Nouvelle candidature`,
+    ``,
+    `**${candidateName}** a postulé pour le poste de **${role}**.`,
+    ``,
+    `Consultez le pipeline de recrutement pour examiner cette candidature.`,
+  ].join('\n')
+}
+
 export async function sendApplicationReceived(opts: {
   candidateName: string
   role: string
@@ -123,6 +160,7 @@ export async function sendApplicationReceived(opts: {
 
   // Email to candidate
   const candidateSubject = `Candidature reçue — ${opts.role} chez SINAPSE`
+  const candidateBodyMd = renderApplicationReceivedMarkdown(opts.candidateName)
   try {
     const html = await render(CandidatureRecue({
       candidateName: opts.candidateName,
@@ -146,7 +184,7 @@ export async function sendApplicationReceived(opts: {
         `).run(
           opts.candidatureId,
           `Confirmation de candidature envoyée à ${opts.candidateEmail}`,
-          JSON.stringify({ subject: candidateSubject, body: null, messageId: data.id }),
+          JSON.stringify({ subject: candidateSubject, body: candidateBodyMd, messageId: data.id, recipient: 'candidate' }),
         )
       } catch {
         console.error('[EMAIL] Failed to record email_sent event for application-received')
@@ -160,20 +198,39 @@ export async function sendApplicationReceived(opts: {
   const internalRecipients = [opts.leadEmail]
   if (process.env.DIRECTOR_EMAIL) internalRecipients.push(process.env.DIRECTOR_EMAIL)
 
+  const leadSubject = `Nouvelle candidature : ${opts.candidateName} — ${opts.role}`
+  const leadBodyMd = renderApplicationReceivedLeadMarkdown(opts.candidateName, opts.role)
   try {
     const html = await render(CandidatureRecueLead({
       candidateName: opts.candidateName,
       role: opts.role,
     }))
 
-    await resend.emails.send({
+    const { data } = await resend.emails.send({
       from: FROM_EMAIL,
       to: internalRecipients,
-      subject: `Nouvelle candidature : ${opts.candidateName} — ${opts.role}`,
+      subject: leadSubject,
       html,
       attachments: maybeLogoAttachment(html),
     })
     console.log('[EMAIL] Application received sent to lead')
+
+    // Log the lead notification too so the tracking card shows it (and
+    // so delivery/bounce webhooks for this message can correlate back).
+    if (opts.candidatureId && data?.id) {
+      try {
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+          VALUES (?, 'email_sent', ?, ?, 'system')
+        `).run(
+          opts.candidatureId,
+          `Notification interne envoyée à ${internalRecipients.join(', ')}`,
+          JSON.stringify({ subject: leadSubject, body: leadBodyMd, messageId: data.id, recipient: 'lead' }),
+        )
+      } catch {
+        console.error('[EMAIL] Failed to record email_sent event for application-received (lead)')
+      }
+    }
   } catch {
     console.error('[EMAIL] Failed to send application received (lead)')
   }

@@ -168,7 +168,7 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                     </div>
                   ) : (
                     <p className="text-xs italic text-muted-foreground">
-                      Corps non sauvegardé (email généré par template automatique — non éditable).
+                      Corps non disponible pour ce message (email ancien — nouveaux envois sauvegardent le contenu).
                     </p>
                   )}
                   {entry.messageId && (

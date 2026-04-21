@@ -2495,46 +2495,45 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
   // Process synchronously BEFORE acking so a DB failure returns 5xx and Resend
   // retries. Acking before persistence silently loses events on crash.
 
+  // Diagnostic: log every incoming event type so ops can see which event
+  // types Resend actually fires for this tenant. If "email.opened" never
+  // appears in logs, the issue is Resend-side (domain lacks open tracking,
+  // or email client blocked the pixel).
+  console.log(`[Webhook] Resend event received: type=${payload.type} email_id=${(payload as { data?: { email_id?: string } })?.data?.email_id ?? 'unknown'}`)
+
   // Process email.opened events
   if (payload.type === 'email.opened') {
     try {
       const emailId = (payload as { type: string; data: { email_id?: string } }).data.email_id
-      if (!emailId) return
+      if (emailId) {
+        const event = getDb().prepare(`
+          SELECT ce.candidature_id, ce.email_snapshot
+          FROM candidature_events ce
+          WHERE ce.type = 'email_sent'
+          AND json_extract(ce.email_snapshot, '$.messageId') = ?
+        `).get(emailId) as { candidature_id: string; email_snapshot: string } | undefined
 
-      // Find the candidature_event with matching messageId
-      const event = getDb().prepare(`
-        SELECT ce.candidature_id, ce.email_snapshot
-        FROM candidature_events ce
-        WHERE ce.type = 'email_sent'
-        AND json_extract(ce.email_snapshot, '$.messageId') = ?
-      `).get(emailId) as { candidature_id: string; email_snapshot: string } | undefined
-
-      if (!event) {
-        console.log(`[Webhook] No matching event for email_id: ${emailId}`)
-        return
+        if (!event) {
+          console.log(`[Webhook] email.opened: no matching email_sent event for email_id=${emailId}`)
+        } else {
+          const existing = getDb().prepare(`
+            SELECT id FROM candidature_events
+            WHERE candidature_id = ? AND type = 'email_open'
+            AND notes LIKE ?
+          `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
+          if (existing) {
+            console.log(`[Webhook] Duplicate email_open for ${emailId}, skipping`)
+          } else {
+            getDb().prepare(`
+              INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+              VALUES (?, 'email_open', ?, 'system')
+            `).run(event.candidature_id, `Email ouvert par le candidat (messageId: ${emailId})`)
+            console.log(`[Webhook] Recorded email_open for candidature ${event.candidature_id}`)
+          }
+        }
       }
-
-      // Idempotency: check if email_open event already exists for this messageId
-      const existing = getDb().prepare(`
-        SELECT id FROM candidature_events
-        WHERE candidature_id = ? AND type = 'email_open'
-        AND notes LIKE ?
-      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
-
-      if (existing) {
-        console.log(`[Webhook] Duplicate email_open for ${emailId}, skipping`)
-        return
-      }
-
-      // Insert email_open event
-      getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-        VALUES (?, 'email_open', ?, 'system')
-      `).run(event.candidature_id, `Email ouvert par le candidat (messageId: ${emailId})`)
-
-      console.log(`[Webhook] Recorded email_open for candidature ${event.candidature_id}`)
-    } catch {
-      console.error('[WEBHOOK] Error processing email.opened event')
+    } catch (err) {
+      console.error('[WEBHOOK] Error processing email.opened event', err)
     }
   }
 
@@ -2543,33 +2542,32 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
     try {
       const data = payload.data as Record<string, unknown>
       const emailId = data.email_id as string | undefined
-      if (!emailId) return
+      if (emailId) {
+        const event = getDb().prepare(`
+          SELECT ce.candidature_id
+          FROM candidature_events ce
+          WHERE ce.type = 'email_sent'
+          AND json_extract(ce.email_snapshot, '$.messageId') = ?
+        `).get(emailId) as { candidature_id: string } | undefined
 
-      const event = getDb().prepare(`
-        SELECT ce.candidature_id
-        FROM candidature_events ce
-        WHERE ce.type = 'email_sent'
-        AND json_extract(ce.email_snapshot, '$.messageId') = ?
-      `).get(emailId) as { candidature_id: string } | undefined
+        if (event) {
+          const existing = getDb().prepare(`
+            SELECT id FROM candidature_events
+            WHERE candidature_id = ? AND type = 'email_failed'
+            AND notes LIKE ?
+          `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
 
-      if (!event) return
-
-      // Idempotency check
-      const existing = getDb().prepare(`
-        SELECT id FROM candidature_events
-        WHERE candidature_id = ? AND type = 'email_failed'
-        AND notes LIKE ?
-      `).get(event.candidature_id, `%${emailId}%`) as { id: number } | undefined
-
-      if (!existing) {
-        getDb().prepare(`
-          INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-          VALUES (?, 'email_failed', ?, 'system')
-        `).run(event.candidature_id, `Email rebondi (messageId: ${emailId})`)
-        console.log(`[Webhook] Recorded email_failed for candidature ${event.candidature_id}`)
+          if (!existing) {
+            getDb().prepare(`
+              INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+              VALUES (?, 'email_failed', ?, 'system')
+            `).run(event.candidature_id, `Email rebondi (messageId: ${emailId})`)
+            console.log(`[Webhook] Recorded email_failed for candidature ${event.candidature_id}`)
+          }
+        }
       }
-    } catch {
-      console.error('[WEBHOOK] Error processing email.bounced event')
+    } catch (err) {
+      console.error('[WEBHOOK] Error processing email.bounced event', err)
     }
   }
 
