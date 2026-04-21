@@ -17,9 +17,13 @@ interface EmailEntry {
   statuses: Set<string>
   statusTo: string | null
   recipient: EmailRecipient
+  /** Destination address(es) for display — extracted from the snapshot's
+   *  optional `to` field, else parsed from the event notes. Empty string
+   *  when nothing can be recovered (very old rows). */
+  toAddress: string
 }
 
-function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string } {
+function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string; to?: string | string[] } {
   if (!snapshot) return {}
   try {
     return JSON.parse(snapshot)
@@ -36,6 +40,21 @@ function inferRecipient(snapshot: { recipient?: string }, notes: string | null):
   if (snapshot.recipient === 'candidate') return 'candidate'
   if (notes && /notification interne|envoy[ée]e? à (lead|l'équipe|director|directeur)/i.test(notes)) return 'lead'
   return 'candidate'
+}
+
+/** Extract the destination address from snapshot.to (new events) or parse
+ *  from notes (legacy events). Notes patterns: "envoyée à X@Y" or
+ *  "Notification interne envoyée à A, B, C". */
+function extractToAddress(snapshot: { to?: string | string[] }, notes: string | null): string {
+  if (snapshot.to) {
+    return Array.isArray(snapshot.to) ? snapshot.to.join(', ') : String(snapshot.to)
+  }
+  if (!notes) return ''
+  // Match "envoyé/envoyée à <rest-of-line>"
+  const m = notes.match(/envoy[ée]e?\s+à\s+(.+)$/i)
+  if (!m) return ''
+  // Trim trailing explanations like "(mock)" or "(preview)"
+  return m[1].replace(/\s*\(.*?\)\s*$/, '').trim()
 }
 
 /**
@@ -89,14 +108,21 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
       statuses: messageId ? (statusMap.get(messageId) ?? new Set()) : new Set(),
       statusTo,
       recipient: inferRecipient(snap, e.notes),
+      toAddress: extractToAddress(snap, e.notes),
     })
   }
   return entries.reverse() // newest first
 }
 
+type EmailTab = 'candidate' | 'team' | 'all'
+
 export default function CandidateEmailsCard({ events }: { events: CandidatureEvent[] }) {
   const entries = useMemo(() => buildEmailEntries(events), [events])
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  // Default to "Candidat" view since that's what a recruiter usually wants
+  // to audit (what did WE say to the candidate). Équipe is secondary (inbound
+  // to us). "Tous" for power-users scanning the whole timeline.
+  const [tab, setTab] = useState<EmailTab>('candidate')
 
   if (entries.length === 0) return null
 
@@ -119,22 +145,64 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
     })
   }
 
+  // Apply tab filter. "all" keeps the source-of-truth ordering; per-tab
+  // views inherit the newest-first order from buildEmailEntries.
+  const visibleEntries = entries.filter(e => {
+    if (tab === 'all') return true
+    if (tab === 'candidate') return e.recipient === 'candidate'
+    return e.recipient === 'lead' || e.recipient === 'team'
+  })
+
+  const tabDef: { key: EmailTab; label: string; count: number }[] = [
+    { key: 'candidate', label: 'Candidat', count: candidateCount },
+    { key: 'team', label: 'Équipe', count: teamCount },
+    { key: 'all', label: 'Tous', count: entries.length },
+  ]
+
   return (
     <div className="rounded-lg border bg-card/50">
       <div className="flex items-center gap-2 px-3 py-2 border-b">
         <Mail className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-sm font-medium">Emails envoyés</span>
         <span className="text-xs text-muted-foreground">
-          {candidateCount > 0 && `${candidateCount} au candidat`}
-          {candidateCount > 0 && teamCount > 0 && ' · '}
-          {teamCount > 0 && `${teamCount} à l'équipe`}
-          {readCount > 0 && ` · ${readCount} lu${readCount > 1 ? 's' : ''}`}
-          {complainedCount > 0 && ` · ${complainedCount} signalé${complainedCount > 1 ? 's' : ''} spam`}
-          {bouncedCount > 0 && ` · ${bouncedCount} rebondi${bouncedCount > 1 ? 's' : ''}`}
+          {readCount > 0 && `${readCount} lu${readCount > 1 ? 's' : ''}`}
+          {readCount > 0 && (complainedCount > 0 || bouncedCount > 0) && ' · '}
+          {complainedCount > 0 && `${complainedCount} signalé${complainedCount > 1 ? 's' : ''} spam`}
+          {complainedCount > 0 && bouncedCount > 0 && ' · '}
+          {bouncedCount > 0 && `${bouncedCount} rebondi${bouncedCount > 1 ? 's' : ''}`}
         </span>
       </div>
+      {/* Tabs — Candidat default, Équipe + Tous behind a single click. Empty
+          counts still render so the tab order stays stable as new emails arrive. */}
+      <div role="tablist" aria-label="Filtre emails" className="flex items-center gap-1 px-3 pt-2 pb-1 border-b">
+        {tabDef.map(t => {
+          const active = tab === t.key
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setTab(t.key)}
+              className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                active
+                  ? 'bg-primary/15 text-primary font-medium'
+                  : 'text-muted-foreground hover:bg-muted/50'
+              }`}
+            >
+              {t.label}{' '}
+              <span className={`tabular-nums ${active ? 'opacity-80' : 'opacity-60'}`}>({t.count})</span>
+            </button>
+          )
+        })}
+      </div>
+      {visibleEntries.length === 0 ? (
+        <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+          Aucun email dans ce filtre.
+        </div>
+      ) : null}
       <ul className="divide-y">
-        {entries.map(entry => {
+        {visibleEntries.map(entry => {
           const isOpen = expanded.has(entry.event.id)
           const statusLabel = entry.statusTo ? (STATUT_LABELS[entry.statusTo] ?? entry.statusTo) : '—'
           return (
@@ -162,8 +230,13 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                 >
                   {entry.recipient === 'candidate' ? 'Candidat' : 'Équipe'}
                 </Badge>
-                <span className="text-xs text-muted-foreground truncate flex-1">
-                  {entry.subject ?? 'Email'}
+                <span className="text-xs truncate flex-1 min-w-0">
+                  <span className="text-muted-foreground">{entry.subject ?? 'Email'}</span>
+                  {entry.toAddress ? (
+                    <span className="text-muted-foreground/70 ml-1.5">
+                      → <span className="font-mono">{entry.toAddress}</span>
+                    </span>
+                  ) : null}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
                   {/* Badge hierarchy (weakest → strongest): Envoyé < Livré < Lu.
@@ -188,6 +261,12 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
               </button>
               {isOpen && (
                 <div className="px-3 pb-3 pt-2 text-sm border-t bg-muted/20 space-y-2">
+                  {entry.toAddress ? (
+                    <p className="text-xs">
+                      <span className="text-muted-foreground">À : </span>
+                      <span className="font-mono break-all">{entry.toAddress}</span>
+                    </p>
+                  ) : null}
                   {entry.subject && (
                     <p className="text-xs"><span className="text-muted-foreground">Objet : </span><span className="font-medium">{entry.subject}</span></p>
                   )}

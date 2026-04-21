@@ -845,7 +845,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
             VALUES (?, 'email_sent', ?, ?, ?)`).run(
             candidatureId,
             `Email transition ${statut} envoyé à ${candidateInfo.email}`,
-            JSON.stringify({ subject: template?.subject, body: customBody || template?.body, messageId: emailResult.messageId, recipient: 'candidate' }),
+            JSON.stringify({ subject: template?.subject, body: customBody || template?.body, messageId: emailResult.messageId, recipient: 'candidate', to: candidateInfo.email }),
             userSlug
           )
         }

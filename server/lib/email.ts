@@ -184,7 +184,7 @@ export async function sendApplicationReceived(opts: {
         `).run(
           opts.candidatureId,
           `Confirmation de candidature envoyée à ${opts.candidateEmail}`,
-          JSON.stringify({ subject: candidateSubject, body: candidateBodyMd, messageId: data.id, recipient: 'candidate' }),
+          JSON.stringify({ subject: candidateSubject, body: candidateBodyMd, messageId: data.id, recipient: 'candidate', to: opts.candidateEmail }),
         )
       } catch {
         console.error('[EMAIL] Failed to record email_sent event for application-received')
@@ -225,7 +225,7 @@ export async function sendApplicationReceived(opts: {
         `).run(
           opts.candidatureId,
           `Notification interne envoyée à ${internalRecipients.join(', ')}`,
-          JSON.stringify({ subject: leadSubject, body: leadBodyMd, messageId: data.id, recipient: 'lead' }),
+          JSON.stringify({ subject: leadSubject, body: leadBodyMd, messageId: data.id, recipient: 'lead', to: internalRecipients }),
         )
       } catch {
         console.error('[EMAIL] Failed to record email_sent event for application-received (lead)')

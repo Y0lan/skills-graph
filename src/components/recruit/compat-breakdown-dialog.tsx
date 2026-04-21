@@ -85,11 +85,19 @@ const METRIC_TITLES: Record<CompatMetric, string> = {
   soft: 'Profil comportemental (Âboro)',
 }
 
+/** Human-language explanations shown under the dialog title. Replaced the
+ *  older maths-notation strings because recruiters (primary audience) need
+ *  "what does this score mean" more than "what's the exact formula". The
+ *  detailed per-item rows below show the raw inputs anyway. */
 const FORMULA_TEXT: Record<string, string> = {
-  weighted: 'score = Σ ( min(candidat, attendu) / attendu × poids ) / Σ poids × 100  · poids = 2 (requis), 1 (apprécié)',
-  'category-average': 'score = moyenne des moyennes catégorie (candidat / 5 × 100) — fallback Phase 1',
-  equipe: 'Par catégorie : si candidat ≥ moyenne équipe → bonus de comblement de gap ; sinon malus de 20 %',
-  soft: 'score = ( collaboration × 0.4 + adaptabilité × 0.3 + leadership × 0.3 ) × 10',
+  weighted:
+    'Pour chaque compétence attendue : on compare le niveau du candidat au niveau attendu. Les compétences « requis » comptent le double des « apprécié ». Le score est la moyenne pondérée, exprimée en pourcentage du niveau attendu.',
+  'category-average':
+    'Aucune compétence précise n’est définie sur ce poste — on compare le candidat aux grandes catégories du rôle. Pour chaque catégorie : moyenne des notes du candidat ÷ 5 × 100 %. Score final = moyenne de ces pourcentages.',
+  equipe:
+    'Catégorie par catégorie : si le candidat est au niveau ou au-dessus de la moyenne équipe, il comble un écart (bonus). S’il est en-dessous, malus de 20 %. Le score final combine les deux.',
+  soft:
+    'Moyenne pondérée des 3 dimensions Âboro : collaboration 40 %, adaptabilité 30 %, leadership 30 %, ramenée sur 100.',
 }
 
 export default function CompatBreakdownDialog({ open, onClose, candidatureId, metric }: CompatBreakdownDialogProps) {
@@ -166,16 +174,10 @@ export default function CompatBreakdownDialog({ open, onClose, candidatureId, me
             <span>{METRIC_TITLES[metric]}</span>
             {data && <Badge className="text-base">{data.total}%</Badge>}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            {data && metric === 'poste' && (
-              <>Formule : <code className="text-[10px]">{FORMULA_TEXT[(data as PosteBreakdown).formula]}</code></>
-            )}
-            {data && metric === 'equipe' && (
-              <>Formule : <code className="text-[10px]">{FORMULA_TEXT.equipe}</code></>
-            )}
-            {data && metric === 'soft' && (
-              <>Formule : <code className="text-[10px]">{FORMULA_TEXT.soft}</code></>
-            )}
+          <DialogDescription className="text-xs leading-relaxed">
+            {data && metric === 'poste' && FORMULA_TEXT[(data as PosteBreakdown).formula]}
+            {data && metric === 'equipe' && FORMULA_TEXT.equipe}
+            {data && metric === 'soft' && FORMULA_TEXT.soft}
           </DialogDescription>
         </DialogHeader>
 
@@ -268,11 +270,11 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
           <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5">
             <div className="flex items-center justify-between gap-2 text-sm">
               <span className="font-medium truncate">{item.categoryLabel}</span>
-              <Badge className={`text-[10px] ${labels[item.direction].color}`}>
+              <Badge className={`text-[10px] shrink-0 ${labels[item.direction].color}`}>
                 {labels[item.direction].label}
               </Badge>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground tabular-nums">
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground tabular-nums">
               <div>Candidat : <span className="text-foreground font-medium">{item.candidateAvg}/5</span></div>
               <div>Équipe : <span className="text-foreground font-medium">{item.teamAvg}/5</span></div>
               <div>Score : <span className="text-foreground font-medium">{item.contribution}</span></div>
@@ -286,14 +288,16 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
           <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Écart avec l'équipe</h4>
           <div className="space-y-1">
             {sortedGaps.map(g => (
-              <div key={g.categoryId} className="flex items-center justify-between gap-2 rounded border p-2 text-xs">
-                <span className="truncate">{g.categoryLabel}</span>
-                <div className="flex items-center gap-3 tabular-nums text-muted-foreground">
-                  <span>Candidat {g.candidateAvg.toFixed(1)}/5</span>
-                  <span>Équipe {g.teamAvg.toFixed(1)}/5</span>
-                  <Badge variant={g.gap >= 0 ? 'default' : 'secondary'} className="text-[10px] tabular-nums">
+              <div key={g.categoryId} className="rounded border p-2 text-xs space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium truncate">{g.categoryLabel}</span>
+                  <Badge variant={g.gap >= 0 ? 'default' : 'secondary'} className="text-[10px] tabular-nums shrink-0">
                     {g.gap >= 0 ? '+' : ''}{g.gap.toFixed(1)}
                   </Badge>
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-1 tabular-nums text-muted-foreground">
+                  <span>Candidat {g.candidateAvg.toFixed(1)}/5</span>
+                  <span>Équipe {g.teamAvg.toFixed(1)}/5</span>
                 </div>
               </div>
             ))}
