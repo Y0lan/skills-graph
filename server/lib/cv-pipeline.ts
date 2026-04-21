@@ -14,6 +14,7 @@ import { pruneExtractionRuns } from './extraction-retention.js'
 import { extractCandidateProfile } from './cv-profile-extraction.js'
 import { persistMergedProfile } from './profile-merge.js'
 import { getDocumentForDownload } from './document-service.js'
+import { runMultipass } from './cv-multipass.js'
 
 export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
 
@@ -101,7 +102,7 @@ export async function processCvForCandidate(
     // 5. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
     const posteContext: PosteContext | null = null
     const catalog = getSkillCategories()
-    const result = await extractSkillsFromCv(cvText, catalog, posteContext)
+    let result = await extractSkillsFromCv(cvText, catalog, posteContext)
 
     if (!result) {
       finishRun({
@@ -120,7 +121,11 @@ export async function processCvForCandidate(
       }
     }
 
-    // 6. Persist extraction output on the candidate row
+    // 6. Persist BASELINE extraction output on the candidate row FIRST.
+    //    Per eng-review decision #5: write baseline before attempting
+    //    critique/reconcile so a crash during the upgrade passes can't
+    //    lose the already-valid baseline. The reconcile step below
+    //    overwrites only on full success.
     db.prepare(
       `UPDATE candidates
          SET cv_text = ?,
@@ -137,6 +142,40 @@ export async function processCvForCandidate(
       PROMPT_VERSION,
       candidateId,
     )
+
+    // 6.5. Multi-pass critique + reconcile (Phase 7). Upgrades baseline in
+    //      place when successful; silently keeps baseline when either pass
+    //      fails. Skipped for baseline shards too small to be worth the
+    //      extra 2 LLM calls (< 3 rated skills).
+    let finalRatings = result.ratings
+    let finalReasoning = result.reasoning
+    let finalQuestions = result.questions
+    if (Object.keys(result.ratings).length >= 3) {
+      const multipass = await runMultipass({
+        candidateId,
+        cvText,
+        baseline: { ratings: result.ratings, reasoning: result.reasoning, questions: result.questions },
+      })
+      if (multipass) {
+        finalRatings = multipass.ratings
+        finalReasoning = multipass.reasoning
+        finalQuestions = multipass.questions
+        db.prepare(
+          `UPDATE candidates
+             SET ai_suggestions = ?,
+                 ai_reasoning = ?,
+                 ai_questions = ?
+           WHERE id = ?`,
+        ).run(
+          JSON.stringify(finalRatings),
+          JSON.stringify(finalReasoning),
+          JSON.stringify(finalQuestions),
+          candidateId,
+        )
+      }
+    }
+    // Re-bind result.ratings for downstream scoring to use the upgraded map
+    result = { ...result, ratings: finalRatings, reasoning: finalReasoning, questions: finalQuestions }
 
     // 6a. Profile extraction (Phase 4). Role-neutral — happens once per
     //     candidate. Failure does not block skill scoring; we just mark
