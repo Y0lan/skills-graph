@@ -18,6 +18,10 @@ import { getRoleCategories } from '../lib/db.js'
 import { buildFunnel } from '../lib/funnel-analysis.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
+import { processCvForCandidate } from '../lib/cv-pipeline.js'
+import { listRuns, getRunPayload } from '../lib/extraction-runs.js'
+import { readAssetBuffer, getLatestAsset } from '../lib/asset-storage.js'
+import { diffSuggestions, diffProfile } from '../lib/run-diff.js'
 import { recruitmentBus, type RecruitmentEventMap } from '../lib/event-bus.js'
 import { Webhook } from 'svix'
 import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
@@ -906,7 +910,118 @@ protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res)
   res.json({ tauxPoste, tauxEquipe, tauxGlobal })
 })
 
-// Upload document for a candidature (Aboro PDF, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+// CV Intelligence Phase 8 — re-extract, history, diff
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Re-run the full CV extraction pipeline (baseline + profile + role-aware +
+ * multipass) using the raw_pdf asset persisted at initial upload time.
+ * Returns 409 when another extraction is already running for this candidate,
+ * or when no raw_pdf asset exists (recruiter must re-upload the CV).
+ */
+protectedRouter.post('/candidates/:id/reextract', heavyRateLimit, async (req, res) => {
+  const candidateId = String(req.params.id)
+  const asset = getLatestAsset(candidateId, 'raw_pdf')
+  if (!asset) {
+    res.status(409).json({
+      error: 'Aucun CV original trouvé — re-téléchargez le CV pour lancer une ré-extraction',
+      code: 'no-raw-pdf',
+    })
+    return
+  }
+  const buf = readAssetBuffer(asset.id)
+  if (!buf) {
+    res.status(409).json({ error: 'Fichier CV introuvable sur disque', code: 'asset-missing' })
+    return
+  }
+  try {
+    const result = await processCvForCandidate(candidateId, buf, { source: 'reextract' })
+    if (result.status === 'skipped') {
+      res.status(409).json({ error: 'Extraction déjà en cours', code: 'in-flight' })
+      return
+    }
+    res.json({ status: result.status, suggestionsCount: result.suggestionsCount, error: result.error ?? null })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[reextract] candidate=${req.params.id}:`, err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+/** List extraction runs for a candidate (metadata only, no payloads). */
+protectedRouter.get('/candidates/:id/extraction-runs', (req, res) => {
+  const limitRaw = Number(req.query.limit)
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? Math.floor(limitRaw) : 50
+  const runs = listRuns(String(req.params.id), limit)
+  res.json({ runs })
+})
+
+/** Full payload for one run. Access is logged in candidature_events for audit. */
+protectedRouter.get('/extraction-runs/:runId/payload', (req, res) => {
+  const runRow = getDb().prepare(
+    'SELECT candidate_id, candidature_id, kind FROM cv_extraction_runs WHERE id = ?',
+  ).get(req.params.runId) as { candidate_id: string; candidature_id: string | null; kind: string } | undefined
+  if (!runRow) { res.status(404).json({ error: 'Run introuvable' }); return }
+  const payload = getRunPayload(req.params.runId)
+  if (payload == null) {
+    res.status(410).json({
+      error: 'Payload expiré (politique de rétention). Les métadonnées sont encore disponibles.',
+      code: 'payload-pruned',
+    })
+    return
+  }
+  // Audit trail: log access on the candidature if there is one, else silently.
+  if (runRow.candidature_id) {
+    const user = getUser(req)
+    try {
+      getDb().prepare(
+        `INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+         VALUES (?, 'note_added', ?, ?)`,
+      ).run(
+        runRow.candidature_id,
+        `extraction_run_payload_viewed: run=${req.params.runId} kind=${runRow.kind}`,
+        user?.slug ?? 'system',
+      )
+    } catch { /* audit trail is best-effort */ }
+  }
+  res.json({ payload })
+})
+
+/**
+ * Compare two runs. Body: { runIdA: string, runIdB: string }.
+ * Returns typed diff of ratings (for skill runs) and profile (for profile runs).
+ */
+protectedRouter.post('/extraction-runs/compare', (req, res) => {
+  const { runIdA, runIdB } = req.body ?? {}
+  if (typeof runIdA !== 'string' || typeof runIdB !== 'string') {
+    res.status(400).json({ error: 'runIdA et runIdB requis (string)' })
+    return
+  }
+  const a = getRunPayload(runIdA) as Record<string, unknown> | null
+  const b = getRunPayload(runIdB) as Record<string, unknown> | null
+  if (a == null || b == null) {
+    res.status(410).json({
+      error: 'Au moins un des payloads a été purgé par la politique de rétention',
+      code: 'payload-pruned',
+    })
+    return
+  }
+  // If both look like skill extraction payloads (have `ratings`), diff those.
+  // If both look like profile payloads (no `ratings` but have identity/contact),
+  // diff the profile.
+  const isSkillPayload = (p: Record<string, unknown>) => p.ratings && typeof p.ratings === 'object'
+  if (isSkillPayload(a) && isSkillPayload(b)) {
+    const sDiff = diffSuggestions(
+      a.ratings as Record<string, number>,
+      b.ratings as Record<string, number>,
+    )
+    res.json({ kind: 'skills', diff: sDiff })
+    return
+  }
+  const pDiff = diffProfile(a, b)
+  res.json({ kind: 'profile', diff: pDiff })
+})
 // Document types that act as "required slots" — uploading one supersedes the
 // previous active row of the same type (kept linked via replaces_document_id).
 const SLOT_TYPES = new Set(['cv', 'lettre', 'aboro'])
