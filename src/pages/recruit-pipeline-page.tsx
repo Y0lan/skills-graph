@@ -94,6 +94,22 @@ interface DashboardStats {
 }
 
 
+const EXPERIENCE_LABELS: Record<string, string> = {
+  all: 'Toute expérience',
+  junior: 'Junior (0-3 ans)',
+  intermediate: 'Confirmé (3-7 ans)',
+  senior: 'Senior (7-15 ans)',
+  expert: 'Expert (15+ ans)',
+}
+
+const NOTICE_LABELS: Record<string, string> = {
+  all: 'Tout préavis',
+  immediate: 'Disponible',
+  short: '≤ 30 jours',
+  medium: '30-60 jours',
+  long: '> 60 jours',
+}
+
 const SCORE_TOOLTIPS: Record<string, string> = {
   Poste: 'Compatibilité technique entre les compétences du candidat et les exigences du poste visé',
   Équipe: 'Complémentarité avec l\'équipe existante — mesure les compétences manquantes que le candidat pourrait combler',
@@ -537,7 +553,9 @@ export default function RecruitPipelinePage() {
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <Select value={filterPole} onValueChange={(v) => { setFilterPole(v ?? 'all'); setFilterPoste('all') }}>
             <SelectTrigger className="w-48">
-              <SelectValue placeholder="Tous les pôles" />
+              <SelectValue placeholder="Tous les pôles">
+                {filterPole === 'all' ? 'Tous les pôles' : POLE_LABELS[filterPole] ?? filterPole}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tous les pôles</SelectItem>
@@ -565,7 +583,9 @@ export default function RecruitPipelinePage() {
 
           <Select value={filterStatut} onValueChange={(v) => setFilterStatut(v ?? 'all')}>
             <SelectTrigger className="w-48">
-              <SelectValue placeholder="Tous les statuts" />
+              <SelectValue placeholder="Tous les statuts">
+                {filterStatut === 'all' ? 'Tous les statuts' : STATUT_LABELS[filterStatut] ?? filterStatut}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Tous les statuts</SelectItem>
@@ -576,28 +596,28 @@ export default function RecruitPipelinePage() {
           </Select>
 
           <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Expérience" />
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Expérience">
+                {EXPERIENCE_LABELS[filterExperience] ?? filterExperience}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Toute expérience</SelectItem>
-              <SelectItem value="junior">Junior (0-3 ans)</SelectItem>
-              <SelectItem value="intermediate">Confirmé (3-7 ans)</SelectItem>
-              <SelectItem value="senior">Senior (7-15 ans)</SelectItem>
-              <SelectItem value="expert">Expert (15+ ans)</SelectItem>
+              {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
           <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Préavis" />
+              <SelectValue placeholder="Préavis">
+                {NOTICE_LABELS[filterNotice] ?? filterNotice}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tout préavis</SelectItem>
-              <SelectItem value="immediate">Disponible</SelectItem>
-              <SelectItem value="short">≤ 30 jours</SelectItem>
-              <SelectItem value="medium">30-60 jours</SelectItem>
-              <SelectItem value="long">&gt; 60 jours</SelectItem>
+              {Object.entries(NOTICE_LABELS).map(([k, v]) => (
+                <SelectItem key={k} value={k}>{v}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
