@@ -1,4 +1,5 @@
 import { getDb } from './db.js'
+import type { SkillCategory } from '../../src/data/skill-catalog.js'
 import { extractCvText, extractSkillsFromCv, EXTRACTION_MODEL, PROMPT_VERSION, type PosteContext } from './cv-extraction.js'
 import { getSkillCategories } from './catalog.js'
 import {
@@ -134,11 +135,24 @@ export async function processCvForCandidate(
       candidateId,
     )
 
-    // 7. Score every candidature
+    // 6b. For each candidature with a fiche de poste, run a role-aware
+    //     extraction that calibrates against the target role. Persist
+    //     per-candidature. `candidature-libre` (catch-all) and candidatures
+    //     whose poste has no description skip this pass and fall back to
+    //     the candidate-level baseline when scoring.
+    const roleAwareFailures = await runRoleAwarePasses({
+      candidateId,
+      cvText,
+      catalog,
+      cvAssetId: cvAsset.id,
+    })
+
+    // 7. Score every candidature — scoring prefers role_aware_suggestions
+    //    when present, otherwise falls back to the candidate-level baseline.
     const scoring = scoreAllCandidatures(candidateId, result.ratings)
 
     // 8. Determine status
-    const extractionHadFailures = result.failedCategories.length > 0
+    const extractionHadFailures = result.failedCategories.length > 0 || roleAwareFailures.length > 0
     const scoringHadFailures = scoring.failedCandidatures.length > 0
     const status: ExtractionStatus =
       extractionHadFailures || scoringHadFailures ? 'partial' : 'succeeded'
@@ -232,9 +246,96 @@ interface CandidatureScoringResult {
 }
 
 /**
- * Score every candidature of a candidate given extracted ai_suggestions.
- * Each candidature is scored in its own try/catch so one poor poste config
- * doesn't abort the rest of the batch.
+ * Run a role-aware extraction per candidature whose poste has a fiche.
+ * Persists per-candidature ratings/reasoning/questions. Failures fall back
+ * to the candidate-level baseline when scoring. Returns ids of candidatures
+ * where the role-aware pass threw (for partial-status bookkeeping).
+ */
+async function runRoleAwarePasses(params: {
+  candidateId: string
+  cvText: string
+  catalog: SkillCategory[]
+  cvAssetId: string
+}): Promise<string[]> {
+  const db = getDb()
+  const targets = db.prepare(
+    `SELECT c.id AS candidature_id, p.id AS poste_id, p.titre, p.description
+       FROM candidatures c
+       JOIN postes p ON p.id = c.poste_id
+      WHERE c.candidate_id = ?
+        AND p.id != 'candidature-libre'
+        AND p.description IS NOT NULL
+        AND TRIM(p.description) != ''`,
+  ).all(params.candidateId) as Array<{ candidature_id: string; poste_id: string; titre: string; description: string }>
+
+  if (targets.length === 0) return []
+
+  const failures: string[] = []
+  const update = db.prepare(
+    `UPDATE candidatures
+        SET role_aware_suggestions = ?,
+            role_aware_reasoning = ?,
+            role_aware_questions = ?,
+            updated_at = datetime('now')
+      WHERE id = ?`,
+  )
+
+  for (const t of targets) {
+    const snapshot = { titre: t.titre, description: t.description }
+    const runId = startRun({
+      candidateId: params.candidateId,
+      candidatureId: t.candidature_id,
+      kind: 'skills_role_aware',
+      posteId: t.poste_id,
+      posteSnapshot: snapshot,
+      promptVersion: PROMPT_VERSION,
+      model: EXTRACTION_MODEL,
+      cvAssetId: params.cvAssetId,
+    })
+    try {
+      const roleAware = await extractSkillsFromCv(params.cvText, params.catalog, {
+        posteId: t.poste_id,
+        titre: t.titre,
+        description: t.description,
+      })
+      if (!roleAware) {
+        finishRun({ runId, status: 'failed', error: 'role-aware extraction returned null' })
+        failures.push(t.candidature_id)
+        continue
+      }
+      update.run(
+        JSON.stringify(roleAware.ratings),
+        JSON.stringify(roleAware.reasoning),
+        JSON.stringify(roleAware.questions),
+        t.candidature_id,
+      )
+      finishRun({
+        runId,
+        status: roleAware.failedCategories.length > 0 ? 'partial' : 'success',
+        payload: {
+          ratings: roleAware.ratings,
+          reasoning: roleAware.reasoning,
+          questions: roleAware.questions,
+          failedCategories: roleAware.failedCategories,
+        },
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[cv-pipeline] role-aware failed for candidature ${t.candidature_id}:`, err)
+      finishRun({ runId, status: 'failed', error: msg })
+      failures.push(t.candidature_id)
+    }
+  }
+
+  return failures
+}
+
+/**
+ * Score every candidature of a candidate. Each candidature uses its own
+ * role_aware_suggestions when populated (Phase 3 — role-aware pass succeeded
+ * for that candidature), otherwise falls back to the candidate-level baseline
+ * `suggestions`. One try/catch per candidature so one poor poste config doesn't
+ * abort the batch.
  */
 function scoreAllCandidatures(
   candidateId: string,
@@ -242,11 +343,11 @@ function scoreAllCandidatures(
 ): CandidatureScoringResult {
   const db = getDb()
   const candidatures = db.prepare(
-    `SELECT c.id, p.role_id
+    `SELECT c.id, p.role_id, c.role_aware_suggestions
        FROM candidatures c
        JOIN postes p ON p.id = c.poste_id
       WHERE c.candidate_id = ?`,
-  ).all(candidateId) as { id: string; role_id: string }[]
+  ).all(candidateId) as { id: string; role_id: string; role_aware_suggestions: string | null }[]
 
   const softRow = db.prepare(
     `SELECT taux_soft_skills
@@ -271,8 +372,20 @@ function scoreAllCandidatures(
 
   for (const c of candidatures) {
     try {
-      const tauxPoste = calculatePosteCompatibility(suggestions, c.role_id)
-      const tauxEquipe = calculateEquipeCompatibility(suggestions, c.role_id)
+      // Prefer per-candidature role-aware ratings when present; fall back to
+      // candidate-level baseline. This is what makes multi-poste candidates
+      // get distinct scores on each poste.
+      let ratings = suggestions
+      if (c.role_aware_suggestions) {
+        try {
+          const parsed = JSON.parse(c.role_aware_suggestions) as Record<string, number>
+          if (parsed && typeof parsed === 'object') ratings = parsed
+        } catch {
+          // Malformed JSON — fall back to baseline
+        }
+      }
+      const tauxPoste = calculatePosteCompatibility(ratings, c.role_id)
+      const tauxEquipe = calculateEquipeCompatibility(ratings, c.role_id)
       const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, softScore)
       update.run(tauxPoste, tauxEquipe, softScore, tauxGlobal, c.id)
       scored.push(c.id)

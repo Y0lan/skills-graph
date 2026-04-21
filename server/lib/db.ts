@@ -762,6 +762,17 @@ export function initDatabase(): void {
   // rows older than this get dropped entirely by extraction-retention.ts.
   try { db.exec('ALTER TABLE scoring_weights ADD COLUMN retention_days INTEGER DEFAULT 90') } catch { /* already exists */ }
 
+  // CV Intelligence Phase 3 — per-candidature role-aware skill ratings.
+  //
+  // When a candidature's poste has a non-null `description`, the pipeline runs
+  // a second extraction that includes the fiche as a <reference> block. The
+  // resulting ratings map is stored here per-candidature so each candidature
+  // keeps its own calibration. NULL means "no role-aware pass done — score
+  // with candidate-level ai_suggestions baseline".
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_suggestions TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_reasoning TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_questions TEXT') } catch { /* already exists */ }
+
   // Per-skill target levels with requis/apprécié weighting for compatibility scoring
   db.exec(`
     CREATE TABLE IF NOT EXISTS poste_skill_requirements (
