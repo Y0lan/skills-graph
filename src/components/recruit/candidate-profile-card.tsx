@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
@@ -6,7 +5,8 @@ import {
   User, Mail, Phone, MapPin, GraduationCap, Briefcase, Languages, Award,
   BookOpen, Github, Linkedin, Globe, Calendar, Heart,
 } from 'lucide-react'
-import FieldProvenanceTooltip, { type ProfileField } from './field-provenance-tooltip'
+import { type ProfileField } from './field-provenance-tooltip'
+import FieldSourceTag from './field-source-tag'
 import InitialsBadge from '@/components/ui/initials-badge'
 import SkillPill from './skill-pill'
 import ExperienceTimeline, { type TimelineEntry } from './experience-timeline'
@@ -118,15 +118,17 @@ export interface CandidateProfileCardProps {
  * sidebar beneath. Sidebar cards hide entirely when empty — no "Non
  * renseigné" placeholders. "Autres infos" is the only accordion, kept for
  * edge-case facts recruiters rarely need.
+ *
+ * Provenance: each field that didn't come from the CV (i.e. `sourceDoc`
+ * is `lettre` or `human`) gets a tiny "L" / "M" tag via FieldSourceTag.
+ * No lock button, no info tooltip, no history dialog — per recruiter
+ * feedback: "if the AI says so, trust it."
  */
 export default function CandidateProfileCard({
-  candidateId,
-  profile: initialProfile,
+  profile,
   photoUrl,
   topSkills = [],
 }: CandidateProfileCardProps) {
-  const [profile, setProfile] = useState<AiProfile | null>(initialProfile)
-
   if (!profile) {
     return (
       <Card>
@@ -142,24 +144,9 @@ export default function CandidateProfileCard({
     )
   }
 
-  const setField = (path: string, next: ProfileField<unknown>) => {
-    setProfile(prev => {
-      if (!prev) return prev
-      const copy = structuredClone(prev) as unknown as Record<string, unknown>
-      const parts = path.split('.')
-      let cursor: Record<string, unknown> = copy
-      for (let i = 0; i < parts.length - 1; i++) {
-        cursor = cursor[parts[i]] as Record<string, unknown>
-      }
-      cursor[parts[parts.length - 1]] = next
-      return copy as unknown as AiProfile
-    })
-  }
-
-  /** Label: value + lock button row, compact form for sidebar cards. */
+  /** Label: value + source tag row, compact form for sidebar cards. */
   const sidebarRow = (
     label: string,
-    path: string,
     field: ProfileField<unknown>,
     render?: (v: unknown) => string,
   ) => {
@@ -170,12 +157,7 @@ export default function CandidateProfileCard({
         <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{label}</span>
         <span className="flex-1 min-w-0 flex items-start justify-end gap-1">
           <span className="text-right break-words">{display}</span>
-          <FieldProvenanceTooltip
-            candidateId={candidateId}
-            fieldPath={path}
-            field={field}
-            onChange={(next) => setField(path, next)}
-          />
+          <FieldSourceTag field={field} />
         </span>
       </div>
     )
@@ -250,64 +232,28 @@ export default function CandidateProfileCard({
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <h1 className="text-2xl font-bold leading-tight break-words inline-flex items-center gap-1.5 flex-wrap">
                 <span>{name ?? 'Candidat'}</span>
-                {name ? (
-                  <FieldProvenanceTooltip
-                    candidateId={candidateId}
-                    fieldPath="identity.fullName"
-                    field={profile.identity.fullName}
-                    onChange={(next) => setField('identity.fullName', next)}
-                  />
-                ) : null}
+                {name ? <FieldSourceTag field={profile.identity.fullName} /> : null}
               </h1>
               {totalExp != null ? (
                 <span className="inline-flex items-center gap-1 shrink-0">
                   <Badge variant="outline" className="text-[11px] font-normal">
                     {totalExp} ans d&apos;exp.
                   </Badge>
-                  <FieldProvenanceTooltip
-                    candidateId={candidateId}
-                    fieldPath="totalExperienceYears"
-                    field={profile.totalExperienceYears}
-                    onChange={(next) => setField('totalExperienceYears', next)}
-                  />
+                  <FieldSourceTag field={profile.totalExperienceYears} />
                 </span>
               ) : null}
             </div>
             {role || company ? (
-              <p className="text-sm text-muted-foreground mt-0.5 inline-flex items-center gap-1 flex-wrap">
+              <p className="text-sm text-muted-foreground mt-0.5">
                 {role ? (
-                  <span className="inline-flex items-center gap-0.5">
-                    {role}
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="currentRole.role"
-                      field={profile.currentRole.role}
-                      onChange={(next) => setField('currentRole.role', next)}
-                    />
-                  </span>
+                  <>{role}<FieldSourceTag field={profile.currentRole.role} className="ml-1" /></>
                 ) : null}
-                {role && company ? <span>·</span> : null}
+                {role && company ? ' · ' : ''}
                 {company ? (
-                  <span className="inline-flex items-center gap-0.5">
-                    @ {company}
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="currentRole.company"
-                      field={profile.currentRole.company}
-                      onChange={(next) => setField('currentRole.company', next)}
-                    />
-                  </span>
+                  <>@ {company}<FieldSourceTag field={profile.currentRole.company} className="ml-1" /></>
                 ) : null}
                 {startedAt && isCurrent !== false ? (
-                  <span className="inline-flex items-center gap-0.5">
-                    · depuis {startedAt}
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="currentRole.startedAt"
-                      field={profile.currentRole.startedAt}
-                      onChange={(next) => setField('currentRole.startedAt', next)}
-                    />
-                  </span>
+                  <>{' · depuis '}{startedAt}<FieldSourceTag field={profile.currentRole.startedAt} className="ml-1" /></>
                 ) : null}
               </p>
             ) : null}
@@ -315,7 +261,7 @@ export default function CandidateProfileCard({
             {hasContactRow ? (
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 {email ? (
-                  <span className="inline-flex items-center gap-0.5 min-w-0">
+                  <span className="inline-flex items-center gap-1 min-w-0">
                     <a
                       href={`mailto:${email}`}
                       className="inline-flex items-center gap-1 hover:text-foreground min-w-0"
@@ -324,16 +270,11 @@ export default function CandidateProfileCard({
                       <Mail className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate max-w-[180px]">{email}</span>
                     </a>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="contact.email"
-                      field={profile.contact.email}
-                      onChange={(next) => setField('contact.email', next)}
-                    />
+                    <FieldSourceTag field={profile.contact.email} />
                   </span>
                 ) : null}
                 {phone ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <a
                       href={`tel:${phone}`}
                       className="inline-flex items-center gap-1 hover:text-foreground"
@@ -341,16 +282,11 @@ export default function CandidateProfileCard({
                     >
                       <Phone className="h-3.5 w-3.5 shrink-0" />{phone}
                     </a>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="contact.phone"
-                      field={profile.contact.phone}
-                      onChange={(next) => setField('contact.phone', next)}
-                    />
+                    <FieldSourceTag field={profile.contact.phone} />
                   </span>
                 ) : null}
                 {linkedin ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <a
                       href={linkedin}
                       target="_blank"
@@ -360,16 +296,11 @@ export default function CandidateProfileCard({
                     >
                       <Linkedin className="h-3.5 w-3.5 shrink-0" />LinkedIn
                     </a>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="contact.linkedinUrl"
-                      field={profile.contact.linkedinUrl}
-                      onChange={(next) => setField('contact.linkedinUrl', next)}
-                    />
+                    <FieldSourceTag field={profile.contact.linkedinUrl} />
                   </span>
                 ) : null}
                 {github ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <a
                       href={github}
                       target="_blank"
@@ -379,16 +310,11 @@ export default function CandidateProfileCard({
                     >
                       <Github className="h-3.5 w-3.5 shrink-0" />GitHub
                     </a>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="contact.githubUrl"
-                      field={profile.contact.githubUrl}
-                      onChange={(next) => setField('contact.githubUrl', next)}
-                    />
+                    <FieldSourceTag field={profile.contact.githubUrl} />
                   </span>
                 ) : null}
                 {portfolio ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <a
                       href={portfolio}
                       target="_blank"
@@ -398,12 +324,7 @@ export default function CandidateProfileCard({
                     >
                       <Globe className="h-3.5 w-3.5 shrink-0" />Site
                     </a>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="contact.portfolioUrl"
-                      field={profile.contact.portfolioUrl}
-                      onChange={(next) => setField('contact.portfolioUrl', next)}
-                    />
+                    <FieldSourceTag field={profile.contact.portfolioUrl} />
                   </span>
                 ) : null}
               </div>
@@ -412,54 +333,34 @@ export default function CandidateProfileCard({
             {hasHeaderChips ? (
               <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                 {locationLabel ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <Badge
                       variant="outline"
                       className="text-[11px] font-normal inline-flex items-center gap-1"
                     >
                       <MapPin className="h-3 w-3" />{locationLabel}
                     </Badge>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath={city ? 'location.city' : 'location.country'}
-                      field={city ? profile.location.city : profile.location.country}
-                      onChange={(next) => setField(city ? 'location.city' : 'location.country', next)}
-                    />
+                    <FieldSourceTag field={city ? profile.location.city : profile.location.country} />
                   </span>
                 ) : null}
                 {remote ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <Badge variant="outline" className="text-[11px] font-normal">{remote}</Badge>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="location.remotePreference"
-                      field={profile.location.remotePreference}
-                      onChange={(next) => setField('location.remotePreference', next)}
-                    />
+                    <FieldSourceTag field={profile.location.remotePreference} />
                   </span>
                 ) : null}
                 {license ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <Badge variant="outline" className="text-[11px] font-normal">Permis {license}</Badge>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="location.drivingLicense"
-                      field={profile.location.drivingLicense}
-                      onChange={(next) => setField('location.drivingLicense', next)}
-                    />
+                    <FieldSourceTag field={profile.location.drivingLicense} />
                   </span>
                 ) : null}
                 {willingToRelocate != null ? (
-                  <span className="inline-flex items-center gap-0.5">
+                  <span className="inline-flex items-center gap-1">
                     <Badge variant="outline" className="text-[11px] font-normal">
                       Mobile : {willingToRelocate ? 'oui' : 'non'}
                     </Badge>
-                    <FieldProvenanceTooltip
-                      candidateId={candidateId}
-                      fieldPath="location.willingToRelocate"
-                      field={profile.location.willingToRelocate}
-                      onChange={(next) => setField('location.willingToRelocate', next)}
-                    />
+                    <FieldSourceTag field={profile.location.willingToRelocate} />
                   </span>
                 ) : null}
               </div>
@@ -516,26 +417,16 @@ export default function CandidateProfileCard({
                 </h2>
                 <div className="space-y-2">
                   {profile.softSignals.summaryFr.value ? (
-                    <div className="text-sm flex items-start gap-1">
-                      <p className="whitespace-pre-wrap flex-1">{profile.softSignals.summaryFr.value}</p>
-                      <FieldProvenanceTooltip
-                        candidateId={candidateId}
-                        fieldPath="softSignals.summaryFr"
-                        field={profile.softSignals.summaryFr}
-                        onChange={(next) => setField('softSignals.summaryFr', next)}
-                      />
-                    </div>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {profile.softSignals.summaryFr.value}
+                      <FieldSourceTag field={profile.softSignals.summaryFr} className="ml-1" />
+                    </p>
                   ) : null}
                   {(profile.softSignals.motivations.value?.length ?? 0) > 0 ? (
                     <div>
                       <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
                         Motivations
-                        <FieldProvenanceTooltip
-                          candidateId={candidateId}
-                          fieldPath="softSignals.motivations"
-                          field={profile.softSignals.motivations}
-                          onChange={(next) => setField('softSignals.motivations', next)}
-                        />
+                        <FieldSourceTag field={profile.softSignals.motivations} />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.motivations.value?.map((m, i) => (
@@ -548,12 +439,7 @@ export default function CandidateProfileCard({
                     <div>
                       <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
                         Intérêts
-                        <FieldProvenanceTooltip
-                          candidateId={candidateId}
-                          fieldPath="softSignals.interests"
-                          field={profile.softSignals.interests}
-                          onChange={(next) => setField('softSignals.interests', next)}
-                        />
+                        <FieldSourceTag field={profile.softSignals.interests} />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.interests.value?.map((m, i) => (
@@ -566,12 +452,7 @@ export default function CandidateProfileCard({
                     <div>
                       <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
                         Valeurs
-                        <FieldProvenanceTooltip
-                          candidateId={candidateId}
-                          fieldPath="softSignals.valuesMentioned"
-                          field={profile.softSignals.valuesMentioned}
-                          onChange={(next) => setField('softSignals.valuesMentioned', next)}
-                        />
+                        <FieldSourceTag field={profile.softSignals.valuesMentioned} />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.valuesMentioned.value?.map((m, i) => (
@@ -589,21 +470,16 @@ export default function CandidateProfileCard({
           <aside className="space-y-4">
             {hasContactCard ? (
               <SidebarCard icon={<Mail className="h-3.5 w-3.5" />} title="Contact">
-                {sidebarRow('Email', 'contact.email', profile.contact.email)}
-                {sidebarRow('Téléphone', 'contact.phone', profile.contact.phone)}
-                {sidebarRow('LinkedIn', 'contact.linkedinUrl', profile.contact.linkedinUrl)}
-                {sidebarRow('GitHub', 'contact.githubUrl', profile.contact.githubUrl)}
-                {sidebarRow('Portfolio', 'contact.portfolioUrl', profile.contact.portfolioUrl)}
+                {sidebarRow('Email', profile.contact.email)}
+                {sidebarRow('Téléphone', profile.contact.phone)}
+                {sidebarRow('LinkedIn', profile.contact.linkedinUrl)}
+                {sidebarRow('GitHub', profile.contact.githubUrl)}
+                {sidebarRow('Portfolio', profile.contact.portfolioUrl)}
                 {(profile.contact.otherLinks.value?.length ?? 0) > 0 ? (
                   <div className="pt-1">
                     <div className="text-xs text-muted-foreground mb-0.5 inline-flex items-center gap-1">
                       Autres liens
-                      <FieldProvenanceTooltip
-                        candidateId={candidateId}
-                        fieldPath="contact.otherLinks"
-                        field={profile.contact.otherLinks}
-                        onChange={(next) => setField('contact.otherLinks', next)}
-                      />
+                      <FieldSourceTag field={profile.contact.otherLinks} />
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {(profile.contact.otherLinks.value ?? []).map((u, i) => (
@@ -625,16 +501,11 @@ export default function CandidateProfileCard({
 
             {hasLocationCard ? (
               <SidebarCard icon={<MapPin className="h-3.5 w-3.5" />} title="Localisation">
-                {sidebarRow('Ville', 'location.city', profile.location.city)}
-                {sidebarRow('Pays', 'location.country', profile.location.country)}
-                {sidebarRow('Télétravail', 'location.remotePreference', profile.location.remotePreference)}
-                {sidebarRow(
-                  'Mobile',
-                  'location.willingToRelocate',
-                  profile.location.willingToRelocate,
-                  v => (v ? 'Oui' : 'Non'),
-                )}
-                {sidebarRow('Permis', 'location.drivingLicense', profile.location.drivingLicense)}
+                {sidebarRow('Ville', profile.location.city)}
+                {sidebarRow('Pays', profile.location.country)}
+                {sidebarRow('Télétravail', profile.location.remotePreference)}
+                {sidebarRow('Mobile', profile.location.willingToRelocate, v => (v ? 'Oui' : 'Non'))}
+                {sidebarRow('Permis', profile.location.drivingLicense)}
               </SidebarCard>
             ) : null}
 
@@ -683,13 +554,8 @@ export default function CandidateProfileCard({
 
             {hasAvailability ? (
               <SidebarCard icon={<Calendar className="h-3.5 w-3.5" />} title="Disponibilité">
-                {sidebarRow(
-                  'Préavis',
-                  'availability.noticePeriodDays',
-                  profile.availability.noticePeriodDays,
-                  v => `${v} jours`,
-                )}
-                {sidebarRow('Début', 'availability.earliestStart', profile.availability.earliestStart)}
+                {sidebarRow('Préavis', profile.availability.noticePeriodDays, v => `${v} jours`)}
+                {sidebarRow('Début', profile.availability.earliestStart)}
               </SidebarCard>
             ) : null}
 
@@ -724,11 +590,7 @@ export default function CandidateProfileCard({
             {profile.openSource.githubUsername.value ||
             profile.openSource.notableProjects.length > 0 ? (
               <SidebarCard icon={<Github className="h-3.5 w-3.5" />} title="Open source">
-                {sidebarRow(
-                  'GitHub',
-                  'openSource.githubUsername',
-                  profile.openSource.githubUsername,
-                )}
+                {sidebarRow('GitHub', profile.openSource.githubUsername)}
                 {profile.openSource.notableProjects.length > 0 ? (
                   <div className="space-y-1 pt-1">
                     {profile.openSource.notableProjects.map((p, i) => (

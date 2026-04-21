@@ -40,9 +40,14 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     file.filename,
   )
 
-  // Compute the canonical display_filename from the candidate's name — the
-  // original filename stays on disk (in `filename`), but UI + downloads use
-  // this renamed version (CV_LEFEVRE_Pierre_20260420.pdf).
+  // Compute display_filename. Two paths:
+  //   - CV / Lettre de motivation / ABORO → KEEP the uploader's original
+  //     filename verbatim. These 3 slots have their own type badge in the
+  //     UI ("CV", "LETTRE DE MOTIVATION", "ABORO") so the identifier is
+  //     already obvious — adding a canonical prefix was redundant and
+  //     clashed with the badge casing.
+  //   - Any other doc type → suffix with candidate name + date so an
+  //     exported bundle keeps "which candidate, when" context.
   const candidateRow = getDb().prepare(`
     SELECT cand.name
     FROM candidatures c
@@ -50,9 +55,10 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     WHERE c.id = ?
   `).get(candidatureId) as { name: string } | undefined
   const candidateName = candidateRow?.name ?? ''
-  const displayFilename = candidateName
-    ? buildCanonicalFilename(candidateName, file.filename)
-    : null
+  const keepsOriginalName = docType === 'cv' || docType === 'lettre' || docType === 'aboro'
+  const displayFilename = keepsOriginalName
+    ? file.filename
+    : (candidateName ? buildCanonicalFilename(candidateName, file.filename) : null)
 
   // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)
   const docId = crypto.randomUUID()

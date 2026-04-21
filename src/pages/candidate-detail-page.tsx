@@ -13,7 +13,6 @@ import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
 import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import ExtractionStatusBanner from '@/components/recruit/extraction-status-banner'
 import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
-import CvExtractionHistoryDialog from '@/components/recruit/cv-extraction-history-dialog'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
@@ -40,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye, History } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
@@ -146,7 +145,6 @@ export default function CandidateDetailPage() {
   } = useTransitionState(allowedTransitions, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap)
 
   const [analyzing, setAnalyzing] = useState(false)
-  const [extractionHistoryOpen, setExtractionHistoryOpen] = useState(false)
   const [reextracting, setReextracting] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
 
@@ -507,35 +505,15 @@ export default function CandidateDetailPage() {
           />
         ) : null}
 
-        {/* ── Profile card (Phase 4) — only rendered once profile has been extracted ── */}
+        {/* ── Profile card — only rendered once an aiProfile exists ──
+            No Historique / Ré-extraire buttons: per recruiter feedback,
+            the multi-pass extraction self-validates, so we default to
+            "trust the AI." A corrupted extraction surfaces via the
+            ExtractionStatusBanner above; refreshing the CV means
+            re-uploading. Lock API remains server-side for power users.
+        */}
         {candidate.aiProfile ? (
           <>
-            <div className="flex items-center justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setExtractionHistoryOpen(true)}>
-                <History className="h-3.5 w-3.5 mr-1.5" /> Historique
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={reextracting || candidate.extractionStatus === 'running'}
-                onClick={async () => {
-                  setReextracting(true)
-                  try {
-                    const res = await fetch(`/api/recruitment/candidates/${candidate.id}/reextract`, {
-                      method: 'POST',
-                      credentials: 'include',
-                    })
-                    const body = await res.json()
-                    if (!res.ok) { toast.error(body.error ?? `HTTP ${res.status}`) }
-                    else { toast.success(`Extraction ${body.status}`); setTimeout(() => window.location.reload(), 800) }
-                  } finally {
-                    setReextracting(false)
-                  }
-                }}
-              >
-                <RotateCcw className={`h-3.5 w-3.5 mr-1.5 ${reextracting ? 'animate-spin' : ''}`} /> Ré-extraire
-              </Button>
-            </div>
             <CandidateProfileCard
               candidateId={candidate.id}
               profile={candidate.aiProfile as unknown as AiProfile}
@@ -1380,12 +1358,6 @@ export default function CandidateDetailPage() {
           </>
         )}
       </div>
-
-      <CvExtractionHistoryDialog
-        open={extractionHistoryOpen}
-        onClose={() => setExtractionHistoryOpen(false)}
-        candidateId={candidate?.id ?? ''}
-      />
     </div>
   )
 }

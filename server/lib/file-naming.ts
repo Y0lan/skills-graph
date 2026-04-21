@@ -78,11 +78,17 @@ function sanitizeStem(stem: string): string {
   return cleaned || 'DOCUMENT'
 }
 
-/** Build the canonical display_filename for an uploaded document. Preserves the
- *  uploader's original filename stem and suffixes it with candidate + date so
- *  downloaded files carry identifying context without losing the uploader's
- *  intent. Category is tracked in the DB and shown as a badge — not in the name.
- *  Example: ("Pierre LEFÈVRE", "Mon CV.pdf", 2026-04-20) → "Mon_CV_LEFEVRE_PIERRE_20260420.pdf" */
+/** Build the canonical display_filename for an uploaded document. Uppercases
+ *  the uploader's original stem so the whole filename stays visually
+ *  consistent with the candidate NAME_FIRSTNAME and the type badge shown in
+ *  the UI. Category is tracked in the DB and shown as a badge — not in the
+ *  name.
+ *
+ *  NOTE: only used for documents uploaded AFTER the initial CV / Lettre /
+ *  ABORO trio. Those three keep their original filename — see the branch
+ *  in document-service.ts.
+ *
+ *  Example: ("Pierre LEFÈVRE", "Mon CV.pdf", 2026-04-20) → "MON_CV_LEFEVRE_PIERRE_20260420.pdf" */
 export function buildCanonicalFilename(
   candidateName: string,
   originalFilename: string,
@@ -98,7 +104,7 @@ export function buildCanonicalFilename(
   const ext = extRaw.toLowerCase().slice(0, 8) || 'bin'
   const dotIdx = originalFilename.lastIndexOf('.')
   const rawStem = dotIdx > 0 ? originalFilename.slice(0, dotIdx) : originalFilename
-  const stem = sanitizeStem(rawStem)
+  const stem = sanitizeStem(rawStem).toUpperCase()
   return `${stem}_${last}_${first}_${yyyy}${mm}${dd}.${ext}`
 }
 

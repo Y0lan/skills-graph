@@ -434,9 +434,14 @@ export function initDatabase(): void {
     let renamedDocs = 0
     for (const d of orphanDocs) {
       if (!d.candidate_name) continue
+      // CV / Lettre / ABORO keep their original name; everything else gets
+      // the canonical NAME_FIRSTNAME_DATE suffix.
+      const keepsOriginalName = d.type === 'cv' || d.type === 'lettre' || d.type === 'aboro'
       const parsed = new Date(d.created_at.replace(' ', 'T') + 'Z')
-      const canonical = buildCanonicalFilename(d.candidate_name, d.filename, isNaN(+parsed) ? new Date() : parsed)
-      updateDoc.run(canonical, d.id)
+      const display = keepsOriginalName
+        ? d.filename
+        : buildCanonicalFilename(d.candidate_name, d.filename, isNaN(+parsed) ? new Date() : parsed)
+      updateDoc.run(display, d.id)
       renamedDocs++
     }
     if (renamedDocs > 0) {
@@ -444,6 +449,30 @@ export function initDatabase(): void {
     }
   } catch (err) {
     console.error('[MIGRATION] File-naming backfill failed (non-blocking):', err)
+  }
+
+  // ─── Undo canonical renaming on CV / Lettre / ABORO ─────────────────
+  // Earlier versions applied buildCanonicalFilename() to every upload,
+  // including the three "primary" document slots. Those slots now keep
+  // their original uploader filename (the type badge in the UI carries
+  // the identity). Reset display_filename → filename for rows that look
+  // auto-renamed. The GLOB pattern matches "*_LASTNAME_FIRSTNAME_YYYYMMDD.*"
+  // so we only touch canonical-shaped names, leaving any human-renamed
+  // files intact.
+  try {
+    const result = db.prepare(`
+      UPDATE candidature_documents
+      SET display_filename = filename
+      WHERE type IN ('cv', 'lettre', 'aboro')
+        AND display_filename IS NOT NULL
+        AND display_filename != filename
+        AND display_filename GLOB '*_[A-Z]*_[A-Z]*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*'
+    `).run()
+    if (result.changes > 0) {
+      console.log(`[MIGRATION] Reset display_filename → filename on ${result.changes} CV/lettre/aboro document(s)`)
+    }
+  } catch (err) {
+    console.error('[MIGRATION] CV/lettre/aboro rename reset failed (non-blocking):', err)
   }
 
   // ─── One-shot dedup of candidates by email ──────────────────────────
@@ -789,10 +818,17 @@ export function initDatabase(): void {
   // Migration: allow 'photo' kind in candidate_assets. Older DBs had a CHECK
   // constraint restricted to ('cv_text','lettre_text','raw_pdf'). SQLite
   // can't ALTER an existing CHECK — rebuild the table in place.
+  //
+  // CRITICAL: use PRAGMA legacy_alter_table=ON before the RENAME. Without it,
+  // SQLite auto-rewrites FK references in OTHER tables to point at the new
+  // name (e.g. cv_extraction_runs.cv_asset_id ends up referencing
+  // 'candidate_assets_legacy', which we then drop — breaking every future
+  // insert). This bit us once; don't let it happen again.
   try {
     const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidate_assets'").get() as { sql: string } | undefined
     if (existing && !existing.sql.includes("'photo'")) {
       db.exec('PRAGMA foreign_keys=OFF')
+      db.exec('PRAGMA legacy_alter_table=ON')
       db.exec(`
         BEGIN;
         ALTER TABLE candidate_assets RENAME TO candidate_assets_legacy;
@@ -812,12 +848,33 @@ export function initDatabase(): void {
         CREATE INDEX IF NOT EXISTS idx_candidate_assets_candidate ON candidate_assets(candidate_id, kind);
         COMMIT;
       `)
+      db.exec('PRAGMA legacy_alter_table=OFF')
       db.exec('PRAGMA foreign_keys=ON')
     }
   } catch (err) {
     console.warn('[db] candidate_assets CHECK rebuild skipped:', err instanceof Error ? err.message : err)
     try { db.exec('ROLLBACK') } catch { /* no active tx */ }
+    try { db.exec('PRAGMA legacy_alter_table=OFF') } catch { /* ignore */ }
     try { db.exec('PRAGMA foreign_keys=ON') } catch { /* ignore */ }
+  }
+
+  // Healer: patch DBs corrupted by the earlier version of the migration above.
+  // If cv_extraction_runs still has FK refs pointing at 'candidate_assets_legacy',
+  // rewrite its CREATE TABLE sql in sqlite_master. Safe: same columns, only the
+  // referenced table name changes. Requires writable_schema.
+  try {
+    const runs = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cv_extraction_runs'").get() as { sql: string } | undefined
+    if (runs && runs.sql.includes('candidate_assets_legacy')) {
+      db.exec('PRAGMA writable_schema=1')
+      db.prepare(
+        "UPDATE sqlite_master SET sql = replace(sql, 'candidate_assets_legacy', 'candidate_assets') WHERE type='table' AND name='cv_extraction_runs'",
+      ).run()
+      db.exec('PRAGMA writable_schema=0')
+      console.log('[db] healed cv_extraction_runs FK refs (candidate_assets_legacy → candidate_assets)')
+    }
+  } catch (err) {
+    console.warn('[db] cv_extraction_runs FK heal skipped:', err instanceof Error ? err.message : err)
+    try { db.exec('PRAGMA writable_schema=0') } catch { /* ignore */ }
   }
 
   // Per-skill target levels with requis/apprécié weighting for compatibility scoring
