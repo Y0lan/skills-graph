@@ -135,17 +135,15 @@ export default function RecruitPipelinePage() {
   const [loading, setLoading] = useState(true)
   const [filterPole, setFilterPole] = useState<string>('all')
   const [filterPoste, setFilterPoste] = useState<string>('all')
+  const [filterExperience, setFilterExperience] = useState<string>('all')
+  const [filterNotice, setFilterNotice] = useState<string>('all')
+  const [filterSearch, setFilterSearch] = useState<string>('')
   const [editingPoste, setEditingPoste] = useState<Poste | null>(null)
   const [filterStatut, setFilterStatut] = useState<string>('all')
   // Item 21 P2 smart filter chips — multi-select, AND-combined.
   const [chipStuck, setChipStuck] = useState(false)
   const [chipDocsMissing, setChipDocsMissing] = useState(false)
   const [chipNeedsAction, setChipNeedsAction] = useState(false)
-  // Item 1 P2 density toggle — persisted per user.
-  const [density, setDensity] = useState<'compact' | 'comfortable'>(() =>
-    (localStorage.getItem('pipeline-density') as 'compact' | 'comfortable') ?? 'comfortable'
-  )
-  useEffect(() => { localStorage.setItem('pipeline-density', density) }, [density])
   const [weightsOpen, setWeightsOpen] = useState(false)
   const [weightPoste, setWeightPoste] = useState(50)
   const [weightEquipe, setWeightEquipe] = useState(20)
@@ -315,10 +313,40 @@ export default function RecruitPipelinePage() {
   }
 
   // Filter candidatures
+  const searchNeedle = filterSearch.trim().toLowerCase()
   const filtered = candidatures.filter(c => {
     if (filterPole !== 'all' && c.postePole !== filterPole) return false
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
+    // Free-form search: match any of name / poste / city / current role / current company
+    if (searchNeedle) {
+      const hay = [
+        c.candidateName,
+        c.posteTitre,
+        c.previewProfile?.city,
+        c.previewProfile?.currentRole,
+        c.previewProfile?.currentCompany,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!hay.includes(searchNeedle)) return false
+    }
+    // Experience range (only applies when profile has been extracted)
+    if (filterExperience !== 'all') {
+      const y = c.previewProfile?.totalExperienceYears
+      if (y == null) return false
+      if (filterExperience === 'junior' && y > 3) return false
+      if (filterExperience === 'intermediate' && (y < 3 || y > 7)) return false
+      if (filterExperience === 'senior' && (y < 7 || y > 15)) return false
+      if (filterExperience === 'expert' && y < 15) return false
+    }
+    // Notice period bucket
+    if (filterNotice !== 'all') {
+      const d = c.previewProfile?.noticePeriodDays
+      if (d == null) return false
+      if (filterNotice === 'immediate' && d > 0) return false
+      if (filterNotice === 'short' && (d < 1 || d > 30)) return false
+      if (filterNotice === 'medium' && (d < 31 || d > 60)) return false
+      if (filterNotice === 'long' && d < 61) return false
+    }
     // Smart chip filters
     if (chipStuck) {
       // Reuse the SLA helper — same source of truth as StatusChip's red ring.
@@ -547,12 +575,46 @@ export default function RecruitPipelinePage() {
             </SelectContent>
           </Select>
 
-          {(filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all' || activeChipCount > 0) && (
+          <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Expérience" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toute expérience</SelectItem>
+              <SelectItem value="junior">Junior (0-3 ans)</SelectItem>
+              <SelectItem value="intermediate">Confirmé (3-7 ans)</SelectItem>
+              <SelectItem value="senior">Senior (7-15 ans)</SelectItem>
+              <SelectItem value="expert">Expert (15+ ans)</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Préavis" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tout préavis</SelectItem>
+              <SelectItem value="immediate">Disponible</SelectItem>
+              <SelectItem value="short">≤ 30 jours</SelectItem>
+              <SelectItem value="medium">30-60 jours</SelectItem>
+              <SelectItem value="long">&gt; 60 jours</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Input
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            placeholder="Rechercher (nom, ville, poste…)"
+            className="w-56 h-9"
+          />
+
+          {(filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all' || filterExperience !== 'all' || filterNotice !== 'all' || filterSearch || activeChipCount > 0) && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all')
+                setFilterExperience('all'); setFilterNotice('all'); setFilterSearch('')
                 setChipStuck(false); setChipDocsMissing(false); setChipNeedsAction(false)
               }}
             >
@@ -560,29 +622,7 @@ export default function RecruitPipelinePage() {
             </Button>
           )}
 
-          {/* Density toggle (Item 1 P2) — applies to list mode rows */}
           <div className="inline-flex rounded-md border border-border ml-auto">
-            <Button
-              variant={density === 'comfortable' ? 'default' : 'ghost'}
-              size="sm"
-              className="gap-1.5 rounded-r-none text-xs"
-              onClick={() => setDensity('comfortable')}
-              title="Densité confortable"
-            >
-              ☷
-            </Button>
-            <Button
-              variant={density === 'compact' ? 'default' : 'ghost'}
-              size="sm"
-              className="gap-1.5 rounded-l-none text-xs"
-              onClick={() => setDensity('compact')}
-              title="Densité compacte"
-            >
-              ≡
-            </Button>
-          </div>
-
-          <div className="inline-flex rounded-md border border-border">
             <Button
               variant={viewMode === 'list' ? 'default' : 'ghost'}
               size="sm"
@@ -681,7 +721,7 @@ export default function RecruitPipelinePage() {
                   className="block flex-1 min-w-0"
                 >
                 <Card className={`hover:bg-muted/30 transition-colors ${selectedIds.has(c.id) ? 'ring-1 ring-primary/50' : ''}`}>
-                  <CardContent className={density === 'compact' ? 'py-1.5 px-3' : 'py-3 px-4'}>
+                  <CardContent className="py-3 px-4">
                     <div className="flex items-start gap-4">
                       {/* Name + meta + preview */}
                       <div className="flex-1 min-w-0">
@@ -698,7 +738,6 @@ export default function RecruitPipelinePage() {
                           preview={c.previewProfile}
                           statusChip={<StatusChip statut={c.statut} enteredStatusAt={c.enteredStatusAt} />}
                           docsChip={<DocsChip docsSlotCount={c.docsSlotCount} />}
-                          density={density}
                         />
                       </div>
 

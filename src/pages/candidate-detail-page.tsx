@@ -578,19 +578,11 @@ export default function CandidateDetailPage() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-              {candidatures.length > 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  <span className="text-xs uppercase tracking-wide mr-2">Postes&nbsp;:</span>
-                  {candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')}
-                </p>
-              ) : null}
-              {candidatures.length > 1 && (
-                <Badge variant="outline" className="text-[11px] font-normal" title="Ce candidat a plusieurs candidatures actives">
-                  {candidatures.length} candidatures
-                </Badge>
-              )}
-            </div>
+            /* When aiProfile exists, the hero carries name + contact + location.
+               Poste titles are already shown per-candidature in the stepper
+               cards below, so this row just leaves the status badges
+               right-aligned (not a floating "POSTES :" orphan). */
+            <div className="flex-1" />
           )}
 
           {/* Status badges. The Skill Radar chip only shows when it is

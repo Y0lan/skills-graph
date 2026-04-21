@@ -15,9 +15,13 @@ export interface SkillPillProps {
   skillLabel?: string
   rating: number
   className?: string
+  /** Clip long labels to keep rows tight. Default true (pipeline row).
+   *  Set false on the profile hero where space is ample and full
+   *  labels matter — recruiters can't filter on half-truncated text. */
+  truncate?: boolean
 }
 
-export default function SkillPill({ skillId, skillLabel, rating, className }: SkillPillProps) {
+export default function SkillPill({ skillId, skillLabel, rating, className, truncate = true }: SkillPillProps) {
   const label = skillLabel ?? skillId
   // Level-based tone — stays calm, no rainbow.
   const tone = rating >= 4
@@ -31,7 +35,7 @@ export default function SkillPill({ skillId, skillLabel, rating, className }: Sk
       variant="outline"
       className={`text-[10px] font-medium tabular-nums ${tone} ${className ?? ''}`}
     >
-      <span className="truncate max-w-[140px]">{label}</span>
+      <span className={truncate ? 'truncate max-w-[140px]' : ''}>{label}</span>
       <span className="ml-1 opacity-80">L{rating}</span>
     </Badge>
   )

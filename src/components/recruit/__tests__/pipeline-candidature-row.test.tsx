@@ -67,22 +67,17 @@ describe('<PipelineCandidatureRow>', () => {
     expect(screen.getByText('AWS')).toBeInTheDocument()
   })
 
-  it('falls back to compact layout when compact density is set', () => {
+  it('falls back to the legacy single-line layout when preview is null', () => {
     render(
       <PipelineCandidatureRow
         {...baseProps}
-        density="compact"
-        preview={{
-          city: 'Nouméa', country: 'NC', currentRole: 'Architecte', currentCompany: 'X',
-          totalExperienceYears: 18, noticePeriodDays: 30,
-          topSkills: [{ skillId: 'java', skillLabel: 'Java', rating: 4 }],
-        }}
+        preview={null}
       />,
     )
-    // Compact mode hides the full headline and skills
+    // No headline or skills (no preview data)
     expect(screen.queryByText('Nouméa, NC')).not.toBeInTheDocument()
     expect(screen.queryByText('Java')).not.toBeInTheDocument()
-    // But still shows poste + canal
+    // But still shows poste + canal (legacy meta)
     expect(screen.getByText('Architecte SI')).toBeInTheDocument()
   })
 

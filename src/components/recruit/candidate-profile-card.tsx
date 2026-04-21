@@ -380,6 +380,7 @@ export default function CandidateProfileCard({
                 skillId={s.skillId}
                 skillLabel={s.skillLabel}
                 rating={s.rating}
+                truncate={false}
               />
             ))}
           </div>

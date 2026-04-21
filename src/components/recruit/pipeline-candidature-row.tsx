@@ -27,7 +27,6 @@ export interface PipelineCandidatureRowProps {
   /** Extra React nodes rendered after the meta chips (status chip, docs chip) */
   statusChip?: React.ReactNode
   docsChip?: React.ReactNode
-  density?: 'compact' | 'comfortable'
 }
 
 /**
@@ -47,7 +46,6 @@ export default function PipelineCandidatureRow({
   preview,
   statusChip,
   docsChip,
-  density = 'comfortable',
 }: PipelineCandidatureRowProps) {
   const location = [preview?.city, preview?.country].filter(Boolean).join(', ')
   const roleAtCompany = preview?.currentRole && preview?.currentCompany
@@ -58,8 +56,9 @@ export default function PipelineCandidatureRow({
   const hasTopSkills = (preview?.topSkills?.length ?? 0) > 0
   const showFullPreview = hasHeadline || hasTopSkills
 
-  // Compact mode: single-line layout, hide profile preview.
-  if (density === 'compact' || !showFullPreview) {
+  // Graceful fallback when no preview data yet (pre-extraction): keep the
+  // single-line legacy layout so the row isn't mostly blank.
+  if (!showFullPreview) {
     return (
       <div className="flex items-center gap-3">
         <InitialsBadge name={candidateName} size="sm" />
