@@ -919,6 +919,12 @@ export function initDatabase(): void {
   // referenced table name changes. Requires both PRAGMA writable_schema AND
   // better-sqlite3's unsafeMode (defensive mode blocks sqlite_master writes
   // even when writable_schema=1).
+  //
+  // CRITICAL: writing to sqlite_master updates the schema on disk, but the
+  // current connection keeps its cached in-memory schema. Every INSERT into
+  // cv_extraction_runs and every cascade-DELETE on candidates would still
+  // hit "no such table: candidate_assets_legacy" using the stale cache. We
+  // close + reopen the connection after the heal to force a schema reload.
   try {
     const runs = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cv_extraction_runs'").get() as { sql: string } | undefined
     if (runs && runs.sql.includes('candidate_assets_legacy')) {
@@ -929,7 +935,11 @@ export function initDatabase(): void {
       ).run()
       db.exec('PRAGMA writable_schema=0')
       db.unsafeMode(false)
-      console.log('[db] healed cv_extraction_runs FK refs (candidate_assets_legacy → candidate_assets)')
+      db.close()
+      db = new Database(DB_PATH)
+      db.pragma('journal_mode = WAL')
+      db.pragma('foreign_keys = ON')
+      console.log('[db] healed cv_extraction_runs FK refs + reopened connection')
     }
   } catch (err) {
     console.warn('[db] cv_extraction_runs FK heal skipped:', err instanceof Error ? err.message : err)
