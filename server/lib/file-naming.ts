@@ -113,3 +113,15 @@ export function extractExtension(filename: string): string {
   const match = filename.match(/\.([^.\\/]+)$/)
   return match ? match[1] : ''
 }
+
+/** Uppercase the stem, keep the extension lowercase. Used for CV / Lettre /
+ *  ABORO slots so "cv.pdf" → "CV.pdf", matching the uppercase type badge
+ *  shown above the filename in the documents panel. Leaves everything else
+ *  untouched so special characters (accents, spaces) survive. */
+export function uppercaseStem(filename: string): string {
+  const dotIdx = filename.lastIndexOf('.')
+  if (dotIdx <= 0) return filename.toUpperCase()
+  const stem = filename.slice(0, dotIdx)
+  const ext = filename.slice(dotIdx + 1).toLowerCase()
+  return `${stem.toUpperCase()}.${ext}`
+}

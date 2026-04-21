@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
 import { safeJsonParse } from './types.js'
-import { buildCanonicalFilename, formatDisplayName } from './file-naming.js'
+import { buildCanonicalFilename, formatDisplayName, uppercaseStem } from './file-naming.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -434,12 +434,13 @@ export function initDatabase(): void {
     let renamedDocs = 0
     for (const d of orphanDocs) {
       if (!d.candidate_name) continue
-      // CV / Lettre / ABORO keep their original name; everything else gets
-      // the canonical NAME_FIRSTNAME_DATE suffix.
+      // CV / Lettre / ABORO keep their original name (uppercased for
+      // visual consistency with the type badge); everything else gets the
+      // canonical NAME_FIRSTNAME_DATE suffix.
       const keepsOriginalName = d.type === 'cv' || d.type === 'lettre' || d.type === 'aboro'
       const parsed = new Date(d.created_at.replace(' ', 'T') + 'Z')
       const display = keepsOriginalName
-        ? d.filename
+        ? uppercaseStem(d.filename)
         : buildCanonicalFilename(d.candidate_name, d.filename, isNaN(+parsed) ? new Date() : parsed)
       updateDoc.run(display, d.id)
       renamedDocs++
@@ -454,22 +455,45 @@ export function initDatabase(): void {
   // ─── Undo canonical renaming on CV / Lettre / ABORO ─────────────────
   // Earlier versions applied buildCanonicalFilename() to every upload,
   // including the three "primary" document slots. Those slots now keep
-  // their original uploader filename (the type badge in the UI carries
-  // the identity). Reset display_filename → filename for rows that look
-  // auto-renamed. The GLOB pattern matches "*_LASTNAME_FIRSTNAME_YYYYMMDD.*"
-  // so we only touch canonical-shaped names, leaving any human-renamed
-  // files intact.
+  // the uploader's original stem (uppercased so "cv.pdf" → "CV.pdf", for
+  // visual consistency with the type badge). The GLOB below matches
+  // canonical-shaped names ("*_LASTNAME_FIRSTNAME_YYYYMMDD.*") so we
+  // only touch auto-renamed rows — any human-renamed files stay intact.
+  //
+  // Plus a second pass that uppercases any CV/lettre/aboro display_filename
+  // still in lowercase form (e.g. legacy uploads that skipped the canonical
+  // path entirely — "cv.pdf" left untouched when display_filename matches
+  // filename verbatim).
   try {
-    const result = db.prepare(`
-      UPDATE candidature_documents
-      SET display_filename = filename
+    const rowsToReset = db.prepare(`
+      SELECT id, filename FROM candidature_documents
       WHERE type IN ('cv', 'lettre', 'aboro')
         AND display_filename IS NOT NULL
         AND display_filename != filename
         AND display_filename GLOB '*_[A-Z]*_[A-Z]*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*'
-    `).run()
-    if (result.changes > 0) {
-      console.log(`[MIGRATION] Reset display_filename → filename on ${result.changes} CV/lettre/aboro document(s)`)
+    `).all() as { id: string; filename: string }[]
+    const upd = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?')
+    let resetCount = 0
+    for (const r of rowsToReset) { upd.run(uppercaseStem(r.filename), r.id); resetCount++ }
+    if (resetCount > 0) {
+      console.log(`[MIGRATION] Reset + uppercased display_filename on ${resetCount} CV/lettre/aboro document(s)`)
+    }
+
+    // Second pass: uppercase CV/lettre/aboro stems that never went through
+    // the canonical pipeline but stayed lowercase.
+    const rowsToUppercase = db.prepare(`
+      SELECT id, display_filename FROM candidature_documents
+      WHERE type IN ('cv', 'lettre', 'aboro')
+        AND display_filename IS NOT NULL
+        AND display_filename GLOB '*[a-z]*'
+    `).all() as { id: string; display_filename: string }[]
+    let upperCount = 0
+    for (const r of rowsToUppercase) {
+      const upped = uppercaseStem(r.display_filename)
+      if (upped !== r.display_filename) { upd.run(upped, r.id); upperCount++ }
+    }
+    if (upperCount > 0) {
+      console.log(`[MIGRATION] Uppercased stem on ${upperCount} CV/lettre/aboro document(s)`)
     }
   } catch (err) {
     console.error('[MIGRATION] CV/lettre/aboro rename reset failed (non-blocking):', err)
@@ -861,20 +885,25 @@ export function initDatabase(): void {
   // Healer: patch DBs corrupted by the earlier version of the migration above.
   // If cv_extraction_runs still has FK refs pointing at 'candidate_assets_legacy',
   // rewrite its CREATE TABLE sql in sqlite_master. Safe: same columns, only the
-  // referenced table name changes. Requires writable_schema.
+  // referenced table name changes. Requires both PRAGMA writable_schema AND
+  // better-sqlite3's unsafeMode (defensive mode blocks sqlite_master writes
+  // even when writable_schema=1).
   try {
     const runs = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cv_extraction_runs'").get() as { sql: string } | undefined
     if (runs && runs.sql.includes('candidate_assets_legacy')) {
+      db.unsafeMode(true)
       db.exec('PRAGMA writable_schema=1')
       db.prepare(
         "UPDATE sqlite_master SET sql = replace(sql, 'candidate_assets_legacy', 'candidate_assets') WHERE type='table' AND name='cv_extraction_runs'",
       ).run()
       db.exec('PRAGMA writable_schema=0')
+      db.unsafeMode(false)
       console.log('[db] healed cv_extraction_runs FK refs (candidate_assets_legacy → candidate_assets)')
     }
   } catch (err) {
     console.warn('[db] cv_extraction_runs FK heal skipped:', err instanceof Error ? err.message : err)
     try { db.exec('PRAGMA writable_schema=0') } catch { /* ignore */ }
+    try { db.unsafeMode(false) } catch { /* ignore */ }
   }
 
   // Per-skill target levels with requis/apprécié weighting for compatibility scoring

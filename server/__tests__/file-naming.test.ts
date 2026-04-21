@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCanonicalFilename, formatDisplayName } from '../lib/file-naming.js'
+import { buildCanonicalFilename, formatDisplayName, uppercaseStem } from '../lib/file-naming.js'
 
 describe('buildCanonicalFilename', () => {
   const date = new Date('2026-04-21T00:00:00Z')
@@ -33,6 +33,26 @@ describe('buildCanonicalFilename', () => {
   it('falls back to DOCUMENT when stem collapses to empty', () => {
     const out = buildCanonicalFilename('Pierre LEFÈVRE', '...pdf', date)
     expect(out).toContain('DOCUMENT')
+  })
+})
+
+describe('uppercaseStem', () => {
+  it('uppercases the stem but keeps extension lowercase', () => {
+    expect(uppercaseStem('cv.pdf')).toBe('CV.pdf')
+    expect(uppercaseStem('lm.PDF')).toBe('LM.pdf')
+    expect(uppercaseStem('mon_rapport_aboro.docx')).toBe('MON_RAPPORT_ABORO.docx')
+  })
+
+  it('handles files with no extension', () => {
+    expect(uppercaseStem('readme')).toBe('README')
+  })
+
+  it('handles files with leading dot (hidden)', () => {
+    expect(uppercaseStem('.hidden')).toBe('.HIDDEN')
+  })
+
+  it('preserves special characters in the stem', () => {
+    expect(uppercaseStem('cv-pierre_v2.pdf')).toBe('CV-PIERRE_V2.pdf')
   })
 })
 

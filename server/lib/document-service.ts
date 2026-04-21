@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
-import { buildCanonicalFilename } from './file-naming.js'
+import { buildCanonicalFilename, uppercaseStem } from './file-naming.js'
 import { extractAboroText, extractAboroProfile, type AboroProfile } from './aboro-extraction.js'
 import { calculateSoftSkillScore } from './soft-skill-scoring.js'
 import { calculateGlobalScore } from './compatibility.js'
@@ -57,7 +57,7 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
   const candidateName = candidateRow?.name ?? ''
   const keepsOriginalName = docType === 'cv' || docType === 'lettre' || docType === 'aboro'
   const displayFilename = keepsOriginalName
-    ? file.filename
+    ? uppercaseStem(file.filename)
     : (candidateName ? buildCanonicalFilename(candidateName, file.filename) : null)
 
   // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)

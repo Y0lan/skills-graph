@@ -585,11 +585,11 @@ export default function CandidateDetailPage() {
             <div className="flex-1" />
           )}
 
-          {/* Status badges. The Skill Radar chip only shows when it is
-              actionable: one of the candidatures has reached skill_radar_envoye
-              and the candidate has not yet submitted. Before that stage the
-              pipeline stepper already communicates state — a global
-              "En attente" there is noise. */}
+          {/* Status badges — keep only genuinely actionable signals. Dropped
+              the canal + "CV uploadé" chips: the per-candidature card below
+              already shows canal + date, and the Documents panel shows CV
+              presence directly. The Skill Radar chip only surfaces when it's
+              actionable. */}
           <div className="flex items-center gap-2 flex-wrap">
             {(() => {
               const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
@@ -608,14 +608,6 @@ export default function CandidateDetailPage() {
               }
               return null
             })()}
-            {candidate.canal && (
-              <Badge variant="outline" className="text-xs">
-                {CANAL_LABELS[candidate.canal] ?? candidate.canal}
-              </Badge>
-            )}
-            {candidate.hasCv && (
-              <Badge variant="outline" className="text-xs">CV uploade</Badge>
-            )}
             {candidate.submittedAt && (
               <Button
                 variant="outline"
