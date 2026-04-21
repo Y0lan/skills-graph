@@ -168,7 +168,7 @@ export default function CompatBreakdownDialog({ open, onClose, candidatureId, me
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
             <span>{METRIC_TITLES[metric]}</span>
@@ -267,9 +267,9 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
     <div className="space-y-4">
       <div className="space-y-2">
         {data.items.map(item => (
-          <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5">
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <span className="font-medium truncate">{item.categoryLabel}</span>
+          <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5 min-w-0">
+            <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+              <span className="font-medium truncate min-w-0">{item.categoryLabel}</span>
               <Badge className={`text-[10px] shrink-0 ${labels[item.direction].color}`}>
                 {labels[item.direction].label}
               </Badge>
@@ -288,9 +288,9 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
           <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Écart avec l'équipe</h4>
           <div className="space-y-1">
             {sortedGaps.map(g => (
-              <div key={g.categoryId} className="rounded border p-2 text-xs space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium truncate">{g.categoryLabel}</span>
+              <div key={g.categoryId} className="rounded border p-2 text-xs space-y-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <span className="font-medium truncate min-w-0">{g.categoryLabel}</span>
                   <Badge variant={g.gap >= 0 ? 'default' : 'secondary'} className="text-[10px] tabular-nums shrink-0">
                     {g.gap >= 0 ? '+' : ''}{g.gap.toFixed(1)}
                   </Badge>
