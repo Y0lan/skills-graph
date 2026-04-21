@@ -1,5 +1,5 @@
 import { getDb } from './db.js'
-import { extractCvText, extractSkillsFromCv, PROMPT_VERSION, type PosteContext } from './cv-extraction.js'
+import { extractCvText, extractSkillsFromCv, EXTRACTION_MODEL, PROMPT_VERSION, type PosteContext } from './cv-extraction.js'
 import { getSkillCategories } from './catalog.js'
 import {
   calculatePosteCompatibility,
@@ -7,6 +7,9 @@ import {
   calculateGlobalScore,
 } from './compatibility.js'
 import type { ExtractionStatus } from './types.js'
+import { putAsset } from './asset-storage.js'
+import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs.js'
+import { pruneExtractionRuns } from './extraction-retention.js'
 
 export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
 
@@ -63,12 +66,35 @@ export async function processCvForCandidate(
     // 1. Extract text
     const cvText = await extractCvText(cvBuffer)
 
-    // 2. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
+    // 2. Store CV text as a deduped asset + remember its id for the run record.
+    const cvAsset = putAsset({
+      candidateId,
+      kind: 'cv_text',
+      buffer: cvText,
+      mime: 'text/plain; charset=utf-8',
+    })
+
+    // 3. Open a skills_baseline extraction run so we have a row to close on
+    //    both success and failure. Phase 1 audit trail.
+    const runId = startRun({
+      candidateId,
+      kind: 'skills_baseline',
+      promptVersion: PROMPT_VERSION,
+      model: EXTRACTION_MODEL,
+      cvAssetId: cvAsset.id,
+    })
+
+    // 4. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
     const posteContext: PosteContext | null = null
     const catalog = getSkillCategories()
     const result = await extractSkillsFromCv(cvText, catalog, posteContext)
 
     if (!result) {
+      finishRun({
+        runId,
+        status: 'failed',
+        error: 'no-suggestions (CV too short or all categories failed)',
+      })
       markFailed(candidateId, 'CV trop court ou extraction impossible')
       return {
         candidateId,
@@ -80,7 +106,7 @@ export async function processCvForCandidate(
       }
     }
 
-    // 3. Persist extraction output on the candidate row
+    // 5. Persist extraction output on the candidate row
     db.prepare(
       `UPDATE candidates
          SET cv_text = ?,
@@ -98,10 +124,10 @@ export async function processCvForCandidate(
       candidateId,
     )
 
-    // 4. Score every candidature
+    // 6. Score every candidature
     const scoring = scoreAllCandidatures(candidateId, result.ratings)
 
-    // 5. Determine status
+    // 7. Determine status
     const extractionHadFailures = result.failedCategories.length > 0
     const scoringHadFailures = scoring.failedCandidatures.length > 0
     const status: ExtractionStatus =
@@ -111,6 +137,26 @@ export async function processCvForCandidate(
       : extractionHadFailures
         ? `Extraction partielle : ${result.failedCategories.length} catégorie(s) ont échoué`
         : null
+
+    // 8. Close the run record with the full payload + retention sweep
+    const runStatus: ExtractionRunStatus = status === 'succeeded' ? 'success' : 'partial'
+    finishRun({
+      runId,
+      status: runStatus,
+      payload: {
+        ratings: result.ratings,
+        reasoning: result.reasoning,
+        questions: result.questions,
+        failedCategories: result.failedCategories,
+        failedCandidatures: scoring.failedCandidatures,
+      },
+      error,
+    })
+    try {
+      pruneExtractionRuns()
+    } catch (err) {
+      console.warn('[cv-pipeline] retention pruning failed (non-fatal):', err)
+    }
 
     db.prepare(
       `UPDATE candidates

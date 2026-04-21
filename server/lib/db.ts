@@ -687,6 +687,65 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_error TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidates ADD COLUMN prompt_version INTEGER DEFAULT 1') } catch { /* already exists */ }
 
+  // CV Intelligence v1, Phase 1 — auditability foundation.
+  //
+  // candidate_assets: content-addressed storage for CV text / lettre text /
+  // future raw PDFs. Dedupes per-candidate by sha256 so the same CV uploaded
+  // twice = one row. `storage_path` points at the on-disk file (local dev)
+  // or GCS key (prod migration, deferred).
+  //
+  // cv_extraction_runs: one row per LLM invocation. Snapshots poste, prompt
+  // version, catalog version, model, source document hashes. Payload
+  // retention is policy-driven: keep N latest successful payloads, drop
+  // older ones to metadata-only, purge after N days.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidate_assets (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT REFERENCES candidates(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf')),
+      mime TEXT,
+      size_bytes INTEGER,
+      sha256 TEXT NOT NULL,
+      storage_path TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(candidate_id, kind, sha256)
+    );
+    CREATE INDEX IF NOT EXISTS idx_candidate_assets_candidate ON candidate_assets(candidate_id, kind);
+
+    CREATE TABLE IF NOT EXISTS cv_extraction_runs (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      candidature_id TEXT REFERENCES candidatures(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL CHECK(kind IN (
+        'skills_baseline',
+        'skills_role_aware',
+        'profile',
+        'critique',
+        'reconcile'
+      )),
+      run_index INTEGER NOT NULL,
+      poste_id TEXT REFERENCES postes(id),
+      poste_snapshot TEXT,
+      catalog_version TEXT,
+      prompt_version INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      cv_asset_id TEXT REFERENCES candidate_assets(id),
+      lettre_asset_id TEXT REFERENCES candidate_assets(id),
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      finished_at TEXT,
+      status TEXT CHECK(status IN ('running','success','partial','failed')),
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      payload TEXT,
+      error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_cv_runs_candidate ON cv_extraction_runs(candidate_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_cv_runs_kind ON cv_extraction_runs(candidate_id, kind, started_at DESC);
+  `)
+
+  // retention_days ALTER is deferred — scoring_weights is created later in
+  // initDatabase (see seedPostes block). We add it after the CREATE runs.
+
   // Scoring weights table (configurable global score formula)
   db.exec(`
     CREATE TABLE IF NOT EXISTS scoring_weights (
@@ -698,6 +757,10 @@ export function initDatabase(): void {
     )
   `)
   db.exec("INSERT OR IGNORE INTO scoring_weights (id) VALUES ('default')")
+
+  // Retention window (days) for cv_extraction_runs payloads. NULL-payload
+  // rows older than this get dropped entirely by extraction-retention.ts.
+  try { db.exec('ALTER TABLE scoring_weights ADD COLUMN retention_days INTEGER DEFAULT 90') } catch { /* already exists */ }
 
   // Per-skill target levels with requis/apprécié weighting for compatibility scoring
   db.exec(`
