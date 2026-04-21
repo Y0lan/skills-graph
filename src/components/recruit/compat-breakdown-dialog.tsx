@@ -24,6 +24,7 @@ interface PosteItem {
   weight: number
   contribution: number
   contributionPct: number
+  fulfillmentPct?: number
 }
 
 interface PosteBreakdown {
@@ -215,29 +216,41 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
   if (data.items.length === 0) {
     return <p className="text-sm text-muted-foreground py-4 text-center">Aucun item à détailler.</p>
   }
-  const maxContribution = Math.max(...data.items.map(i => i.contribution))
+  // Bar width = fulfillmentPct (0-100% of target). Previously we used
+  // contribution-relative-to-max which made the top contributor visually
+  // full even if it was at 29%. Label + bar now tell the same story.
+  // In category-average fallback, weight is always 1 so the Requis/
+  // Apprécié distinction is meaningless — suppress the badge.
+  const isFallback = data.formula === 'category-average'
   return (
     <div className="space-y-1.5">
       {data.items.map((item, i) => {
         const label = item.skillLabel ?? item.categoryLabel ?? '?'
-        const widthPct = maxContribution > 0 ? (item.contribution / maxContribution) * 100 : 0
-        const fullness = item.targetLevel > 0 ? Math.min(100, (item.candidateLevel / item.targetLevel) * 100) : 0
+        const fulfillment = item.fulfillmentPct
+          ?? (item.targetLevel > 0 ? Math.min(100, (item.candidateLevel / item.targetLevel) * 100) : 0)
+        const barColor = fulfillment >= 100
+          ? 'bg-emerald-500'
+          : fulfillment >= 60 ? 'bg-amber-500' : 'bg-rose-500'
         return (
           <div key={`${label}-${i}`} className="space-y-1">
             <div className="flex items-center justify-between text-xs gap-2">
               <span className="truncate font-medium">
                 {label}
-                {item.weight === 2 && <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1">Requis</Badge>}
-                {item.weight === 1 && <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1 text-muted-foreground">Apprécié</Badge>}
+                {!isFallback && item.weight === 2 && (
+                  <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1 border-primary/40 bg-primary/10 text-primary">Requis</Badge>
+                )}
+                {!isFallback && item.weight === 1 && (
+                  <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1 text-muted-foreground">Apprécié</Badge>
+                )}
               </span>
               <span className="tabular-nums text-muted-foreground">
-                {item.candidateLevel}/{item.targetLevel} · {item.contributionPct}%
+                {item.candidateLevel}/{item.targetLevel} · {Math.round(fulfillment)}%
               </span>
             </div>
             <div className="h-1.5 rounded bg-muted overflow-hidden">
               <div
-                className={`h-full ${fullness >= 100 ? 'bg-emerald-500' : fullness >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                style={{ width: `${widthPct}%` }}
+                className={`h-full ${barColor}`}
+                style={{ width: `${Math.max(0, Math.min(100, fulfillment))}%` }}
               />
             </div>
           </div>

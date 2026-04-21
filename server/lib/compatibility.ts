@@ -232,7 +232,12 @@ export interface PosteCompatBreakdown {
     targetLevel: number
     weight: number
     contribution: number
+    /** Share of the total score this item contributed (for sort/ranking). */
     contributionPct: number
+    /** How close to the target the candidate is (0-100). Used for bar width
+     *  so a full bar = "meets target". contributionPct was relative to the
+     *  top contributor, which misled users. */
+    fulfillmentPct: number
   }>
 }
 
@@ -284,6 +289,9 @@ export function getPosteCompatBreakdown(
     const items = rawItems.map(item => ({
       ...item,
       contributionPct: weightedSum > 0 ? Math.round((item.contribution / weightedSum) * 1000) / 10 : 0,
+      fulfillmentPct: item.targetLevel > 0
+        ? Math.round(Math.min(100, (item.candidateLevel / item.targetLevel) * 100) * 10) / 10
+        : 0,
     })).sort((a, b) => b.contribution - a.contribution)
     return {
       total: totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 100) : 0,
@@ -334,6 +342,8 @@ export function getPosteCompatBreakdown(
   const items = rawItems.map(item => ({
     ...item,
     contributionPct: totalScore > 0 ? Math.round((item.contribution / totalScore) * 1000) / 10 : 0,
+    // Fallback: target is implicitly 5/5 so fulfillment = candidateLevel/5.
+    fulfillmentPct: Math.round(Math.min(100, (item.candidateLevel / 5) * 100) * 10) / 10,
   })).sort((a, b) => b.contribution - a.contribution)
   return {
     total: totalWeight > 0 ? Math.round(totalScore / totalWeight) : 0,
