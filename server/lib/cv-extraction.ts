@@ -3,6 +3,7 @@ import mammoth from 'mammoth'
 import Anthropic from '@anthropic-ai/sdk'
 import type { SkillCategory } from '../../src/data/skill-catalog.js'
 import { filterValidRatings } from './validation.js'
+import { callAnthropicTool } from './anthropic-tool.js'
 
 // Bump when the extraction prompt/schema changes meaningfully. Used in run
 // records (cv_extraction_runs) so the history/diff UI can show WHY outputs
@@ -204,53 +205,46 @@ ${cvText}
 
 Évalue les compétences de la catégorie "${category.label}" uniquement.`
 
-  const tools: Anthropic.Messages.Tool[] = [{
-    name: 'submit_skill_ratings',
-    description: 'Submit the extracted skill ratings, reasoning, and verification questions for this category',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        suggestions: {
-          type: 'object',
-          description: 'Map of skill IDs to suggested rating levels (0-5)',
-          additionalProperties: { type: 'number', minimum: 0, maximum: 5 },
-        },
-        reasoning: {
-          type: 'object',
-          description: 'Map of skill IDs to one-line justification citing CV evidence',
-          additionalProperties: { type: 'string' },
-        },
-        questions: {
-          type: 'object',
-          description: 'Map of skill IDs to one French verification question (≤ 25 words) referencing a specific CV element',
-          additionalProperties: { type: 'string' },
-        },
-      },
-      required: ['suggestions', 'reasoning', 'questions'],
-    },
-  }]
-
-  const message = await client.messages.create({
-    model: EXTRACTION_MODEL,
-    max_tokens: 2048,
-    temperature: 0,
-    tools,
-    tool_choice: { type: 'tool', name: 'submit_skill_ratings' },
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  })
-
   const empty: CategoryExtraction = { ratings: {}, reasoning: {}, questions: {} }
 
-  const toolBlock = message.content.find(b => b.type === 'tool_use')
-  if (!toolBlock || toolBlock.type !== 'tool_use') return empty
-
-  const input = toolBlock.input as {
+  const result = await callAnthropicTool<{
     suggestions?: Record<string, unknown>
     reasoning?: Record<string, unknown>
     questions?: Record<string, unknown>
-  }
+  }>({
+    client,
+    model: EXTRACTION_MODEL,
+    system: systemPrompt,
+    user: userPrompt,
+    tool: {
+      name: 'submit_skill_ratings',
+      description: 'Submit the extracted skill ratings, reasoning, and verification questions for this category',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          suggestions: {
+            type: 'object',
+            description: 'Map of skill IDs to suggested rating levels (0-5)',
+            additionalProperties: { type: 'number', minimum: 0, maximum: 5 },
+          },
+          reasoning: {
+            type: 'object',
+            description: 'Map of skill IDs to one-line justification citing CV evidence',
+            additionalProperties: { type: 'string' },
+          },
+          questions: {
+            type: 'object',
+            description: 'Map of skill IDs to one French verification question (≤ 25 words) referencing a specific CV element',
+            additionalProperties: { type: 'string' },
+          },
+        },
+        required: ['suggestions', 'reasoning', 'questions'],
+      },
+    },
+  })
 
+  if (!result) return empty
+  const input = result.input
   if (!input.suggestions) return empty
 
   // Keep only skills that belong to this category (prompt compliance guard)

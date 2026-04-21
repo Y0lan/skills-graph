@@ -66,7 +66,17 @@ export async function processCvForCandidate(
     // 1. Extract text
     const cvText = await extractCvText(cvBuffer)
 
-    // 2. Store CV text as a deduped asset + remember its id for the run record.
+    // 2. Store raw PDF bytes so Phase 8 re-extract can reuse them without
+    //    requiring a fresh upload. Dedupes by sha256 — re-running extraction
+    //    on the same CV doesn't duplicate the blob.
+    putAsset({
+      candidateId,
+      kind: 'raw_pdf',
+      buffer: cvBuffer,
+      mime: 'application/pdf',
+    })
+
+    // 3. Store CV text as a deduped asset + remember its id for the run record.
     const cvAsset = putAsset({
       candidateId,
       kind: 'cv_text',
@@ -74,7 +84,7 @@ export async function processCvForCandidate(
       mime: 'text/plain; charset=utf-8',
     })
 
-    // 3. Open a skills_baseline extraction run so we have a row to close on
+    // 4. Open a skills_baseline extraction run so we have a row to close on
     //    both success and failure. Phase 1 audit trail.
     const runId = startRun({
       candidateId,
@@ -84,7 +94,7 @@ export async function processCvForCandidate(
       cvAssetId: cvAsset.id,
     })
 
-    // 4. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
+    // 5. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
     const posteContext: PosteContext | null = null
     const catalog = getSkillCategories()
     const result = await extractSkillsFromCv(cvText, catalog, posteContext)
@@ -106,7 +116,7 @@ export async function processCvForCandidate(
       }
     }
 
-    // 5. Persist extraction output on the candidate row
+    // 6. Persist extraction output on the candidate row
     db.prepare(
       `UPDATE candidates
          SET cv_text = ?,
@@ -124,10 +134,10 @@ export async function processCvForCandidate(
       candidateId,
     )
 
-    // 6. Score every candidature
+    // 7. Score every candidature
     const scoring = scoreAllCandidatures(candidateId, result.ratings)
 
-    // 7. Determine status
+    // 8. Determine status
     const extractionHadFailures = result.failedCategories.length > 0
     const scoringHadFailures = scoring.failedCandidatures.length > 0
     const status: ExtractionStatus =
@@ -138,7 +148,7 @@ export async function processCvForCandidate(
         ? `Extraction partielle : ${result.failedCategories.length} catégorie(s) ont échoué`
         : null
 
-    // 8. Close the run record with the full payload + retention sweep
+    // 9. Close the run record with the full payload + retention sweep
     const runStatus: ExtractionRunStatus = status === 'succeeded' ? 'success' : 'partial'
     finishRun({
       runId,
