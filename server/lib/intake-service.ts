@@ -1,11 +1,11 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
 import { processCvForCandidate } from './cv-pipeline.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from './compatibility.js'
+import { rescoreCandidature } from './scoring-helpers.js'
 import { uploadDocument } from './document-service.js'
 import { sendApplicationReceived } from './email.js'
 import { DEFAULT_LEAD_SLUG } from '../middleware/require-lead.js'
-import { safeJsonParse, type PosteRow } from './types.js'
+import { type PosteRow } from './types.js'
 
 // ─── Process intake ──────────────────────────────────────────────────
 
@@ -127,31 +127,6 @@ export async function processIntake(
         INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
         VALUES (?, 'status_change', 'postule', ?, 'drupal-webhook')
       `).run(candidatureId, message?.trim() || null)
-
-      // If the candidate already has ratings (self-eval done) or AI suggestions
-      // from a previous CV upload, compute compat for THIS new candidature
-      // immediately — otherwise the new candidature would show null scores and
-      // wouldn't recompute until /evaluate is reopened.
-      const existingData = getDb().prepare(
-        'SELECT ratings, ai_suggestions FROM candidates WHERE id = ?'
-      ).get(existingCandidate.id) as { ratings: string | null; ai_suggestions: string | null } | undefined
-      if (existingData) {
-        const candidateRatings = safeJsonParse<Record<string, number>>(existingData.ratings ?? '{}', {})
-        const aiSuggestions = safeJsonParse<Record<string, number>>(existingData.ai_suggestions ?? '{}', {})
-        const effectiveRatings = { ...aiSuggestions, ...candidateRatings }
-        if (Object.keys(effectiveRatings).length > 0) {
-          const tauxPoste = calculatePosteCompatibility(effectiveRatings, poste.role_id)
-          const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, poste.role_id)
-          // Read existing soft-skill score (Aboro is candidate-level, applies to all).
-          const softRow = getDb().prepare(
-            'SELECT taux_soft_skills FROM candidatures WHERE candidate_id = ? AND taux_soft_skills IS NOT NULL LIMIT 1'
-          ).get(existingCandidate.id) as { taux_soft_skills: number | null } | undefined
-          const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, softRow?.taux_soft_skills ?? null)
-          getDb().prepare(
-            'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_soft_skills = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-          ).run(tauxPoste, tauxEquipe, softRow?.taux_soft_skills ?? null, tauxGlobal, candidatureId)
-        }
-      }
 
       return { ok: true, candidatureId, candidateId: existingCandidate.id, updated: false }
     }
@@ -283,6 +258,17 @@ export async function processIntake(
   // candidate (multi-poste case), the freshly-generated id was never inserted —
   // any UPDATE on it silently affects 0 rows and we'd lose CV / notes / AI.
   const resolvedCandidateId = intakeResult.candidateId ?? candidateId
+
+  // Initial scoring: if the candidate already has ai_suggestions from a
+  // prior CV upload (multi-poste case), this gives the new candidature
+  // meaningful scores immediately. If not (brand-new candidate), this
+  // writes zeros — processCvForCandidate below will rescore with real
+  // data once extraction completes. Idempotent either way.
+  try {
+    rescoreCandidature(intakeResult.candidatureId)
+  } catch (err) {
+    console.error('[INTAKE] initial rescore failed (non-fatal):', err)
+  }
 
   // Save message as candidate notes (visible in detail page) — non-destructive:
   // append rather than overwrite so multi-poste candidates accumulate context.

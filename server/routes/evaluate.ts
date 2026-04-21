@@ -4,7 +4,7 @@ import { getDb, getCategoriesForCandidate, getCategoryIdsByPole } from '../lib/d
 import { sendCandidateSubmitted } from '../lib/email.js'
 import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from '../lib/compatibility.js'
+import { rescoreCandidature } from '../lib/scoring-helpers.js'
 import { requireLead } from '../middleware/require-lead.js'
 
 export const evaluateRouter = Router()
@@ -228,30 +228,14 @@ evaluateRouter.post('/:id/submit', (req, res) => {
     throw err
   }
 
-  // Recalculate compatibility for any linked candidatures
-  const candidateRatings = ratings ?? safeJsonParse<Record<string, number>>(row.ratings, {})
-  const aiSuggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions, {})
-  const effectiveRatings = { ...aiSuggestions, ...candidateRatings }
-
+  // Rescore every linked candidature via the shared helper. Same 3-way
+  // merge (ai + role_aware + manual) everywhere — no more pill/modal drift.
   const linkedCandidatures = db.prepare(`
-    SELECT c.id, c.poste_id, p.role_id
-    FROM candidatures c JOIN postes p ON p.id = c.poste_id
-    WHERE c.candidate_id = ?
-  `).all(req.params.id) as { id: string; poste_id: string; role_id: string }[]
+    SELECT id FROM candidatures WHERE candidate_id = ?
+  `).all(req.params.id) as { id: string }[]
 
   for (const cand of linkedCandidatures) {
-    const tauxPoste = calculatePosteCompatibility(effectiveRatings, cand.role_id)
-    const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, cand.role_id)
-
-    // Read existing soft skill score (from Aboro, if available)
-    const currentSoft = db.prepare(
-      'SELECT taux_soft_skills FROM candidatures WHERE id = ?'
-    ).get(cand.id) as { taux_soft_skills: number | null } | undefined
-    const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, currentSoft?.taux_soft_skills ?? null)
-
-    db.prepare(
-      'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-    ).run(tauxPoste, tauxEquipe, tauxGlobal, cand.id)
+    rescoreCandidature(cand.id)
 
     // Auto-advance to skill_radar_complete if currently at skill_radar_envoye (atomic CAS)
     const advanceResult = db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?')

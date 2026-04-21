@@ -8,7 +8,8 @@ import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
 import { previewizeEmailHtml } from '../lib/brand.js'
-import { calculatePosteCompatibility, calculateEquipeCompatibility, getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
+import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
+import { loadEffectiveRatings, rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip, triggerDocumentScan } from '../lib/document-service.js'
 import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
@@ -264,7 +265,14 @@ protectedRouter.put('/postes/:posteId/requirements', mutationRateLimit, (req, re
     }
   })()
 
-  res.json({ ok: true, count: requirements.length })
+  // Requirements changed → every candidature on this poste has a stale
+  // taux_compatibilite_poste. Rescore synchronously (max ~20 candidatures
+  // per poste, well under a second). Codex P0: the old manual-edit path
+  // didn't rescore, so the Rôles admin page happily stored new
+  // requirements while the pipeline kept showing old scores.
+  const rescored = rescorePoste(String(req.params.posteId))
+
+  res.json({ ok: true, count: requirements.length, rescored: rescored.length })
 })
 
 // Recruitment funnel: aggregated transitions for the Sankey diagram.
@@ -564,15 +572,18 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
     'SELECT * FROM candidature_events WHERE candidature_id = ? ORDER BY created_at ASC'
   ).all(req.params.id) as CandidatureEventRow[]
 
-  // Get gap analysis
+  // Gap analysis + multi-poste + bonus skills — same shared helper as the
+  // scoring side. Codex spot: this used to rebuild effectiveRatings as
+  // {...aiSuggestions, ...candidateRatings}, ignoring role_aware — so the
+  // detail page could still drift from the persisted scores. Fixed.
+  const { ratings: effectiveRatings } = loadEffectiveRatings(String(req.params.id))
+  // The response payload still surfaces the raw sources separately (for
+  // the frontend's manual-vs-ai display).
   const candidateRatings = safeJsonParse<Record<string, number>>(row.ratings as string, {})
   const aiSuggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions as string, {})
-  const effectiveRatings = { ...aiSuggestions, ...candidateRatings }
   const gaps = Object.keys(effectiveRatings).length > 0
     ? getGapAnalysis(effectiveRatings, row.poste_role_id as string)
     : []
-
-  // Multi-poste compatibility + bonus skills (Task 3)
   const multiPosteCompatibility = Object.keys(effectiveRatings).length > 0
     ? calculateMultiPosteCompatibility(effectiveRatings, row.poste_id as string)
     : []
@@ -955,38 +966,20 @@ protectedRouter.post('/candidatures/:id/notes', mutationRateLimit, (req, res) =>
 
 // Recalculate compatibility for a candidature
 protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res) => {
-  const row = getDb().prepare(`
-    SELECT c.candidate_id, c.poste_id, p.role_id, p.pole, cand.ratings, cand.ai_suggestions
-    FROM candidatures c
-    JOIN postes p ON p.id = c.poste_id
-    JOIN candidates cand ON cand.id = c.candidate_id
-    WHERE c.id = ?
-  `).get(req.params.id) as { candidate_id: string; poste_id: string; role_id: string; pole: string; ratings: string; ai_suggestions: string | null } | undefined
-
-  if (!row) {
-    res.status(404).json({ error: 'Candidature introuvable' })
-    return
+  try {
+    const result = rescoreCandidature(String(req.params.id))
+    res.json({
+      tauxPoste: result.tauxPoste,
+      tauxEquipe: result.tauxEquipe,
+      tauxGlobal: result.tauxGlobal,
+    })
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('not found')) {
+      res.status(404).json({ error: 'Candidature introuvable' })
+      return
+    }
+    throw err
   }
-
-  const candidateRatings = safeJsonParse<Record<string, number>>(row.ratings, {})
-  const aiSuggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions, {})
-  const effectiveRatings = { ...aiSuggestions, ...candidateRatings }
-
-  const tauxPoste = calculatePosteCompatibility(effectiveRatings, row.role_id)
-  const tauxEquipe = calculateEquipeCompatibility(effectiveRatings, row.role_id)
-
-  // Read current soft skill score (from Aboro, if available)
-  const currentSoft = getDb().prepare(
-    'SELECT taux_soft_skills FROM candidatures WHERE id = ?'
-  ).get(req.params.id) as { taux_soft_skills: number | null } | undefined
-
-  const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, currentSoft?.taux_soft_skills ?? null)
-
-  getDb().prepare(
-    'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-  ).run(tauxPoste, tauxEquipe, tauxGlobal, req.params.id)
-
-  res.json({ tauxPoste, tauxEquipe, tauxGlobal })
 })
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1896,44 +1889,24 @@ protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {
   }
 
   const row = getDb().prepare(`
-    SELECT cand.ratings AS candidate_ratings,
-           cand.ai_suggestions AS candidate_ai,
-           c.role_aware_suggestions AS role_aware,
-           cand.role_id AS candidate_role_id,
-           p.role_id AS poste_role_id
+    SELECT c.poste_id, p.role_id AS poste_role_id
     FROM candidatures c
-    JOIN candidates cand ON cand.id = c.candidate_id
     JOIN postes p ON p.id = c.poste_id
     WHERE c.id = ?
-  `).get(req.params.id) as {
-    candidate_ratings: string | null;
-    candidate_ai: string | null;
-    role_aware: string | null;
-    candidate_role_id: string | null;
-    poste_role_id: string
-  } | undefined
+  `).get(req.params.id) as { poste_id: string; poste_role_id: string } | undefined
 
   if (!row) {
     res.status(404).json({ error: 'Candidature introuvable' })
     return
   }
 
-  // Source layering — same intent as the scoring side, but fixed after a
-  // codex review flagged that an either/or between role_aware and
-  // ai_suggestions would DROP baseline skills the role-aware pass never
-  // emitted (e.g. generalist skills present in the CV but outside the
-  // fiche's scope). Right layering:
-  //   1. ai_suggestions = widest base (everything the CV surfaced)
-  //   2. role_aware overrides per-skill — it's the calibrated version
-  //      of whatever skills it DID emit for this poste
-  //   3. manual (form submission) wins last if the recruiter touched it
-  const roleAware = safeJsonParse<Record<string, number>>(row.role_aware ?? '{}', {})
-  const aiSuggestions = safeJsonParse<Record<string, number>>(row.candidate_ai ?? '{}', {})
-  const manual = safeJsonParse<Record<string, number>>(row.candidate_ratings ?? '{}', {})
-  const ratings = { ...aiSuggestions, ...roleAware, ...manual }
+  // Single source of truth for effective ratings — same helper every
+  // scoring path uses (pipeline, intake, evaluate, recalculate). No more
+  // pill/modal drift.
+  const { ratings } = loadEffectiveRatings(req.params.id)
 
   if (metric === 'poste') {
-    res.json(getPosteCompatBreakdown(ratings, row.poste_role_id))
+    res.json(getPosteCompatBreakdown(ratings, row.poste_id))
     return
   }
   if (metric === 'equipe') {

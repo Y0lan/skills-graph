@@ -2,11 +2,7 @@ import { getDb } from './db.js'
 import type { SkillCategory } from '../../src/data/skill-catalog.js'
 import { extractCvText, extractSkillsFromCv, EXTRACTION_MODEL, PROMPT_VERSION, type PosteContext } from './cv-extraction.js'
 import { getSkillCategories } from './catalog.js'
-import {
-  calculatePosteCompatibility,
-  calculateEquipeCompatibility,
-  calculateGlobalScore,
-} from './compatibility.js'
+import { rescoreCandidature } from './scoring-helpers.js'
 import type { ExtractionStatus } from './types.js'
 import { putAsset } from './asset-storage.js'
 import { extractPhotoFromCvPdf } from './cv-photo-extraction.js'
@@ -271,9 +267,9 @@ export async function processCvForCandidate(
       cvAssetId: cvAsset.id,
     })
 
-    // 7. Score every candidature — scoring prefers role_aware_suggestions
-    //    when present, otherwise falls back to the candidate-level baseline.
-    const scoring = scoreAllCandidatures(candidateId, result.ratings)
+    // 7. Score every candidature via the shared helper (merges ai +
+    //    role_aware + manual ratings, writes compat scores to DB).
+    const scoring = scoreAllCandidatures(candidateId)
 
     // 8. Determine status
     const extractionHadFailures = result.failedCategories.length > 0 || roleAwareFailures.length > 0 || profileFailed
@@ -507,57 +503,26 @@ async function runRoleAwarePasses(params: {
  * `suggestions`. One try/catch per candidature so one poor poste config doesn't
  * abort the batch.
  */
-function scoreAllCandidatures(
-  candidateId: string,
-  suggestions: Record<string, number>,
-): CandidatureScoringResult {
+function scoreAllCandidatures(candidateId: string): CandidatureScoringResult {
   const db = getDb()
   const candidatures = db.prepare(
-    `SELECT c.id, p.role_id, c.role_aware_suggestions
+    `SELECT c.id
        FROM candidatures c
-       JOIN postes p ON p.id = c.poste_id
       WHERE c.candidate_id = ?`,
-  ).all(candidateId) as { id: string; role_id: string; role_aware_suggestions: string | null }[]
-
-  const softRow = db.prepare(
-    `SELECT taux_soft_skills
-       FROM candidatures
-      WHERE candidate_id = ? AND taux_soft_skills IS NOT NULL
-      LIMIT 1`,
-  ).get(candidateId) as { taux_soft_skills: number | null } | undefined
-  const softScore = softRow?.taux_soft_skills ?? null
-
-  const update = db.prepare(
-    `UPDATE candidatures
-        SET taux_compatibilite_poste = ?,
-            taux_compatibilite_equipe = ?,
-            taux_soft_skills = ?,
-            taux_global = ?,
-            updated_at = datetime('now')
-      WHERE id = ?`,
-  )
+  ).all(candidateId) as { id: string }[]
 
   const scored: string[] = []
   const failed: string[] = []
 
+  // Scoring routes through the shared helper so CV pipeline, intake,
+  // form submit, /recalculate and /compat/:metric all produce the SAME
+  // numbers for the same ratings. Previous either/or merge (role_aware
+  // OR baseline) silently dropped generalist skills outside the fiche's
+  // scope; rescoreCandidature uses the 3-way merge
+  // ({...ai, ...roleAware, ...manual}).
   for (const c of candidatures) {
     try {
-      // Prefer per-candidature role-aware ratings when present; fall back to
-      // candidate-level baseline. This is what makes multi-poste candidates
-      // get distinct scores on each poste.
-      let ratings = suggestions
-      if (c.role_aware_suggestions) {
-        try {
-          const parsed = JSON.parse(c.role_aware_suggestions) as Record<string, number>
-          if (parsed && typeof parsed === 'object') ratings = parsed
-        } catch {
-          // Malformed JSON — fall back to baseline
-        }
-      }
-      const tauxPoste = calculatePosteCompatibility(ratings, c.role_id)
-      const tauxEquipe = calculateEquipeCompatibility(ratings, c.role_id)
-      const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, softScore)
-      update.run(tauxPoste, tauxEquipe, softScore, tauxGlobal, c.id)
+      rescoreCandidature(c.id)
       scored.push(c.id)
     } catch (err) {
       console.error(`[cv-pipeline] Scoring failed for candidature ${c.id}:`, err)

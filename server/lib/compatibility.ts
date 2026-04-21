@@ -16,24 +16,28 @@ const GAP_BONUS_MULTIPLIER = 10
  */
 export function calculatePosteCompatibility(
   candidateRatings: Record<string, number>,
-  posteRoleId: string,
+  posteId: string,
 ): number {
   const db = getDb()
 
-  // Check if any poste linked to this role has skill requirements
-  const posteRow = db.prepare('SELECT id FROM postes WHERE role_id = ?').get(posteRoleId) as { id: string } | undefined
-  if (posteRow) {
-    const requirements = db.prepare(
-      'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?'
-    ).all(posteRow.id) as { skill_id: string; target_level: number; importance: string }[]
+  // Codex P0 fix: if two postes share a role, picking "the first poste for
+  // this role" used to leak one poste's requirements onto another. Scoring
+  // now keys on the poste id directly. We still need role_id for the
+  // category-average fallback (role_categories is role-scoped, not
+  // poste-scoped).
+  const posteRow = db.prepare('SELECT role_id FROM postes WHERE id = ?').get(posteId) as { role_id: string } | undefined
+  if (!posteRow) return 0
 
-    if (requirements.length > 0) {
-      return calculateWeightedCompatibility(candidateRatings, requirements)
-    }
+  const requirements = db.prepare(
+    'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?',
+  ).all(posteId) as { skill_id: string; target_level: number; importance: string }[]
+
+  if (requirements.length > 0) {
+    return calculateWeightedCompatibility(candidateRatings, requirements)
   }
 
-  // Fallback: category-average scoring
-  return calculateCategoryAverageCompatibility(candidateRatings, posteRoleId)
+  // Fallback: category-average scoring against the role's categories.
+  return calculateCategoryAverageCompatibility(candidateRatings, posteRow.role_id)
 }
 
 /**
@@ -246,15 +250,14 @@ export interface EquipeCompatBreakdown {
 
 export function getPosteCompatBreakdown(
   candidateRatings: Record<string, number>,
-  posteRoleId: string,
+  posteId: string,
 ): PosteCompatBreakdown {
   const db = getDb()
-  const posteRow = db.prepare('SELECT id FROM postes WHERE role_id = ?').get(posteRoleId) as { id: string } | undefined
-  const requirements = posteRow
-    ? db.prepare(
-        'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?'
-      ).all(posteRow.id) as { skill_id: string; target_level: number; importance: string }[]
-    : []
+  const posteRow = db.prepare('SELECT role_id FROM postes WHERE id = ?').get(posteId) as { role_id: string } | undefined
+  const posteRoleId = posteRow?.role_id ?? ''
+  const requirements = db.prepare(
+    'SELECT skill_id, target_level, importance FROM poste_skill_requirements WHERE poste_id = ?',
+  ).all(posteId) as { skill_id: string; target_level: number; importance: string }[]
 
   if (requirements.length > 0) {
     const skillLabels = new Map(
@@ -550,7 +553,7 @@ export function calculateMultiPosteCompatibility(
   return otherPostes.map(p => ({
     posteId: p.id,
     posteTitre: p.titre,
-    tauxPoste: calculatePosteCompatibility(candidateRatings, p.role_id),
+    tauxPoste: calculatePosteCompatibility(candidateRatings, p.id),
   }))
 }
 
