@@ -471,6 +471,7 @@ export function initDatabase(): void {
         AND display_filename IS NOT NULL
         AND display_filename != filename
         AND display_filename GLOB '*_[A-Z]*_[A-Z]*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*'
+        AND uploaded_by != 'drupal-webhook'
     `).all() as { id: string; filename: string }[]
     const upd = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?')
     let resetCount = 0
