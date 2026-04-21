@@ -70,7 +70,10 @@ describe('<CandidateProfileCard>', () => {
   it('renders hero with name, current role, experience badge', () => {
     render(<CandidateProfileCard candidateId="c1" profile={makeProfile()} />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Pierre LEFEVRE')
-    expect(screen.getByText(/Architecte SI.*@ Sinapse/)).toBeInTheDocument()
+    // Role and company are now in sibling spans (each with its own lock+info),
+    // so match them independently rather than requiring one text node.
+    expect(screen.getByText('Architecte SI')).toBeInTheDocument()
+    expect(screen.getByText(/@ Sinapse/)).toBeInTheDocument()
     expect(screen.getByText(/18 ans d'exp\./)).toBeInTheDocument()
   })
 

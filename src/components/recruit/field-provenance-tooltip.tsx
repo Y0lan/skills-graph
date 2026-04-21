@@ -69,29 +69,49 @@ export default function FieldProvenanceTooltip({
   const sourceLabel = field.sourceDoc === 'cv' ? 'CV' : field.sourceDoc === 'lettre' ? 'Lettre de motivation' : field.sourceDoc === 'human' ? 'Manuel' : 'Fusion'
   const confidencePct = field.confidence != null ? Math.round(field.confidence * 100) : null
 
+  const tooltipBody = (
+    <>
+      <div><span className="font-medium">Source :</span> {sourceLabel}</div>
+      {confidencePct != null ? <div><span className="font-medium">Confiance :</span> {confidencePct}%</div> : null}
+      {locked ? (
+        <div className="text-amber-600 dark:text-amber-400">
+          <Lock className="inline h-3 w-3 mr-1" />Verrouillé par {field.humanLockedBy ?? 'un recruteur'}
+        </div>
+      ) : null}
+      <div className="border-t border-border/40 pt-1 mt-1 opacity-80">
+        {locked ? 'Cliquer sur le cadenas pour déverrouiller' : 'Cliquer sur le cadenas pour verrouiller'}
+      </div>
+    </>
+  )
+
   return (
-    <span className={`inline-flex items-center gap-1 ${className ?? ''}`}>
+    <span className={`inline-flex items-center gap-0.5 align-middle ${className ?? ''}`}>
       <Tooltip>
         <TooltipTrigger render={<span className="inline-flex" />}>
           <Info className="h-3 w-3 text-muted-foreground cursor-help" />
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs max-w-[260px] space-y-1">
-          <div><span className="font-medium">Source :</span> {sourceLabel}</div>
-          {confidencePct != null ? <div><span className="font-medium">Confiance :</span> {confidencePct}%</div> : null}
-          {locked ? <div className="text-amber-600 dark:text-amber-400"><Lock className="inline h-3 w-3 mr-1" />Verrouillé par {field.humanLockedBy ?? 'un recruteur'}</div> : null}
+          {tooltipBody}
         </TooltipContent>
       </Tooltip>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={toggle}
-        disabled={busy}
-        className="h-5 w-5 p-0"
-        title={locked ? 'Déverrouiller (les ré-extractions pourront écraser)' : 'Verrouiller (protège contre les ré-extractions)'}
-      >
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : locked ? <Lock className="h-3 w-3 text-amber-600" /> : <Unlock className="h-3 w-3 text-muted-foreground" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={toggle}
+            disabled={busy}
+            className="h-5 w-5 p-0"
+            aria-label={locked ? 'Déverrouiller' : 'Verrouiller'}
+          />
+        }>
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : locked ? <Lock className="h-3 w-3 text-amber-600" /> : <Unlock className="h-3 w-3 text-muted-foreground" />}
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs max-w-[260px] space-y-1">
+          {tooltipBody}
+        </TooltipContent>
+      </Tooltip>
     </span>
   )
 }

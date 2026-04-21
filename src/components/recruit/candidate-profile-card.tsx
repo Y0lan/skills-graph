@@ -248,101 +248,219 @@ export default function CandidateProfileCard({
           <InitialsBadge name={name} photoUrl={photoUrl} size="lg" />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold leading-tight break-words">
-                {name ?? 'Candidat'}
+              <h1 className="text-2xl font-bold leading-tight break-words inline-flex items-center gap-1.5 flex-wrap">
+                <span>{name ?? 'Candidat'}</span>
+                {name ? (
+                  <FieldProvenanceTooltip
+                    candidateId={candidateId}
+                    fieldPath="identity.fullName"
+                    field={profile.identity.fullName}
+                    onChange={(next) => setField('identity.fullName', next)}
+                  />
+                ) : null}
               </h1>
               {totalExp != null ? (
-                <Badge variant="outline" className="text-[11px] font-normal shrink-0">
-                  {totalExp} ans d&apos;exp.
-                </Badge>
+                <span className="inline-flex items-center gap-1 shrink-0">
+                  <Badge variant="outline" className="text-[11px] font-normal">
+                    {totalExp} ans d&apos;exp.
+                  </Badge>
+                  <FieldProvenanceTooltip
+                    candidateId={candidateId}
+                    fieldPath="totalExperienceYears"
+                    field={profile.totalExperienceYears}
+                    onChange={(next) => setField('totalExperienceYears', next)}
+                  />
+                </span>
               ) : null}
             </div>
             {role || company ? (
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {role ? role : ''}
-                {role && company ? ' · ' : ''}
-                {company ? `@ ${company}` : ''}
-                {startedAt && isCurrent !== false ? ` · depuis ${startedAt}` : ''}
+              <p className="text-sm text-muted-foreground mt-0.5 inline-flex items-center gap-1 flex-wrap">
+                {role ? (
+                  <span className="inline-flex items-center gap-0.5">
+                    {role}
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="currentRole.role"
+                      field={profile.currentRole.role}
+                      onChange={(next) => setField('currentRole.role', next)}
+                    />
+                  </span>
+                ) : null}
+                {role && company ? <span>·</span> : null}
+                {company ? (
+                  <span className="inline-flex items-center gap-0.5">
+                    @ {company}
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="currentRole.company"
+                      field={profile.currentRole.company}
+                      onChange={(next) => setField('currentRole.company', next)}
+                    />
+                  </span>
+                ) : null}
+                {startedAt && isCurrent !== false ? (
+                  <span className="inline-flex items-center gap-0.5">
+                    · depuis {startedAt}
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="currentRole.startedAt"
+                      field={profile.currentRole.startedAt}
+                      onChange={(next) => setField('currentRole.startedAt', next)}
+                    />
+                  </span>
+                ) : null}
               </p>
             ) : null}
 
             {hasContactRow ? (
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 {email ? (
-                  <a
-                    href={`mailto:${email}`}
-                    className="inline-flex items-center gap-1 hover:text-foreground min-w-0"
-                    aria-label="Email"
-                  >
-                    <Mail className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate max-w-[180px]">{email}</span>
-                  </a>
+                  <span className="inline-flex items-center gap-0.5 min-w-0">
+                    <a
+                      href={`mailto:${email}`}
+                      className="inline-flex items-center gap-1 hover:text-foreground min-w-0"
+                      aria-label="Email"
+                    >
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate max-w-[180px]">{email}</span>
+                    </a>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="contact.email"
+                      field={profile.contact.email}
+                      onChange={(next) => setField('contact.email', next)}
+                    />
+                  </span>
                 ) : null}
                 {phone ? (
-                  <a
-                    href={`tel:${phone}`}
-                    className="inline-flex items-center gap-1 hover:text-foreground"
-                    aria-label="Téléphone"
-                  >
-                    <Phone className="h-3.5 w-3.5 shrink-0" />{phone}
-                  </a>
+                  <span className="inline-flex items-center gap-0.5">
+                    <a
+                      href={`tel:${phone}`}
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      aria-label="Téléphone"
+                    >
+                      <Phone className="h-3.5 w-3.5 shrink-0" />{phone}
+                    </a>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="contact.phone"
+                      field={profile.contact.phone}
+                      onChange={(next) => setField('contact.phone', next)}
+                    />
+                  </span>
                 ) : null}
                 {linkedin ? (
-                  <a
-                    href={linkedin}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-foreground"
-                    aria-label="LinkedIn"
-                  >
-                    <Linkedin className="h-3.5 w-3.5 shrink-0" />LinkedIn
-                  </a>
+                  <span className="inline-flex items-center gap-0.5">
+                    <a
+                      href={linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      aria-label="LinkedIn"
+                    >
+                      <Linkedin className="h-3.5 w-3.5 shrink-0" />LinkedIn
+                    </a>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="contact.linkedinUrl"
+                      field={profile.contact.linkedinUrl}
+                      onChange={(next) => setField('contact.linkedinUrl', next)}
+                    />
+                  </span>
                 ) : null}
                 {github ? (
-                  <a
-                    href={github}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-foreground"
-                    aria-label="GitHub"
-                  >
-                    <Github className="h-3.5 w-3.5 shrink-0" />GitHub
-                  </a>
+                  <span className="inline-flex items-center gap-0.5">
+                    <a
+                      href={github}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      aria-label="GitHub"
+                    >
+                      <Github className="h-3.5 w-3.5 shrink-0" />GitHub
+                    </a>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="contact.githubUrl"
+                      field={profile.contact.githubUrl}
+                      onChange={(next) => setField('contact.githubUrl', next)}
+                    />
+                  </span>
                 ) : null}
                 {portfolio ? (
-                  <a
-                    href={portfolio}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 hover:text-foreground"
-                    aria-label="Portfolio"
-                  >
-                    <Globe className="h-3.5 w-3.5 shrink-0" />Site
-                  </a>
+                  <span className="inline-flex items-center gap-0.5">
+                    <a
+                      href={portfolio}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 hover:text-foreground"
+                      aria-label="Portfolio"
+                    >
+                      <Globe className="h-3.5 w-3.5 shrink-0" />Site
+                    </a>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="contact.portfolioUrl"
+                      field={profile.contact.portfolioUrl}
+                      onChange={(next) => setField('contact.portfolioUrl', next)}
+                    />
+                  </span>
                 ) : null}
               </div>
             ) : null}
 
             {hasHeaderChips ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                 {locationLabel ? (
-                  <Badge
-                    variant="outline"
-                    className="text-[11px] font-normal inline-flex items-center gap-1"
-                  >
-                    <MapPin className="h-3 w-3" />{locationLabel}
-                  </Badge>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] font-normal inline-flex items-center gap-1"
+                    >
+                      <MapPin className="h-3 w-3" />{locationLabel}
+                    </Badge>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath={city ? 'location.city' : 'location.country'}
+                      field={city ? profile.location.city : profile.location.country}
+                      onChange={(next) => setField(city ? 'location.city' : 'location.country', next)}
+                    />
+                  </span>
                 ) : null}
                 {remote ? (
-                  <Badge variant="outline" className="text-[11px] font-normal">{remote}</Badge>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Badge variant="outline" className="text-[11px] font-normal">{remote}</Badge>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="location.remotePreference"
+                      field={profile.location.remotePreference}
+                      onChange={(next) => setField('location.remotePreference', next)}
+                    />
+                  </span>
                 ) : null}
                 {license ? (
-                  <Badge variant="outline" className="text-[11px] font-normal">Permis {license}</Badge>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Badge variant="outline" className="text-[11px] font-normal">Permis {license}</Badge>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="location.drivingLicense"
+                      field={profile.location.drivingLicense}
+                      onChange={(next) => setField('location.drivingLicense', next)}
+                    />
+                  </span>
                 ) : null}
                 {willingToRelocate != null ? (
-                  <Badge variant="outline" className="text-[11px] font-normal">
-                    Mobile : {willingToRelocate ? 'oui' : 'non'}
-                  </Badge>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Badge variant="outline" className="text-[11px] font-normal">
+                      Mobile : {willingToRelocate ? 'oui' : 'non'}
+                    </Badge>
+                    <FieldProvenanceTooltip
+                      candidateId={candidateId}
+                      fieldPath="location.willingToRelocate"
+                      field={profile.location.willingToRelocate}
+                      onChange={(next) => setField('location.willingToRelocate', next)}
+                    />
+                  </span>
                 ) : null}
               </div>
             ) : null}
@@ -398,11 +516,27 @@ export default function CandidateProfileCard({
                 </h2>
                 <div className="space-y-2">
                   {profile.softSignals.summaryFr.value ? (
-                    <p className="text-sm whitespace-pre-wrap">{profile.softSignals.summaryFr.value}</p>
+                    <div className="text-sm flex items-start gap-1">
+                      <p className="whitespace-pre-wrap flex-1">{profile.softSignals.summaryFr.value}</p>
+                      <FieldProvenanceTooltip
+                        candidateId={candidateId}
+                        fieldPath="softSignals.summaryFr"
+                        field={profile.softSignals.summaryFr}
+                        onChange={(next) => setField('softSignals.summaryFr', next)}
+                      />
+                    </div>
                   ) : null}
                   {(profile.softSignals.motivations.value?.length ?? 0) > 0 ? (
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Motivations</div>
+                      <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
+                        Motivations
+                        <FieldProvenanceTooltip
+                          candidateId={candidateId}
+                          fieldPath="softSignals.motivations"
+                          field={profile.softSignals.motivations}
+                          onChange={(next) => setField('softSignals.motivations', next)}
+                        />
+                      </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.motivations.value?.map((m, i) => (
                           <Badge key={i} variant="secondary" className="text-[10px] font-normal">{m}</Badge>
@@ -412,7 +546,15 @@ export default function CandidateProfileCard({
                   ) : null}
                   {(profile.softSignals.interests.value?.length ?? 0) > 0 ? (
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Intérêts</div>
+                      <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
+                        Intérêts
+                        <FieldProvenanceTooltip
+                          candidateId={candidateId}
+                          fieldPath="softSignals.interests"
+                          field={profile.softSignals.interests}
+                          onChange={(next) => setField('softSignals.interests', next)}
+                        />
+                      </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.interests.value?.map((m, i) => (
                           <Badge key={i} variant="outline" className="text-[10px] font-normal">{m}</Badge>
@@ -422,7 +564,15 @@ export default function CandidateProfileCard({
                   ) : null}
                   {(profile.softSignals.valuesMentioned.value?.length ?? 0) > 0 ? (
                     <div>
-                      <div className="text-xs text-muted-foreground mb-1">Valeurs</div>
+                      <div className="text-xs text-muted-foreground mb-1 inline-flex items-center gap-1">
+                        Valeurs
+                        <FieldProvenanceTooltip
+                          candidateId={candidateId}
+                          fieldPath="softSignals.valuesMentioned"
+                          field={profile.softSignals.valuesMentioned}
+                          onChange={(next) => setField('softSignals.valuesMentioned', next)}
+                        />
+                      </div>
                       <div className="flex flex-wrap gap-1">
                         {profile.softSignals.valuesMentioned.value?.map((m, i) => (
                           <Badge key={i} variant="outline" className="text-[10px] font-normal">{m}</Badge>
@@ -445,18 +595,29 @@ export default function CandidateProfileCard({
                 {sidebarRow('GitHub', 'contact.githubUrl', profile.contact.githubUrl)}
                 {sidebarRow('Portfolio', 'contact.portfolioUrl', profile.contact.portfolioUrl)}
                 {(profile.contact.otherLinks.value?.length ?? 0) > 0 ? (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {(profile.contact.otherLinks.value ?? []).map((u, i) => (
-                      <a
-                        key={i}
-                        href={u}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] underline break-all text-muted-foreground hover:text-foreground"
-                      >
-                        {u}
-                      </a>
-                    ))}
+                  <div className="pt-1">
+                    <div className="text-xs text-muted-foreground mb-0.5 inline-flex items-center gap-1">
+                      Autres liens
+                      <FieldProvenanceTooltip
+                        candidateId={candidateId}
+                        fieldPath="contact.otherLinks"
+                        field={profile.contact.otherLinks}
+                        onChange={(next) => setField('contact.otherLinks', next)}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {(profile.contact.otherLinks.value ?? []).map((u, i) => (
+                        <a
+                          key={i}
+                          href={u}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] underline break-all text-muted-foreground hover:text-foreground"
+                        >
+                          {u}
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </SidebarCard>
