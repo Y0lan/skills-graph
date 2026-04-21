@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
+import { formatDateTime } from '@/lib/constants'
 import { Loader2, FileText, History } from 'lucide-react'
 
 interface ExtractionRunMeta {
@@ -144,7 +145,7 @@ export default function CvExtractionHistoryDialog({ open, onClose, candidateId }
                       </div>
                       <div className="text-sm font-medium mt-0.5">{r.kind}</div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {new Date(r.startedAt).toLocaleString('fr-FR')}
+                        {formatDateTime(r.startedAt)}
                       </div>
                       <div className="text-[11px] text-muted-foreground truncate" title={r.model}>
                         {r.model}{r.promptVersion ? ` · v${r.promptVersion}` : ''}

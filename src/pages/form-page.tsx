@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { formatDateTime } from '@/lib/constants'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { findMember } from '@/data/team-roster'
@@ -239,7 +240,7 @@ export default function FormPage() {
           </p>
           {data?.submittedAt && (
             <p className="mt-1 text-xs text-muted-foreground">
-              Dernière soumission : {new Date(data.submittedAt).toLocaleString('fr-FR')}
+              Dernière soumission : {formatDateTime(data.submittedAt)}
             </p>
           )}
         </div>

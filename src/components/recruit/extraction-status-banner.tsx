@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2, AlertTriangle, AlertCircle, RotateCcw } from 'lucide-react'
+import { formatDateTime } from '@/lib/constants'
 
 export type ExtractionStatus = 'idle' | 'running' | 'succeeded' | 'partial' | 'failed'
 
@@ -78,7 +79,7 @@ export default function ExtractionStatusBanner({
           ) : null}
           <div className="text-[11px] mt-1 opacity-60">
             {attempts} tentative{attempts > 1 ? 's' : ''}
-            {lastExtractionAt ? ` · ${new Date(lastExtractionAt).toLocaleString('fr-FR')}` : ''}
+            {lastExtractionAt ? ` · ${formatDateTime(lastExtractionAt)}` : ''}
           </div>
         </div>
         {onRetry ? (

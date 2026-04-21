@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { formatDateTime } from '@/lib/constants'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, ShieldAlert, ShieldCheck, ShieldQuestion, AlertTriangle } from 'lucide-react'
@@ -336,7 +337,7 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm">{STATUS_LABELS[data.status].label}</p>
                 {data.scannedAt && (
-                  <p className="text-[11px] opacity-80">Scanné le {new Date(data.scannedAt).toLocaleString('fr-FR')}</p>
+                  <p className="text-[11px] opacity-80">Scanné le {formatDateTime(data.scannedAt)}</p>
                 )}
               </div>
               {data.override && (
