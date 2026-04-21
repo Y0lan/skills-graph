@@ -50,7 +50,12 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 2
-            failureThreshold: 15
+            # 60 × 2s = 120s startup budget. At 500m CPU the cold-boot
+            # path (DB-OPS backup → litestream init → Node + migrations
+            # → app.listen) sits around 30s under load and flirts with
+            # the old 15-retry (33s) threshold. Bumping to 60 gives room
+            # without being lax about actually-broken startups.
+            failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /health
