@@ -366,6 +366,26 @@ export default function CandidateDetailPage() {
     ).sort((a, b) => (b?.gap ?? 0) - (a?.gap ?? 0))
   }, [candidate, categories, teamData])
 
+  const topSkills = useMemo(() => {
+    if (!candidate) return []
+    const source =
+      (candidate.ratings && Object.keys(candidate.ratings).length > 0)
+        ? candidate.ratings
+        : (candidate.aiSuggestions ?? {})
+    if (!source || Object.keys(source).length === 0) return []
+    const labelById = new Map<string, string>()
+    categories.forEach(cat => cat.skills.forEach(s => labelById.set(s.id, s.label)))
+    return Object.entries(source)
+      .filter(([, rating]) => rating > 0)
+      .map(([skillId, rating]) => ({
+        skillId,
+        skillLabel: labelById.get(skillId) ?? skillId,
+        rating,
+      }))
+      .sort((a, b) => b.rating - a.rating)
+      .slice(0, 5)
+  }, [candidate, categories])
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -516,56 +536,83 @@ export default function CandidateDetailPage() {
                 <RotateCcw className={`h-3.5 w-3.5 mr-1.5 ${reextracting ? 'animate-spin' : ''}`} /> Ré-extraire
               </Button>
             </div>
-            <CandidateProfileCard candidateId={candidate.id} profile={candidate.aiProfile as unknown as AiProfile} />
+            <CandidateProfileCard
+              candidateId={candidate.id}
+              profile={candidate.aiProfile as unknown as AiProfile}
+              topSkills={topSkills}
+            />
           </>
         ) : null}
 
-        {/* ── 1. IDENTITY HEADER ── */}
+        {/* ── 1. IDENTITY HEADER ──
+            When the CV extraction has produced an aiProfile, the new hero
+            inside <CandidateProfileCard> covers name/contact/location. We
+            keep this block only as a fallback for candidates without an
+            extracted profile yet, but we always render the right-column
+            status badges below (they communicate pipeline meta, not
+            profile data).
+        */}
         <div className="flex items-start gap-4 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
-              {candidate.name}
+          {!candidate.aiProfile ? (
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
+                {candidate.name}
+                {candidatures.length > 1 && (
+                  <Badge variant="outline" className="text-[11px] font-normal" title="Ce candidat a plusieurs candidatures actives">
+                    {candidatures.length} candidatures
+                  </Badge>
+                )}
+              </h1>
+              <p className="text-muted-foreground">
+                {candidatures.length > 0
+                  ? candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')
+                  : candidate.role /* edge case: candidate without any candidature (manual create) */}
+              </p>
+
+              {/* Contact info */}
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground max-w-full">
+                {candidate.email && (
+                  <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground min-w-0 max-w-full">
+                    <Mail className="h-3.5 w-3.5 shrink-0" /> <span className="truncate" title={candidate.email}>{candidate.email}</span>
+                  </a>
+                )}
+                {candidate.telephone && (
+                  <span className="flex items-center gap-1 min-w-0">
+                    <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.telephone}</span>
+                  </span>
+                )}
+                {candidate.pays && (
+                  <span className="flex items-center gap-1 min-w-0">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.pays}</span>
+                  </span>
+                )}
+                {candidate.linkedinUrl && (
+                  <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                    <Globe className="h-3.5 w-3.5 shrink-0" /> LinkedIn
+                  </a>
+                )}
+                {candidate.githubUrl && (
+                  <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
+                    <Globe className="h-3.5 w-3.5 shrink-0" /> GitHub
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+              {candidatures.length > 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  <span className="text-xs uppercase tracking-wide mr-2">Postes&nbsp;:</span>
+                  {candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')}
+                </p>
+              ) : null}
               {candidatures.length > 1 && (
                 <Badge variant="outline" className="text-[11px] font-normal" title="Ce candidat a plusieurs candidatures actives">
                   {candidatures.length} candidatures
                 </Badge>
               )}
-            </h1>
-            <p className="text-muted-foreground">
-              {candidatures.length > 0
-                ? candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')
-                : candidate.role /* edge case: candidate without any candidature (manual create) */}
-            </p>
-
-            {/* Contact info */}
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground max-w-full">
-              {candidate.email && (
-                <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground min-w-0 max-w-full">
-                  <Mail className="h-3.5 w-3.5 shrink-0" /> <span className="truncate" title={candidate.email}>{candidate.email}</span>
-                </a>
-              )}
-              {candidate.telephone && (
-                <span className="flex items-center gap-1 min-w-0">
-                  <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.telephone}</span>
-                </span>
-              )}
-              {candidate.pays && (
-                <span className="flex items-center gap-1 min-w-0">
-                  <MapPin className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.pays}</span>
-                </span>
-              )}
-              {candidate.linkedinUrl && (
-                <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                  <Globe className="h-3.5 w-3.5 shrink-0" /> LinkedIn
-                </a>
-              )}
-              {candidate.githubUrl && (
-                <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                  <Globe className="h-3.5 w-3.5 shrink-0" /> GitHub
-                </a>
-              )}
             </div>
-          </div>
+          )}
 
           {/* Status badges. The Skill Radar chip only shows when it is
               actionable: one of the candidatures has reached skill_radar_envoye
