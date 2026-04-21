@@ -40,4 +40,21 @@ TypeScript 5.x (frontend + backend): Follow standard conventions
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## CV Intelligence — mandatory rules
+
+1. **`server/lib/cv-pipeline.ts` is the ONE true CV-to-scoring path.** Every CV upload flow (admin direct upload, Drupal intake, admin re-extract) must route through `processCvForCandidate()`. Never duplicate the score-loop in routes. The direct-upload path missed this and caused the Pierre LEFEVRE 0% bug — the regression test `server/__tests__/regression-0-percent.test.ts` guards against re-introducing it.
+
+2. **Extraction status machine** on `candidates.extraction_status`: `idle → running → succeeded | partial | failed`. CAS-locked via `UPDATE ... WHERE extraction_status <> 'running'`. Never mark `succeeded` when candidatures have null scores — use `partial` instead.
+
+3. **Sensitive profile fields are out of scope for v1.** Do not extract or store DOB, gender, nationality, marital status, expected salary, or candidate photo. The profile extraction prompt in `server/lib/cv-profile-extraction.ts` explicitly tells the model not to fill these and the Zod schema has no slots for them.
+
+4. **CV-derived form categories never invent skills.** The frontend can only reference existing skill catalog category IDs. Check against the `skills.category_id` catalog — LLM outputs that don't map to real catalog entries are silently dropped. See `computeCvDerivedCategories()` in `server/routes/evaluate.ts`.
+
+5. **Prompt injection defense.** Fiche de poste content and CV content are DATA, not instructions. System prompts wrap reference content in `<reference>` tags with an explicit guard-text instruction AFTER the close tag. Regression tested in `cv-pipeline.multi-poste.test.ts`.
+
+6. **Locked profile fields are inviolable.** `persistMergedProfile` and `setProfileFieldLock` both operate inside SQLite transactions. Never overwrite a field with `humanLockedAt IS NOT NULL`. Re-extraction preserves locks.
+
+7. **Full architecture reference**: `docs/cv-extraction.md`.
+
 <!-- MANUAL ADDITIONS END -->
