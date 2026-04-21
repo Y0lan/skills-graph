@@ -911,6 +911,210 @@ protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res)
 })
 
 // ═══════════════════════════════════════════════════════════════════════
+// CV Intelligence Phase 10 — shortlist + batch outreach
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Ranked top-N candidates for a poste. Candidates with null taux_global
+ * are EXCLUDED (per eng-review decision #9 — don't show as "N/A", force
+ * the recruiter to re-extract if they want to see them).
+ */
+protectedRouter.get('/postes/:posteId/shortlist', (req, res) => {
+  const posteId = String(req.params.posteId)
+  const limitRaw = Number(req.query.limit)
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 50 ? Math.floor(limitRaw) : 10
+
+  const posteRow = getDb().prepare(
+    'SELECT id, titre, description, role_id FROM postes WHERE id = ?',
+  ).get(posteId) as { id: string; titre: string; description: string | null; role_id: string } | undefined
+  if (!posteRow) { res.status(404).json({ error: 'Poste introuvable' }); return }
+
+  const rows = getDb().prepare(
+    `SELECT c.id AS candidature_id,
+            c.statut,
+            c.taux_compatibilite_poste,
+            c.taux_compatibilite_equipe,
+            c.taux_soft_skills,
+            c.taux_global,
+            c.role_aware_suggestions,
+            cand.id AS candidate_id,
+            cand.name,
+            cand.ai_suggestions,
+            cand.ai_profile
+       FROM candidatures c
+       JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE c.poste_id = ?
+        AND c.taux_global IS NOT NULL
+      ORDER BY c.taux_global DESC
+      LIMIT ?`,
+  ).all(posteId, limit) as Array<{
+    candidature_id: string; statut: string
+    taux_compatibilite_poste: number | null; taux_compatibilite_equipe: number | null
+    taux_soft_skills: number | null; taux_global: number
+    role_aware_suggestions: string | null
+    candidate_id: string; name: string
+    ai_suggestions: string | null; ai_profile: string | null
+  }>
+
+  const items = rows.map(r => {
+    // Prefer role-aware suggestions when computing top-3 skills (they're
+    // calibrated to THIS poste). Fall back to baseline suggestions.
+    const rating = r.role_aware_suggestions
+      ? safeJsonParse<Record<string, number>>(r.role_aware_suggestions, {})
+      : safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
+    const top3 = Object.entries(rating)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([skillId, rating]) => ({ skillId, rating }))
+
+    const profile = r.ai_profile ? safeJsonParse<Record<string, unknown>>(r.ai_profile, {}) : null
+    const profileIdentity = profile?.identity as { fullName?: { value?: string } } | undefined
+    const profileCurrent = profile?.currentRole as { company?: { value?: string }; role?: { value?: string } } | undefined
+    const profileTotalExp = profile?.totalExperienceYears as { value?: number } | undefined
+    const profileLocation = profile?.location as { city?: { value?: string } } | undefined
+
+    return {
+      candidatureId: r.candidature_id,
+      candidateId: r.candidate_id,
+      name: profileIdentity?.fullName?.value ?? r.name,
+      statut: r.statut,
+      tauxPoste: r.taux_compatibilite_poste,
+      tauxEquipe: r.taux_compatibilite_equipe,
+      tauxSoft: r.taux_soft_skills,
+      tauxGlobal: r.taux_global,
+      currentCompany: profileCurrent?.company?.value ?? null,
+      currentRole: profileCurrent?.role?.value ?? null,
+      totalExperienceYears: profileTotalExp?.value ?? null,
+      city: profileLocation?.city?.value ?? null,
+      top3Skills: top3,
+    }
+  })
+
+  res.json({
+    poste: {
+      id: posteRow.id,
+      titre: posteRow.titre,
+      description: posteRow.description,
+      roleId: posteRow.role_id,
+    },
+    items,
+  })
+})
+
+// Idempotency cache for outreach POSTs (in-memory, TTL 1h per eng-review #7).
+// Keys are user-supplied X-Idempotency-Key headers. Values are the full response
+// JSON the first call produced. A second call within TTL returns the cached
+// response without re-sending emails.
+interface OutreachCachedResponse {
+  body: unknown
+  status: number
+  expiresAt: number
+}
+const outreachIdempotencyCache = new Map<string, OutreachCachedResponse>()
+const OUTREACH_IDEMPOTENCY_TTL_MS = 60 * 60 * 1000 // 1h
+const OUTREACH_MAX_BATCH = 20
+
+/**
+ * Send outreach emails to N candidates in the shortlist. Max 20 per batch.
+ * Continues on per-email failure and returns {sent: [...ids], failed: [{id,error}]}.
+ * Idempotency via X-Idempotency-Key header — safe for double-click / client retries.
+ */
+protectedRouter.post('/postes/:posteId/outreach', heavyRateLimit, async (req, res) => {
+  const posteId = String(req.params.posteId)
+  const idempotencyKey = typeof req.headers['x-idempotency-key'] === 'string'
+    ? (req.headers['x-idempotency-key'] as string)
+    : null
+
+  // Idempotency check (expire old entries lazily)
+  if (idempotencyKey) {
+    const now = Date.now()
+    const cached = outreachIdempotencyCache.get(idempotencyKey)
+    if (cached && cached.expiresAt > now) {
+      res.status(cached.status).json(cached.body)
+      return
+    }
+    if (cached) outreachIdempotencyCache.delete(idempotencyKey)
+  }
+
+  const { candidatureIds, statut, customBody } = req.body ?? {}
+  if (!Array.isArray(candidatureIds) || candidatureIds.length === 0) {
+    res.status(400).json({ error: 'candidatureIds requis (array, ≥1)' })
+    return
+  }
+  if (candidatureIds.length > OUTREACH_MAX_BATCH) {
+    res.status(400).json({
+      error: `Lot trop grand (max ${OUTREACH_MAX_BATCH}, reçu ${candidatureIds.length})`,
+      code: 'batch-too-large',
+    })
+    return
+  }
+  if (typeof statut !== 'string' || !statut.trim()) {
+    res.status(400).json({ error: 'statut (pour template email) requis' })
+    return
+  }
+
+  const poste = getDb().prepare('SELECT titre FROM postes WHERE id = ?').get(posteId) as { titre: string } | undefined
+  if (!poste) { res.status(404).json({ error: 'Poste introuvable' }); return }
+
+  const { sendTransitionEmail } = await import('../lib/email.js')
+  const user = getUser(req)
+
+  const sent: string[] = []
+  const failed: Array<{ candidatureId: string; error: string }> = []
+
+  for (const cid of candidatureIds) {
+    if (typeof cid !== 'string') {
+      failed.push({ candidatureId: String(cid), error: 'Invalid id' })
+      continue
+    }
+    try {
+      const row = getDb().prepare(
+        `SELECT c.id, c.candidate_id, cand.name, cand.email
+           FROM candidatures c
+           JOIN candidates cand ON cand.id = c.candidate_id
+          WHERE c.id = ? AND c.poste_id = ?`,
+      ).get(cid, posteId) as { id: string; candidate_id: string; name: string; email: string | null } | undefined
+      if (!row) { failed.push({ candidatureId: cid, error: 'Candidature introuvable pour ce poste' }); continue }
+      if (!row.email) { failed.push({ candidatureId: cid, error: 'Candidat sans email' }); continue }
+
+      const result = await sendTransitionEmail({
+        to: row.email,
+        candidateName: row.name,
+        role: poste.titre,
+        statut,
+        customBody,
+      })
+      if (!result.sent) {
+        failed.push({ candidatureId: cid, error: 'email non envoyé (template manquant ou clé API absente)' })
+        continue
+      }
+
+      getDb().prepare(
+        `INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+         VALUES (?, 'email_sent', ?, ?)`,
+      ).run(cid, `Outreach batch: statut=${statut}`, user?.slug ?? 'system')
+
+      sent.push(cid)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      failed.push({ candidatureId: cid, error: msg })
+    }
+  }
+
+  const body = { sent, failed, total: candidatureIds.length }
+
+  if (idempotencyKey) {
+    outreachIdempotencyCache.set(idempotencyKey, {
+      body,
+      status: 200,
+      expiresAt: Date.now() + OUTREACH_IDEMPOTENCY_TTL_MS,
+    })
+  }
+
+  res.json(body)
+})
+
+// ═══════════════════════════════════════════════════════════════════════
 // CV Intelligence Phase 8 — re-extract, history, diff
 // ═══════════════════════════════════════════════════════════════════════
 

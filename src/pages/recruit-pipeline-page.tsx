@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
@@ -464,6 +464,14 @@ export default function RecruitPipelinePage() {
                           >
                             <BarChart3 className="h-4 w-4" />
                           </a>
+                          <Link
+                            to={`/recruit/postes/${p.id}/shortlist`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Shortlist + contact"
+                          >
+                            <Trophy className="h-4 w-4" />
+                          </Link>
                           {p.id !== 'candidature-libre' ? (
                             <button
                               type="button"

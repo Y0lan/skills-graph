@@ -16,6 +16,7 @@ const RecruitPage = lazy(() => import('@/pages/recruit-page'))
 const CandidateDetailPage = lazy(() => import('@/pages/candidate-detail-page'))
 const CandidateFormPage = lazy(() => import('@/pages/candidate-form-page'))
 const RecruitPipelinePage = lazy(() => import('@/pages/recruit-pipeline-page'))
+const PosteShortlistPage = lazy(() => import('@/pages/poste-shortlist-page'))
 const ReportCampaignPage = lazy(() => import('@/pages/report-campaign-page'))
 const ReportComparisonPage = lazy(() => import('@/pages/report-comparison-page'))
 const RecruitFunnelPage = lazy(() => import('@/pages/recruit-funnel-page'))
@@ -63,6 +64,7 @@ function App() {
                 <Route path="/recruit/pipeline" element={<ProtectedRoute checkOwnership={false}><RecruitPipelinePage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/campaign" element={<ProtectedRoute checkOwnership={false}><ReportCampaignPage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/comparison/:posteId" element={<ProtectedRoute checkOwnership={false}><ReportComparisonPage /></ProtectedRoute>} />
+                <Route path="/recruit/postes/:posteId/shortlist" element={<ProtectedRoute checkOwnership={false}><PosteShortlistPage /></ProtectedRoute>} />
                 <Route path="/recruit/funnel" element={<ProtectedRoute checkOwnership={false}><RecruitFunnelPage /></ProtectedRoute>} />
                 <Route path="/recruit/:id" element={<ProtectedRoute checkOwnership={false}><CandidateDetailPage /></ProtectedRoute>} />
                 <Route path="/evaluate/:id" element={<CandidateFormPage />} />
