@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
 import { safeJsonParse } from './types.js'
-import { buildCanonicalFilename, formatDisplayName, uppercaseStem } from './file-naming.js'
+import { buildCanonicalFilename, formatDisplayName, uppercaseStem, buildTypePrefixedFilename } from './file-naming.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -497,6 +497,37 @@ export function initDatabase(): void {
     }
   } catch (err) {
     console.error('[MIGRATION] CV/lettre/aboro rename reset failed (non-blocking):', err)
+  }
+
+  // ─── Drupal-intake CV / Lettre → canonical "{TYPE}_{LAST}_{FIRST}_{DATE}.ext" ──
+  // Drupal uploads cv.pdf / lettre.pdf with no identifying info; force the
+  // canonical type-prefixed format. Idempotent: re-running against an
+  // already-canonical filename produces the same output. Only touches rows
+  // uploaded by 'drupal-webhook' — admin direct uploads stay untouched.
+  try {
+    const drupalRows = db.prepare(`
+      SELECT d.id, d.type, d.filename, d.created_at, cand.name AS candidate_name
+      FROM candidature_documents d
+      JOIN candidatures c ON c.id = d.candidature_id
+      JOIN candidates cand ON cand.id = c.candidate_id
+      WHERE d.uploaded_by = 'drupal-webhook'
+        AND d.type IN ('cv', 'lettre')
+    `).all() as { id: string; type: string; filename: string; created_at: string; candidate_name: string }[]
+    const upd = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ? AND (display_filename IS NULL OR display_filename != ?)')
+    let drupalCount = 0
+    for (const r of drupalRows) {
+      if (!r.candidate_name) continue
+      const parsed = new Date(r.created_at.replace(' ', 'T') + 'Z')
+      const prefix = r.type === 'cv' ? 'CV' : 'LM'
+      const display = buildTypePrefixedFilename(prefix, r.candidate_name, r.filename, isNaN(+parsed) ? new Date() : parsed)
+      const result = upd.run(display, r.id, display)
+      if (result.changes > 0) drupalCount++
+    }
+    if (drupalCount > 0) {
+      console.log(`[MIGRATION] Canonicalised ${drupalCount} Drupal-intake CV/lettre filename(s)`)
+    }
+  } catch (err) {
+    console.error('[MIGRATION] Drupal CV/lettre rename failed (non-blocking):', err)
   }
 
   // ─── One-shot dedup of candidates by email ──────────────────────────

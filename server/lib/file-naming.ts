@@ -125,3 +125,26 @@ export function uppercaseStem(filename: string): string {
   const ext = filename.slice(dotIdx + 1).toLowerCase()
   return `${stem.toUpperCase()}.${ext}`
 }
+
+/** Build a type-prefixed canonical filename for Drupal intake uploads where
+ *  the browser-uploaded name is typically useless ("cv.pdf", "lettre.pdf").
+ *  Forces "{TYPE}_{LASTNAME}_{FIRSTNAME}_{YYYYMMDD}.{ext}" so downstream
+ *  consumers (zip exports, archival) get self-describing filenames.
+ *
+ *  Example: ("CV", "Pierre LEFÈVRE", "cv.pdf", 2026-04-21) → "CV_LEFEVRE_PIERRE_20260421.pdf" */
+export function buildTypePrefixedFilename(
+  typePrefix: string,
+  candidateName: string,
+  originalFilename: string,
+  date: Date = new Date(),
+): string {
+  const { firstname, lastname } = parseName(candidateName)
+  const last = filenamePart(lastname) || 'INCONNU'
+  const first = filenamePart(firstname) || 'INCONNU'
+  const yyyy = date.getUTCFullYear()
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(date.getUTCDate()).padStart(2, '0')
+  const extRaw = extractExtension(originalFilename)
+  const ext = extRaw.toLowerCase().slice(0, 8) || 'bin'
+  return `${typePrefix.toUpperCase()}_${last}_${first}_${yyyy}${mm}${dd}.${ext}`
+}

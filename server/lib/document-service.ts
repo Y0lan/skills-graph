@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
-import { buildCanonicalFilename, uppercaseStem } from './file-naming.js'
+import { buildCanonicalFilename, uppercaseStem, buildTypePrefixedFilename } from './file-naming.js'
 import { extractAboroText, extractAboroProfile, type AboroProfile } from './aboro-extraction.js'
 import { calculateSoftSkillScore } from './soft-skill-scoring.js'
 import { calculateGlobalScore } from './compatibility.js'
@@ -40,14 +40,15 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     file.filename,
   )
 
-  // Compute display_filename. Two paths:
-  //   - CV / Lettre de motivation / ABORO → KEEP the uploader's original
-  //     filename verbatim. These 3 slots have their own type badge in the
-  //     UI ("CV", "LETTRE DE MOTIVATION", "ABORO") so the identifier is
-  //     already obvious — adding a canonical prefix was redundant and
-  //     clashed with the badge casing.
-  //   - Any other doc type → suffix with candidate name + date so an
-  //     exported bundle keeps "which candidate, when" context.
+  // Compute display_filename. Three paths:
+  //   - Drupal intake CV / Lettre → force "{TYPE}_{LASTNAME}_{FIRSTNAME}_{DATE}.pdf".
+  //     Drupal always uploads these as "cv.pdf" / "lettre.pdf" so the raw
+  //     name carries zero info. We want a self-describing filename in the
+  //     zip export + archival.
+  //   - Admin direct upload of CV / Lettre / ABORO → keep the uploader's
+  //     original stem uppercased ("Mon CV final.pdf" → "MON CV FINAL.pdf").
+  //     The admin chose a meaningful name; don't override it.
+  //   - Any other doc type → suffix with candidate name + date.
   const candidateRow = getDb().prepare(`
     SELECT cand.name
     FROM candidatures c
@@ -55,10 +56,17 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     WHERE c.id = ?
   `).get(candidatureId) as { name: string } | undefined
   const candidateName = candidateRow?.name ?? ''
+  const isDrupalIntake = userSlug === 'drupal-webhook'
+  const typePrefix = docType === 'cv' ? 'CV' : docType === 'lettre' ? 'LM' : null
   const keepsOriginalName = docType === 'cv' || docType === 'lettre' || docType === 'aboro'
-  const displayFilename = keepsOriginalName
-    ? uppercaseStem(file.filename)
-    : (candidateName ? buildCanonicalFilename(candidateName, file.filename) : null)
+  let displayFilename: string | null
+  if (isDrupalIntake && typePrefix && candidateName) {
+    displayFilename = buildTypePrefixedFilename(typePrefix, candidateName, file.filename)
+  } else if (keepsOriginalName) {
+    displayFilename = uppercaseStem(file.filename)
+  } else {
+    displayFilename = candidateName ? buildCanonicalFilename(candidateName, file.filename) : null
+  }
 
   // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)
   const docId = crypto.randomUUID()

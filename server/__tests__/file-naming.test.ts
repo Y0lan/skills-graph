@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCanonicalFilename, formatDisplayName, uppercaseStem } from '../lib/file-naming.js'
+import { buildCanonicalFilename, formatDisplayName, uppercaseStem, buildTypePrefixedFilename } from '../lib/file-naming.js'
 
 describe('buildCanonicalFilename', () => {
   const date = new Date('2026-04-21T00:00:00Z')
@@ -53,6 +53,40 @@ describe('uppercaseStem', () => {
 
   it('preserves special characters in the stem', () => {
     expect(uppercaseStem('cv-pierre_v2.pdf')).toBe('CV-PIERRE_V2.pdf')
+  })
+})
+
+describe('buildTypePrefixedFilename', () => {
+  const date = new Date('2026-04-21T00:00:00Z')
+
+  it('builds CV_LAST_FIRST_DATE.pdf for Drupal CV uploads', () => {
+    expect(buildTypePrefixedFilename('CV', 'Pierre LEFÈVRE', 'cv.pdf', date))
+      .toBe('CV_LEFEVRE_PIERRE_20260421.pdf')
+  })
+
+  it('builds LM_LAST_FIRST_DATE.pdf for Drupal lettre uploads', () => {
+    expect(buildTypePrefixedFilename('LM', 'Pierre LEFÈVRE', 'lettre.pdf', date))
+      .toBe('LM_LEFEVRE_PIERRE_20260421.pdf')
+  })
+
+  it('normalises the prefix to uppercase', () => {
+    expect(buildTypePrefixedFilename('cv', 'Jane Doe', 'x.pdf', date))
+      .toBe('CV_DOE_JANE_20260421.pdf')
+  })
+
+  it('strips accents from candidate name', () => {
+    expect(buildTypePrefixedFilename('CV', 'José Maréchal', 'cv.pdf', date))
+      .toBe('CV_MARECHAL_JOSE_20260421.pdf')
+  })
+
+  it('uses INCONNU when firstname or lastname is missing', () => {
+    expect(buildTypePrefixedFilename('CV', 'Pierre', 'cv.pdf', date))
+      .toMatch(/CV_PIERRE_INCONNU_20260421\.pdf|CV_INCONNU_PIERRE_20260421\.pdf/)
+  })
+
+  it('keeps extension lowercase even when input is .PDF', () => {
+    expect(buildTypePrefixedFilename('CV', 'Jane Doe', 'CV.PDF', date))
+      .toBe('CV_DOE_JANE_20260421.pdf')
   })
 })
 
