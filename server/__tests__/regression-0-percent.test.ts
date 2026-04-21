@@ -93,6 +93,18 @@ describe('Pierre LEFEVRE 0% bug regression', () => {
           questions: { java: 'Décrivez votre dernière optim JVM.' },
         },
       }],
+      usage: { input_tokens: 100, output_tokens: 50 },
+    })
+    mockCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'tool_use',
+        id: 'profile-1',
+        name: 'submit_candidate_profile',
+        input: {
+          identity: { fullName: { value: 'Pierre LEFEVRE', sourceDoc: 'cv', confidence: 0.95 } },
+        },
+      }],
+      usage: { input_tokens: 200, output_tokens: 100 },
     })
 
     const result = await processCvForCandidate(candidateId, Buffer.from('fake-pdf'))

@@ -762,6 +762,19 @@ export function initDatabase(): void {
   // rows older than this get dropped entirely by extraction-retention.ts.
   try { db.exec('ALTER TABLE scoring_weights ADD COLUMN retention_days INTEGER DEFAULT 90') } catch { /* already exists */ }
 
+  // CV Intelligence Phase 4 — structured candidate profile (JSON).
+  //
+  // Holds identity/contact/location/education/experience/languages/
+  // certifications/publications/openSource/availability/softSignals/
+  // additionalFacts — all with per-field provenance via ProfileField<T>.
+  // Sensitive fields (DOB/gender/nationality/marital status/salary/photo)
+  // are explicitly OUT OF SCOPE for v1 per product rule (v4 plan).
+  //
+  // Merge semantics: writes go through profile-merge.ts which uses
+  // UPDATE ... WHERE humanLockedAt IS NULL so re-extraction can never
+  // overwrite a recruiter-verified value, even under race conditions.
+  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_profile TEXT') } catch { /* already exists */ }
+
   // CV Intelligence Phase 3 — per-candidature role-aware skill ratings.
   //
   // When a candidature's poste has a non-null `description`, the pipeline runs

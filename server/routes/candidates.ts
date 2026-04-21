@@ -8,6 +8,7 @@ import { requireLead } from '../middleware/require-lead.js'
 import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { processCvForCandidate } from '../lib/cv-pipeline.js'
+import { setProfileFieldLock } from '../lib/profile-merge.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import fs from 'fs'
 
@@ -233,6 +234,31 @@ candidatesRouter.get('/:id', (req, res) => {
   res.json(formatCandidate(candidate))
 })
 
+// Lock / unlock a single profile field (Phase 4).
+// Body: { fieldPath: "contact.phone", locked: boolean }
+// Locking a field prevents subsequent re-extractions from overwriting its value.
+candidatesRouter.patch('/:id/profile-lock', (req, res) => {
+  const { fieldPath, locked } = req.body ?? {}
+  if (typeof fieldPath !== 'string' || fieldPath.length === 0) {
+    res.status(400).json({ error: 'fieldPath requis' })
+    return
+  }
+  if (typeof locked !== 'boolean') {
+    res.status(400).json({ error: 'locked requis (boolean)' })
+    return
+  }
+  const user = getUser(req)
+  const result = setProfileFieldLock({
+    candidateId: req.params.id,
+    fieldPath,
+    locked,
+    userSlug: user?.slug ?? null,
+  })
+  if (result.notFound) { res.status(404).json({ error: 'Candidat introuvable' }); return }
+  if (!result.ok) { res.status(400).json({ error: result.error ?? 'bad path' }); return }
+  res.json({ ok: true, fieldPath, locked })
+})
+
 // Update notes
 candidatesRouter.patch('/:id/notes', (req, res) => {
   const { notes } = req.body
@@ -309,6 +335,7 @@ function formatCandidate(row: CandidateRow) {
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     aiReasoning: safeJsonParse<Record<string, string>>(row.ai_reasoning, {}),
     aiQuestions: safeJsonParse<Record<string, string>>(row.ai_questions, {}),
+    aiProfile: row.ai_profile ? safeJsonParse<Record<string, unknown>>(row.ai_profile, {}) : null,
     extractionStatus: row.extraction_status,
     extractionAttempts: row.extraction_attempts,
     lastExtractionAt: row.last_extraction_at,

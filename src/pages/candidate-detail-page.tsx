@@ -12,6 +12,7 @@ import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-st
 import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
 import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import ExtractionStatusBanner from '@/components/recruit/extraction-status-banner'
+import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
@@ -462,6 +463,11 @@ export default function CandidateDetailPage() {
             lastError={candidate.lastExtractionError}
             lastExtractionAt={candidate.lastExtractionAt}
           />
+        ) : null}
+
+        {/* ── Profile card (Phase 4) — only rendered once profile has been extracted ── */}
+        {candidate.aiProfile ? (
+          <CandidateProfileCard candidateId={candidate.id} profile={candidate.aiProfile as unknown as AiProfile} />
         ) : null}
 
         {/* ── 1. IDENTITY HEADER ── */}

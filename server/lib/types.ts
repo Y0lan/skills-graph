@@ -34,6 +34,7 @@ export interface CandidateRow {
   ai_suggestions: string | null
   ai_reasoning: string | null
   ai_questions: string | null
+  ai_profile: string | null
   extraction_status: ExtractionStatus
   extraction_attempts: number
   last_extraction_at: string | null

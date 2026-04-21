@@ -11,6 +11,8 @@ import type { ExtractionStatus } from './types.js'
 import { putAsset } from './asset-storage.js'
 import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs.js'
 import { pruneExtractionRuns } from './extraction-retention.js'
+import { extractCandidateProfile } from './cv-profile-extraction.js'
+import { persistMergedProfile } from './profile-merge.js'
 
 export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
 
@@ -135,6 +137,39 @@ export async function processCvForCandidate(
       candidateId,
     )
 
+    // 6a. Profile extraction (Phase 4). Role-neutral — happens once per
+    //     candidate. Failure does not block skill scoring; we just mark
+    //     status=partial if profile fails.
+    let profileFailed = false
+    const profileRunId = startRun({
+      candidateId,
+      kind: 'profile',
+      promptVersion: PROMPT_VERSION,
+      model: EXTRACTION_MODEL,
+      cvAssetId: cvAsset.id,
+    })
+    try {
+      const profileResult = await extractCandidateProfile(cvText, null)
+      if (profileResult) {
+        persistMergedProfile(candidateId, profileResult.profile, profileRunId)
+        finishRun({
+          runId: profileRunId,
+          status: 'success',
+          payload: profileResult.profile,
+          inputTokens: profileResult.inputTokens,
+          outputTokens: profileResult.outputTokens,
+        })
+      } else {
+        profileFailed = true
+        finishRun({ runId: profileRunId, status: 'failed', error: 'Profile extraction returned null' })
+      }
+    } catch (err) {
+      profileFailed = true
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[cv-pipeline] profile extraction failed for ${candidateId}:`, err)
+      finishRun({ runId: profileRunId, status: 'failed', error: msg })
+    }
+
     // 6b. For each candidature with a fiche de poste, run a role-aware
     //     extraction that calibrates against the target role. Persist
     //     per-candidature. `candidature-libre` (catch-all) and candidatures
@@ -152,7 +187,7 @@ export async function processCvForCandidate(
     const scoring = scoreAllCandidatures(candidateId, result.ratings)
 
     // 8. Determine status
-    const extractionHadFailures = result.failedCategories.length > 0 || roleAwareFailures.length > 0
+    const extractionHadFailures = result.failedCategories.length > 0 || roleAwareFailures.length > 0 || profileFailed
     const scoringHadFailures = scoring.failedCandidatures.length > 0
     const status: ExtractionStatus =
       extractionHadFailures || scoringHadFailures ? 'partial' : 'succeeded'

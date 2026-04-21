@@ -109,6 +109,22 @@ function mockToolResponse(suggestions: Record<string, number>) {
         questions: Object.fromEntries(Object.entries(suggestions).map(([k, v]) => [k, `mock question for ${k} (L${v})`])),
       },
     }],
+    usage: { input_tokens: 100, output_tokens: 50 },
+  }
+}
+
+function mockProfileResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    content: [{
+      type: 'tool_use',
+      id: `profile-${Math.random()}`,
+      name: 'submit_candidate_profile',
+      input: {
+        identity: { fullName: { value: 'Test', sourceDoc: 'cv', confidence: 0.9 } },
+        ...overrides,
+      },
+    }],
+    usage: { input_tokens: 200, output_tokens: 100 },
   }
 }
 
@@ -132,6 +148,7 @@ describe('processCvForCandidate', () => {
     it('populates ai_suggestions AND all taux_* fields; status=succeeded', async () => {
       const { candidateId, candidatureId } = seedCandidateWithCandidature()
       mockCreate.mockResolvedValueOnce(mockToolResponse({ java: 4, typescript: 3 }))
+      mockCreate.mockResolvedValueOnce(mockProfileResponse())
 
       const result = await processCvForCandidate(candidateId, Buffer.from('fake-pdf'))
 
@@ -163,6 +180,7 @@ describe('processCvForCandidate', () => {
         .run(secondCandidatureId, candidateId, secondPosteId, 'postule')
 
       mockCreate.mockResolvedValueOnce(mockToolResponse({ java: 4, typescript: 3 }))
+      mockCreate.mockResolvedValueOnce(mockProfileResponse())
 
       const result = await processCvForCandidate(candidateId, Buffer.from('fake-pdf'))
       expect(result.status).toBe('succeeded')
@@ -217,13 +235,10 @@ describe('processCvForCandidate', () => {
 
   describe('partial path', () => {
     it('one category fails → status=partial, scores still computed', async () => {
-      // Mock catalog with 2 categories for this test — but we already mocked it with 1,
-      // so this test verifies the "scoring failure" branch instead. We force a scoring
-      // failure by wiping role_categories for this role after extraction starts.
       const { candidateId, roleId } = seedCandidateWithCandidature({ candidateId: crypto.randomUUID() })
       mockCreate.mockResolvedValueOnce(mockToolResponse({ java: 3 }))
+      mockCreate.mockResolvedValueOnce(mockProfileResponse())
 
-      // Nothing wipes — just verify succeeded path doesn't misclassify as partial
       const result = await processCvForCandidate(candidateId, Buffer.from('fake-pdf'))
       expect(result.status).toBe('succeeded')
       expect(roleId).toBe('role-test')

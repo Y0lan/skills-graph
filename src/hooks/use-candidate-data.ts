@@ -26,6 +26,7 @@ export interface CandidateDetail {
   lastExtractionAt?: string | null
   lastExtractionError?: string | null
   promptVersion?: number
+  aiProfile?: Record<string, unknown> | null
 }
 
 export interface TeamAggregate {
