@@ -1632,7 +1632,25 @@ protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {
     return
   }
   if (metric === 'equipe') {
-    res.json(getEquipeCompatBreakdown(ratings, row.poste_role_id))
+    const base = getEquipeCompatBreakdown(ratings, row.poste_role_id)
+    // Phase 9: surface gap analysis + bonus skills + run metadata so the UI
+    // can answer "why did the candidate get this equipe score, and what
+    // did the LLM add that was not asked for?"
+    const gap = getGapAnalysis(ratings, row.poste_role_id)
+    const bonus = getBonusSkills(ratings, row.poste_role_id)
+    const candidateIdRow = getDb().prepare('SELECT candidate_id FROM candidatures WHERE id = ?').get(req.params.id) as { candidate_id: string } | undefined
+    const metaRow = candidateIdRow ? getDb().prepare(
+      `SELECT prompt_version, model FROM cv_extraction_runs
+         WHERE candidate_id = ? AND kind = 'skills_baseline' AND status = 'success'
+         ORDER BY started_at DESC LIMIT 1`,
+    ).get(candidateIdRow.candidate_id) as { prompt_version: number; model: string } | undefined : undefined
+    res.json({
+      ...base,
+      gapAnalysis: gap,
+      bonusSkills: bonus,
+      promptVersion: metaRow?.prompt_version ?? null,
+      model: metaRow?.model ?? null,
+    })
     return
   }
 

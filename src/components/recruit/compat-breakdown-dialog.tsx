@@ -41,9 +41,28 @@ interface EquipeItem {
   direction: 'fills_gap' | 'matches' | 'below_team'
 }
 
+interface GapAnalysisEntry {
+  categoryId: string
+  categoryLabel: string
+  candidateAvg: number
+  teamAvg: number
+  gap: number
+}
+
+interface BonusSkillEntry {
+  skillId: string
+  skillLabel: string
+  categoryLabel: string
+  score: number
+}
+
 interface EquipeBreakdown {
   total: number
   items: EquipeItem[]
+  gapAnalysis?: GapAnalysisEntry[]
+  bonusSkills?: BonusSkillEntry[]
+  promptVersion?: number | null
+  model?: string | null
 }
 
 interface SoftBreakdown {
@@ -227,7 +246,7 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
 }
 
 function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
-  if (data.items.length === 0) {
+  if (data.items.length === 0 && (!data.gapAnalysis || data.gapAnalysis.length === 0) && (!data.bonusSkills || data.bonusSkills.length === 0)) {
     return <p className="text-sm text-muted-foreground py-4 text-center">Aucune catégorie à comparer.</p>
   }
   const labels: Record<EquipeItem['direction'], { label: string; color: string }> = {
@@ -235,23 +254,79 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
     matches: { label: 'Renforce', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
     below_team: { label: 'Sous l’équipe', color: 'bg-amber-500/15 text-amber-700 dark:text-amber-500' },
   }
+  const sortedGaps = (data.gapAnalysis ?? []).slice().sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+  const bonusByCategory = new Map<string, BonusSkillEntry[]>()
+  for (const b of data.bonusSkills ?? []) {
+    const list = bonusByCategory.get(b.categoryLabel) ?? []
+    list.push(b)
+    bonusByCategory.set(b.categoryLabel, list)
+  }
   return (
-    <div className="space-y-2">
-      {data.items.map(item => (
-        <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 text-sm">
-            <span className="font-medium truncate">{item.categoryLabel}</span>
-            <Badge className={`text-[10px] ${labels[item.direction].color}`}>
-              {labels[item.direction].label}
-            </Badge>
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {data.items.map(item => (
+          <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="font-medium truncate">{item.categoryLabel}</span>
+              <Badge className={`text-[10px] ${labels[item.direction].color}`}>
+                {labels[item.direction].label}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground tabular-nums">
+              <div>Candidat : <span className="text-foreground font-medium">{item.candidateAvg}/5</span></div>
+              <div>Équipe : <span className="text-foreground font-medium">{item.teamAvg}/5</span></div>
+              <div>Score : <span className="text-foreground font-medium">{item.contribution}</span></div>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-[11px] text-muted-foreground tabular-nums">
-            <div>Candidat : <span className="text-foreground font-medium">{item.candidateAvg}/5</span></div>
-            <div>Équipe : <span className="text-foreground font-medium">{item.teamAvg}/5</span></div>
-            <div>Score : <span className="text-foreground font-medium">{item.contribution}</span></div>
+        ))}
+      </div>
+
+      {sortedGaps.length > 0 ? (
+        <div>
+          <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Écart avec l'équipe</h4>
+          <div className="space-y-1">
+            {sortedGaps.map(g => (
+              <div key={g.categoryId} className="flex items-center justify-between gap-2 rounded border p-2 text-xs">
+                <span className="truncate">{g.categoryLabel}</span>
+                <div className="flex items-center gap-3 tabular-nums text-muted-foreground">
+                  <span>Candidat {g.candidateAvg.toFixed(1)}/5</span>
+                  <span>Équipe {g.teamAvg.toFixed(1)}/5</span>
+                  <Badge variant={g.gap >= 0 ? 'default' : 'secondary'} className="text-[10px] tabular-nums">
+                    {g.gap >= 0 ? '+' : ''}{g.gap.toFixed(1)}
+                  </Badge>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      ))}
+      ) : null}
+
+      {bonusByCategory.size > 0 ? (
+        <div>
+          <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Compétences bonus (hors poste)</h4>
+          <div className="space-y-1.5">
+            {Array.from(bonusByCategory.entries()).map(([catLabel, skills]) => (
+              <div key={catLabel} className="rounded border p-2">
+                <div className="text-xs font-medium text-muted-foreground mb-1">{catLabel}</div>
+                <div className="flex flex-wrap gap-1">
+                  {skills.map(s => (
+                    <Badge key={s.skillId} variant="outline" className="text-[10px] tabular-nums">
+                      {s.skillLabel} · L{s.score}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {(data.promptVersion || data.model) ? (
+        <div className="pt-2 text-[11px] text-muted-foreground border-t flex items-center justify-between">
+          <span>Extraction : {data.model ?? 'inconnu'}</span>
+          {data.promptVersion ? <span>Prompt v{data.promptVersion}</span> : null}
+        </div>
+      ) : null}
     </div>
   )
 }

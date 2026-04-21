@@ -508,9 +508,13 @@ export function calculateGlobalScore(
   const weights = db.prepare('SELECT weight_poste, weight_equipe, weight_soft FROM scoring_weights WHERE id = ?')
     .get('default') as { weight_poste: number; weight_equipe: number; weight_soft: number } | undefined
 
-  const wp = weights?.weight_poste ?? 0.7
-  const we = weights?.weight_equipe ?? 0.3
-  const ws = weights?.weight_soft ?? 0
+  // Phase 9 fix: align in-code fallback with the scoring_weights table
+  // default (0.5/0.2/0.3). Previously this was 0.7/0.3/0 (a Phase 1 leftover)
+  // which silently zeroed out soft-skill contribution when the table row
+  // was missing. Memory obs 1753 flagged this drift.
+  const wp = weights?.weight_poste ?? 0.5
+  const we = weights?.weight_equipe ?? 0.2
+  const ws = weights?.weight_soft ?? 0.3
 
   // If no soft skills available, redistribute soft weight proportionally
   if (tauxSoft == null) {
