@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
@@ -31,6 +31,7 @@ import KanbanBoard from '@/components/recruit/kanban-board'
 import StatusChip from '@/components/recruit/status-chip'
 import DocsChip from '@/components/recruit/docs-chip'
 import PosteDescriptionDialog from '@/components/recruit/poste-description-dialog'
+import PipelineCandidatureRow from '@/components/recruit/pipeline-candidature-row'
 
 interface Poste {
   id: string
@@ -46,6 +47,16 @@ interface Poste {
   statut: string
   candidateCount: number
   activeCount: number
+}
+
+interface PreviewProfile {
+  city: string | null
+  country: string | null
+  currentRole: string | null
+  currentCompany: string | null
+  totalExperienceYears: number | null
+  noticePeriodDays: number | null
+  topSkills: Array<{ skillId: string; skillLabel: string; rating: number }>
 }
 
 interface Candidature {
@@ -72,6 +83,7 @@ interface Candidature {
   lastEventAt: string | null
   enteredStatusAt: string | null
   docsSlotCount: number
+  previewProfile: PreviewProfile | null
 }
 
 interface DashboardStats {
@@ -670,40 +682,34 @@ export default function RecruitPipelinePage() {
                 >
                 <Card className={`hover:bg-muted/30 transition-colors ${selectedIds.has(c.id) ? 'ring-1 ring-primary/50' : ''}`}>
                   <CardContent className={density === 'compact' ? 'py-1.5 px-3' : 'py-3 px-4'}>
-                    <div className="flex items-center gap-4">
-                      {/* Name + meta */}
+                    <div className="flex items-start gap-4">
+                      {/* Name + meta + preview */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="hover:underline font-medium text-sm truncate">{c.candidateName}</span>
-                          <StatusChip statut={c.statut} enteredStatusAt={c.enteredStatusAt} />
-                          <DocsChip docsSlotCount={c.docsSlotCount} />
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                          <span>{c.posteTitre}</span>
-                          <span>·</span>
-                          <span>{CANAL_LABELS[c.canal] ?? c.canal}</span>
-                          <span>·</span>
-                          <span>{formatDate(c.createdAt)}</span>
-                          {c.hasCv && <Badge variant="outline" className="text-[10px] px-1 py-0">CV</Badge>}
-                          {c.hasLettre && <Badge variant="outline" className="text-[10px] px-1 py-0">LM</Badge>}
-                          {c.evaluationSubmitted && <Badge variant="outline" className="text-[10px] px-1 py-0">Évalué</Badge>}
-                          {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
-                            <Badge variant="outline" className="text-[10px] border-red-500 text-red-600 dark:border-red-400 dark:text-red-400">
-                              <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
-                              Soft skills
-                            </Badge>
-                          )}
-                        </div>
+                        <PipelineCandidatureRow
+                          candidateName={c.candidateName}
+                          posteTitre={c.posteTitre}
+                          canal={c.canal}
+                          canalLabel={CANAL_LABELS[c.canal] ?? c.canal}
+                          createdAtLabel={formatDate(c.createdAt)}
+                          hasCv={c.hasCv}
+                          hasLettre={c.hasLettre}
+                          evaluationSubmitted={c.evaluationSubmitted}
+                          softSkillAlertCount={c.softSkillAlerts?.length ?? 0}
+                          preview={c.previewProfile}
+                          statusChip={<StatusChip statut={c.statut} enteredStatusAt={c.enteredStatusAt} />}
+                          docsChip={<DocsChip docsSlotCount={c.docsSlotCount} />}
+                          density={density}
+                        />
                       </div>
 
                       {/* Compatibility scores */}
-                      <div className="hidden sm:flex flex-col gap-1 w-44">
+                      <div className="hidden sm:flex flex-col gap-1 w-44 pt-1">
                         <CompatibilityBar value={c.tauxPoste} label="Poste" />
                         <CompatibilityBar value={c.tauxEquipe} label="Équipe" />
                         <CompatibilityBar value={c.tauxGlobal} label="Global" />
                       </div>
 
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
                     </div>
                   </CardContent>
                 </Card>

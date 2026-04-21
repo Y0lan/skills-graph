@@ -390,7 +390,7 @@ protectedRouter.get('/candidatures', (req, res) => {
   let sql = `
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
       (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
-      cand.ai_suggestions, cand.submitted_at as evaluation_submitted,
+      cand.ai_suggestions, cand.ai_profile, cand.submitted_at as evaluation_submitted,
       p.titre as poste_titre, p.pole as poste_pole,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id AND ce.type = 'status_change' AND ce.statut_to = c.statut) as entered_status_at,
@@ -423,13 +423,70 @@ protectedRouter.get('/candidatures', (req, res) => {
 
   const rows = getDb().prepare(sql).all(...params) as (CandidatureRow & {
     name: string; email: string | null; has_cv: number; has_lettre: number | null;
-    ai_suggestions: string | null; evaluation_submitted: string | null;
+    ai_suggestions: string | null; ai_profile: string | null;
+    evaluation_submitted: string | null;
     poste_titre: string; poste_pole: string;
     taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null;
     last_event_at: string | null;
     entered_status_at: string | null;
     docs_slot_count: number | null;
+    role_aware_suggestions: string | null;
   })[]
+
+  // Load skill catalog once to label top skills per row. Cheap single query.
+  const skillRows = getDb().prepare('SELECT id, label FROM skills').all() as { id: string; label: string }[]
+  const skillLabelById = new Map(skillRows.map(s => [s.id, s.label]))
+
+  type PreviewProfile = {
+    city: string | null
+    country: string | null
+    currentRole: string | null
+    currentCompany: string | null
+    totalExperienceYears: number | null
+    noticePeriodDays: number | null
+    topSkills: Array<{ skillId: string; skillLabel: string; rating: number }>
+  } | null
+
+  const buildPreview = (aiProfileRaw: string | null, roleAwareRaw: string | null, baselineRaw: string | null): PreviewProfile => {
+    const roleAware = safeJsonParse<Record<string, number>>(roleAwareRaw, {})
+    const baseline = safeJsonParse<Record<string, number>>(baselineRaw, {})
+    const ratings = Object.keys(roleAware).length > 0 ? roleAware : baseline
+
+    const hasAnyProfile = aiProfileRaw !== null && aiProfileRaw !== ''
+    const hasAnyRatings = Object.keys(ratings).length > 0
+    if (!hasAnyProfile && !hasAnyRatings) return null
+
+    const aiProfile = hasAnyProfile ? safeJsonParse<Record<string, unknown>>(aiProfileRaw, {}) : {}
+    const location = (aiProfile?.location ?? {}) as Record<string, { value?: unknown }>
+    const currentRole = (aiProfile?.currentRole ?? {}) as Record<string, { value?: unknown }>
+    const availability = (aiProfile?.availability ?? {}) as Record<string, { value?: unknown }>
+    const totalExp = (aiProfile?.totalExperienceYears ?? {}) as { value?: unknown }
+
+    const topSkills = Object.entries(ratings)
+      .filter(([, r]) => typeof r === 'number' && r > 0)
+      .map(([skillId, rating]) => ({
+        skillId,
+        skillLabel: skillLabelById.get(skillId) ?? skillId,
+        rating: rating as number,
+      }))
+      .sort((a, b) => b.rating - a.rating)
+      .slice(0, 3)
+
+    const asString = (v: unknown): string | null =>
+      typeof v === 'string' && v.length > 0 ? v : null
+    const asNumber = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v : null
+
+    return {
+      city: asString(location.city?.value),
+      country: asString(location.country?.value),
+      currentRole: asString(currentRole.role?.value),
+      currentCompany: asString(currentRole.company?.value),
+      totalExperienceYears: asNumber(totalExp.value),
+      noticePeriodDays: asNumber(availability.noticePeriodDays?.value),
+      topSkills,
+    }
+  }
 
   res.json(rows.map(r => ({
     id: r.id,
@@ -455,6 +512,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     lastEventAt: r.last_event_at,
     enteredStatusAt: r.entered_status_at ?? r.created_at,
     docsSlotCount: r.docs_slot_count ?? 0,
+    previewProfile: buildPreview(r.ai_profile, r.role_aware_suggestions, r.ai_suggestions),
   })))
 })
 
