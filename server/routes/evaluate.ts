@@ -61,6 +61,8 @@ evaluateRouter.get('/:id/form', (req, res) => {
     ORDER BY c.created_at ASC
   `).all(row.id) as { poste_titre: string }[]
 
+  const cvDerivedCategories = computeCvDerivedCategories(row.id, candidateCategories)
+
   res.json({
     id: row.id,
     name: row.name,
@@ -69,10 +71,81 @@ evaluateRouter.get('/:id/form', (req, res) => {
     submitted: !!row.submitted_at,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
     roleCategories: candidateCategories.length > 0 ? candidateCategories : null,
+    cvDerivedCategories,
     categoryIdsByPole: getCategoryIdsByPole(),
     version: row.version,
   })
 })
+
+/**
+ * Compute which catalog categories should be appended to the candidate's
+ * form because their CV revealed skills OUTSIDE the role's default set.
+ *
+ * Invariant: never invent categories. Every returned `categoryId` MUST
+ * exist in the `categories` table — we derive it by looking up skill IDs
+ * against `skills.category_id`. LLM returning a bogus skill id means that
+ * skill gets silently dropped, the category never gets added.
+ *
+ * Population criteria (all required, AND):
+ *   - Category is in the canonical catalog (skill → category join).
+ *   - ≥1 skill in the category has ai_suggestions[skillId] ≥ 3 (Autonome+).
+ *   - LLM provided an evidence snippet (ai_reasoning[skillId]) for at
+ *     least one skill in that category.
+ *   - Category is NOT already in the role's default set.
+ *   - Top-5 cap, ranked by max rating across skills in the category.
+ */
+const PHASE_6_TOP_N = 5
+const PHASE_6_RATING_FLOOR = 3
+
+interface CvDerivedCategory {
+  categoryId: string
+  confidence: number
+  evidenceSnippets: string[]
+}
+
+function computeCvDerivedCategories(
+  candidateId: string,
+  roleCategoryIds: string[],
+): CvDerivedCategory[] {
+  const row = getDb().prepare(
+    'SELECT ai_suggestions, ai_reasoning FROM candidates WHERE id = ?',
+  ).get(candidateId) as { ai_suggestions: string | null; ai_reasoning: string | null } | undefined
+  if (!row?.ai_suggestions) return []
+
+  const suggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions, {})
+  const reasoning = safeJsonParse<Record<string, string>>(row.ai_reasoning, {})
+  const roleSet = new Set(roleCategoryIds)
+
+  const skillRows = getDb().prepare('SELECT id, category_id FROM skills').all() as Array<{ id: string; category_id: string }>
+  const catalogCategoryBySkill = new Map<string, string>()
+  for (const s of skillRows) catalogCategoryBySkill.set(s.id, s.category_id)
+
+  const byCategory = new Map<string, { maxRating: number; evidence: string[] }>()
+  for (const [skillId, rating] of Object.entries(suggestions)) {
+    if (typeof rating !== 'number' || rating < PHASE_6_RATING_FLOOR) continue
+    const catId = catalogCategoryBySkill.get(skillId)
+    if (!catId) continue // skill not in catalog — invariant: catalog authoritative
+    if (roleSet.has(catId)) continue // already in role defaults
+    const existing = byCategory.get(catId) ?? { maxRating: 0, evidence: [] }
+    if (rating > existing.maxRating) existing.maxRating = rating
+    const snippet = reasoning[skillId]
+    if (snippet) existing.evidence.push(snippet)
+    byCategory.set(catId, existing)
+  }
+
+  const candidates: CvDerivedCategory[] = []
+  for (const [categoryId, data] of byCategory) {
+    if (data.evidence.length === 0) continue // evidence gate
+    candidates.push({
+      categoryId,
+      confidence: Math.min(1, data.maxRating / 5),
+      evidenceSnippets: data.evidence.slice(0, 3),
+    })
+  }
+
+  candidates.sort((a, b) => b.confidence - a.confidence || a.categoryId.localeCompare(b.categoryId))
+  return candidates.slice(0, PHASE_6_TOP_N)
+}
 
 // Save candidate ratings (public — autosave)
 evaluateRouter.put('/:id/ratings', (req, res) => {

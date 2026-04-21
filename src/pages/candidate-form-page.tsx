@@ -18,6 +18,7 @@ interface CandidateFormData {
   submitted: boolean
   aiSuggestions: Record<string, number> | null
   roleCategories: string[] | null
+  cvDerivedCategories?: Array<{ categoryId: string; confidence: number; evidenceSnippets: string[] }>
   categoryIdsByPole: Record<string, string[]> | null
 }
 
@@ -42,8 +43,24 @@ export default function CandidateFormPage() {
       label: string
       categories: Array<{ id: string; label: string; emoji: string; skills: Array<{ id: string; label: string; descriptors: Array<{ level: number; label: string; description: string }> }> }>
     }> = []
+
+    // Phase 6: CV-derived group appears FIRST in the Discovery step.
+    // Contains only categories that already exist in the catalog (backend
+    // enforces this). Candidate can skip/decline like any Discovery group.
+    if (formData.cvDerivedCategories && formData.cvDerivedCategories.length > 0) {
+      const cvDerivedIds = formData.cvDerivedCategories.map(c => c.categoryId)
+      const cats = cvDerivedIds
+        .map(cid => skillCategories.find(c => c.id === cid))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined)
+      if (cats.length > 0) {
+        groups.push({ pole: 'cv-derived', label: 'Compétences mentionnées dans votre CV', categories: cats })
+      }
+    }
+
+    // Existing per-pole extras (non-role categories the candidate can optionally evaluate).
+    const cvDerivedSet = new Set(formData.cvDerivedCategories?.map(c => c.categoryId) ?? [])
     for (const [pole, categoryIds] of Object.entries(formData.categoryIdsByPole)) {
-      const extras = categoryIds.filter(cid => !roleSet.has(cid))
+      const extras = categoryIds.filter(cid => !roleSet.has(cid) && !cvDerivedSet.has(cid))
       if (extras.length === 0) continue
       const cats = extras
         .map(cid => skillCategories.find(c => c.id === cid))
