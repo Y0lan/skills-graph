@@ -23,18 +23,20 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, AlertTriangle, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
 import KanbanBoard from '@/components/recruit/kanban-board'
 import StatusChip from '@/components/recruit/status-chip'
 import DocsChip from '@/components/recruit/docs-chip'
+import PosteDescriptionDialog from '@/components/recruit/poste-description-dialog'
 
 interface Poste {
   id: string
   roleId: string
   titre: string
+  description: string | null
   pole: string
   headcount: number
   headcountFlexible: boolean
@@ -121,6 +123,7 @@ export default function RecruitPipelinePage() {
   const [loading, setLoading] = useState(true)
   const [filterPole, setFilterPole] = useState<string>('all')
   const [filterPoste, setFilterPoste] = useState<string>('all')
+  const [editingPoste, setEditingPoste] = useState<Poste | null>(null)
   const [filterStatut, setFilterStatut] = useState<string>('all')
   // Item 21 P2 smart filter chips — multi-select, AND-combined.
   const [chipStuck, setChipStuck] = useState(false)
@@ -461,6 +464,16 @@ export default function RecruitPipelinePage() {
                           >
                             <BarChart3 className="h-4 w-4" />
                           </a>
+                          {p.id !== 'candidature-libre' ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setEditingPoste(p) }}
+                              className={`text-muted-foreground hover:text-foreground ${p.description ? 'text-primary' : ''}`}
+                              title={p.description ? 'Modifier la fiche de poste' : 'Ajouter une fiche de poste'}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                          ) : null}
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </div>
                       </button>
@@ -804,6 +817,19 @@ export default function RecruitPipelinePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {editingPoste ? (
+        <PosteDescriptionDialog
+          open={true}
+          onClose={() => setEditingPoste(null)}
+          posteId={editingPoste.id}
+          posteTitre={editingPoste.titre}
+          currentDescription={editingPoste.description}
+          onSaved={(desc) => {
+            setPostes(prev => prev.map(p => p.id === editingPoste.id ? { ...p, description: desc } : p))
+          }}
+        />
+      ) : null}
     </div>
   )
 }

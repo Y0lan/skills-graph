@@ -176,6 +176,7 @@ protectedRouter.get('/postes', (_req, res) => {
     id: p.id,
     roleId: p.role_id,
     titre: p.titre,
+    description: p.description,
     pole: p.pole,
     headcount: p.headcount,
     headcountFlexible: !!p.headcount_flexible,
@@ -186,6 +187,32 @@ protectedRouter.get('/postes', (_req, res) => {
     candidateCount: p.candidate_count,
     activeCount: p.active_count,
   })))
+})
+
+// Update poste description (fiche de poste text, fed to role-aware CV extraction)
+const MAX_DESCRIPTION_CHARS = 20000
+protectedRouter.put('/postes/:posteId', mutationRateLimit, (req, res) => {
+  const { description } = req.body ?? {}
+  if (description !== null && typeof description !== 'string') {
+    res.status(400).json({ error: 'description doit être une chaîne ou null' })
+    return
+  }
+  if (typeof description === 'string' && description.length > MAX_DESCRIPTION_CHARS) {
+    res.status(400).json({
+      error: `Description trop longue (max ${MAX_DESCRIPTION_CHARS} caractères, reçu ${description.length})`,
+    })
+    return
+  }
+  // Normalize empty strings to NULL so downstream prompt builders treat
+  // "not authored yet" and "cleared" identically.
+  const normalized = typeof description === 'string' && description.trim().length > 0 ? description : null
+  const result = getDb().prepare('UPDATE postes SET description = ? WHERE id = ?')
+    .run(normalized, req.params.posteId)
+  if (result.changes === 0) {
+    res.status(404).json({ error: 'Poste introuvable' })
+    return
+  }
+  res.json({ ok: true, description: normalized })
 })
 
 // List skill requirements for a poste
