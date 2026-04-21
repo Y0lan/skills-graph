@@ -21,6 +21,11 @@ export interface CandidateDetail {
   submittedAt: string | null
   aiReport: string | null
   notes: string | null
+  extractionStatus?: 'idle' | 'running' | 'succeeded' | 'partial' | 'failed'
+  extractionAttempts?: number
+  lastExtractionAt?: string | null
+  lastExtractionError?: string | null
+  promptVersion?: number
 }
 
 export interface TeamAggregate {

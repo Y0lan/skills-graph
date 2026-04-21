@@ -7,8 +7,7 @@ import { getDb, getRole } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
 import { sendCandidateInvite } from '../lib/email.js'
-import { extractCvText, extractSkillsFromCv } from '../lib/cv-extraction.js'
-import { getSkillCategories } from '../lib/catalog.js'
+import { processCvForCandidate } from '../lib/cv-pipeline.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import fs from 'fs'
 
@@ -171,23 +170,32 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     ).run(id, name.trim(), role!.trim(), resolvedRoleId, email?.trim() || null, user.slug)
   }
 
-  // Process CV if uploaded
-  let suggestionsCount = 0
-  if (file) {
-    try {
-      const cvText = await extractCvText(file.buffer)
-      const catalog = getSkillCategories()
-      const result = await extractSkillsFromCv(cvText, catalog)
-      const suggestions = result?.ratings ?? null
-      getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
-        .run(cvText, suggestions ? JSON.stringify(suggestions) : null, id)
-      if (result?.failedCategories.length) {
-        console.warn(`[Candidate ${id}] CV extraction partial: ${result.failedCategories.length} categories failed`)
-      }
-      suggestionsCount = suggestions ? Object.keys(suggestions).length : 0
-    } catch (err) {
-      console.error('[CV] Error processing CV for candidate', id, err)
+  // Auto-create candidature if roleId maps to open postes.
+  // MUST happen BEFORE CV processing so the pipeline has candidatures to score.
+  if (resolvedRoleId) {
+    const openPostes = getDb().prepare(
+      "SELECT id FROM postes WHERE role_id = ? AND statut = 'ouvert' ORDER BY created_at ASC"
+    ).all(resolvedRoleId) as { id: string }[]
+
+    for (const poste of openPostes) {
+      const candidatureId = crypto.randomUUID()
+      getDb().prepare(`INSERT OR IGNORE INTO candidatures (id, candidate_id, poste_id, statut, canal)
+        VALUES (?, ?, ?, 'postule', 'candidature_directe')`)
+        .run(candidatureId, id, poste.id)
+      getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
+        VALUES (?, 'status_change', 'postule', 'Création manuelle', ?)`)
+        .run(candidatureId, user?.slug ?? 'system')
     }
+  }
+
+  // Process CV through the shared pipeline. Never duplicate this flow — see
+  // server/lib/cv-pipeline.ts and the Phase 0 brief in the plan file.
+  let suggestionsCount = 0
+  let extractionStatus: string = 'idle'
+  if (file) {
+    const pipelineResult = await processCvForCandidate(id, file.buffer, { source: 'direct-upload' })
+    suggestionsCount = pipelineResult.suggestionsCount
+    extractionStatus = pipelineResult.status
   }
 
   // Re-fetch after CV processing for consistent response
@@ -206,28 +214,12 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     }).catch(() => {}) // non-blocking
   }
 
-  // Auto-create candidature if roleId maps to open postes
-  if (resolvedRoleId) {
-    const openPostes = getDb().prepare(
-      "SELECT id FROM postes WHERE role_id = ? AND statut = 'ouvert' ORDER BY created_at ASC"
-    ).all(resolvedRoleId) as { id: string }[]
-
-    for (const poste of openPostes) {
-      const candidatureId = crypto.randomUUID()
-      getDb().prepare(`INSERT OR IGNORE INTO candidatures (id, candidate_id, poste_id, statut, canal)
-        VALUES (?, ?, ?, 'postule', 'candidature_directe')`)
-        .run(candidatureId, id, poste.id)
-      getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
-        VALUES (?, 'status_change', 'postule', 'Création manuelle', ?)`)
-        .run(candidatureId, user?.slug ?? 'system')
-    }
-  }
-
   res.status(201).json({
     ...formatCandidate(candidate),
     evaluationLink: `/evaluate/${id}`,
     emailSent: !!email?.trim(),
     suggestionsCount,
+    extractionStatus,
   })
 })
 
@@ -315,6 +307,13 @@ function formatCandidate(row: CandidateRow) {
     submittedAt: row.submitted_at,
     aiReport: row.ai_report,
     aiSuggestions: safeJsonParse(row.ai_suggestions, null),
+    aiReasoning: safeJsonParse<Record<string, string>>(row.ai_reasoning, {}),
+    aiQuestions: safeJsonParse<Record<string, string>>(row.ai_questions, {}),
+    extractionStatus: row.extraction_status,
+    extractionAttempts: row.extraction_attempts,
+    lastExtractionAt: row.last_extraction_at,
+    lastExtractionError: row.last_extraction_error,
+    promptVersion: row.prompt_version,
     notes: row.notes,
     telephone: row.telephone ?? null,
     pays: row.pays ?? null,

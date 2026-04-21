@@ -677,6 +677,16 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidates ADD COLUMN ai_reasoning TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidates ADD COLUMN ai_questions TEXT') } catch { /* already exists */ }
 
+  // Extraction state machine (CV Intelligence v1, Phase 0).
+  // Status values: idle | running | succeeded | partial | failed.
+  // `partial` = extraction produced usable suggestions but a downstream scoring
+  // step failed for ≥1 candidature. Never use `succeeded` with fake 0% scores.
+  try { db.exec("ALTER TABLE candidates ADD COLUMN extraction_status TEXT DEFAULT 'idle' CHECK(extraction_status IN ('idle','running','succeeded','partial','failed'))") } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidates ADD COLUMN extraction_attempts INTEGER DEFAULT 0') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_at TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_error TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidates ADD COLUMN prompt_version INTEGER DEFAULT 1') } catch { /* already exists */ }
+
   // Scoring weights table (configurable global score formula)
   db.exec(`
     CREATE TABLE IF NOT EXISTS scoring_weights (

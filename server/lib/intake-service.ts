@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import { getDb } from './db.js'
-import { extractCvText, extractSkillsFromCv } from './cv-extraction.js'
-import { getSkillCategories } from './catalog.js'
+import { processCvForCandidate } from './cv-pipeline.js'
 import { calculatePosteCompatibility, calculateEquipeCompatibility, calculateGlobalScore } from './compatibility.js'
 import { uploadDocument } from './document-service.js'
 import { sendApplicationReceived } from './email.js'
@@ -215,36 +214,15 @@ export async function processIntake(
         }
       }
 
-      // Retry CV extraction if missing
+      // Retry CV extraction if missing — route through the shared pipeline
+      // so state machine + scoring stay consistent with the direct-upload path.
       if (cvFile) {
         const candidate = getDb().prepare('SELECT cv_text FROM candidates WHERE id = ?').get(candId) as { cv_text: string | null } | undefined
         if (!candidate?.cv_text) {
           try {
-            const cvText = await extractCvText(cvFile.buffer)
-            const catalog = getSkillCategories()
-            const result = await extractSkillsFromCv(cvText, catalog)
-            const suggestions = result?.ratings ?? null
-            getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
-              .run(cvText, suggestions ? JSON.stringify(suggestions) : null, candId)
-
-            if (suggestions && Object.keys(suggestions).length > 0) {
-              // Recompute compat for EVERY candidature of this candidate, not
-              // just the redelivered one — ai_suggestions live on the candidate.
-              const allCandidatures = getDb().prepare(
-                'SELECT c.id, p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.candidate_id = ?'
-              ).all(candId) as { id: string; role_id: string }[]
-              const updateOne = getDb().prepare(
-                'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-              )
-              for (const c of allCandidatures) {
-                const tauxPoste = calculatePosteCompatibility(suggestions, c.role_id)
-                const tauxEquipe = calculateEquipeCompatibility(suggestions, c.role_id)
-                const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
-                updateOne.run(tauxPoste, tauxEquipe, tauxGlobal, c.id)
-              }
-            }
-          } catch {
-            console.error('[INTAKE_RETRY] CV processing failed')
+            await processCvForCandidate(candId, cvFile.buffer, { source: 'drupal' })
+          } catch (err) {
+            console.error('[INTAKE_RETRY] CV processing failed', err)
           }
         }
       }
@@ -299,35 +277,14 @@ export async function processIntake(
     }
   }
 
-  // Process CV for AI skill extraction (outside transaction — external API call)
+  // Process CV for AI skill extraction (outside transaction — external API call).
+  // Route through the shared pipeline so extraction state machine + per-candidature
+  // scoring are identical across direct-upload and Drupal intake paths.
   if (cvFile) {
     try {
-      const cvText = await extractCvText(cvFile.buffer)
-      const catalog = getSkillCategories()
-      const result = await extractSkillsFromCv(cvText, catalog)
-      const suggestions = result?.ratings ?? null
-      getDb().prepare('UPDATE candidates SET cv_text = ?, ai_suggestions = ? WHERE id = ?')
-        .run(cvText, suggestions ? JSON.stringify(suggestions) : null, resolvedCandidateId)
-
-      // Update compatibility scores for EVERY candidature of this candidate, not
-      // just the one that triggered this intake. CV extraction updates the
-      // candidate-level ai_suggestions which feed all postes' compat formulas.
-      if (suggestions && Object.keys(suggestions).length > 0) {
-        const allCandidatures = getDb().prepare(
-          'SELECT c.id, p.role_id FROM candidatures c JOIN postes p ON p.id = c.poste_id WHERE c.candidate_id = ?'
-        ).all(resolvedCandidateId) as { id: string; role_id: string }[]
-        const updateOne = getDb().prepare(
-          'UPDATE candidatures SET taux_compatibilite_poste = ?, taux_compatibilite_equipe = ?, taux_global = ?, updated_at = datetime(\'now\') WHERE id = ?'
-        )
-        for (const c of allCandidatures) {
-          const tauxPoste = calculatePosteCompatibility(suggestions, c.role_id)
-          const tauxEquipe = calculateEquipeCompatibility(suggestions, c.role_id)
-          const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, null)
-          updateOne.run(tauxPoste, tauxEquipe, tauxGlobal, c.id)
-        }
-      }
-    } catch {
-      console.error('[INTAKE] CV processing failed')
+      await processCvForCandidate(resolvedCandidateId, cvFile.buffer, { source: 'drupal' })
+    } catch (err) {
+      console.error('[INTAKE] CV processing failed', err)
     }
   }
 

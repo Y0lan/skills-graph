@@ -11,6 +11,7 @@ import MultiPosteCard from '@/components/recruit/multi-poste-card'
 import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
 import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
 import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
+import ExtractionStatusBanner from '@/components/recruit/extraction-status-banner'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
@@ -452,6 +453,16 @@ export default function CandidateDetailPage() {
         </div>
 
         {/* ══════════ ABOVE THE FOLD ══════════ */}
+
+        {/* ── CV extraction status banner ── */}
+        {candidate.extractionStatus && candidate.extractionStatus !== 'idle' && candidate.extractionStatus !== 'succeeded' ? (
+          <ExtractionStatusBanner
+            status={candidate.extractionStatus}
+            attempts={candidate.extractionAttempts}
+            lastError={candidate.lastExtractionError}
+            lastExtractionAt={candidate.lastExtractionAt}
+          />
+        ) : null}
 
         {/* ── 1. IDENTITY HEADER ── */}
         <div className="flex items-start gap-4 flex-wrap">

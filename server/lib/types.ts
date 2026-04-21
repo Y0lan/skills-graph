@@ -32,8 +32,17 @@ export interface CandidateRow {
   notes: string | null
   cv_text: string | null
   ai_suggestions: string | null
+  ai_reasoning: string | null
+  ai_questions: string | null
+  extraction_status: ExtractionStatus
+  extraction_attempts: number
+  last_extraction_at: string | null
+  last_extraction_error: string | null
+  prompt_version: number
   version: number
 }
+
+export type ExtractionStatus = 'idle' | 'running' | 'succeeded' | 'partial' | 'failed'
 
 export interface RoleRow {
   id: string
@@ -52,6 +61,7 @@ export interface PosteRow {
   id: string
   role_id: string
   titre: string
+  description: string | null
   pole: string
   headcount: number
   headcount_flexible: number // 0 or 1 (boolean)

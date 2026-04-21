@@ -4,6 +4,29 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SkillCategory } from '../../src/data/skill-catalog.js'
 import { filterValidRatings } from './validation.js'
 
+// Bump when the extraction prompt/schema changes meaningfully. Used in run
+// records (cv_extraction_runs) so the history/diff UI can show WHY outputs
+// differ between runs — prompt upgrades don't look like candidate changes.
+export const PROMPT_VERSION = 2
+
+export const EXTRACTION_MODEL = 'claude-sonnet-4-20250514'
+
+/**
+ * Context about the target poste, used to make extraction role-aware.
+ * Phase 0 wires the type but does not use it (role-neutral baseline only).
+ * Phase 3 adds the role-aware delta pass that consumes this.
+ */
+export interface PosteContext {
+  posteId: string
+  titre: string
+  description: string | null
+  requirements?: Array<{
+    skillId: string
+    targetLevel: number
+    importance: 'requis' | 'apprecie'
+  }>
+}
+
 /**
  * Per-category worked examples for CV extraction prompts.
  * Each example shows a CV excerpt and the expected skill ratings with reasoning.
@@ -121,18 +144,27 @@ export async function extractCvText(buffer: Buffer): Promise<string> {
 
 export interface ExtractionResult {
   ratings: Record<string, number>
+  reasoning: Record<string, string>
+  questions: Record<string, string>
   failedCategories: string[]
 }
 
+interface CategoryExtraction {
+  ratings: Record<string, number>
+  reasoning: Record<string, string>
+  questions: Record<string, string>
+}
+
 /**
- * Extract skills for a single category from CV text.
- * Returns a map of skill IDs to ratings (0-5).
+ * Extract skills for a single category from CV text. Returns per-skill
+ * rating + short reasoning (CV evidence) + a French verification question
+ * a recruiter can ask in the interview to validate the rating.
  */
 async function extractCategorySkills(
   cvText: string,
   category: SkillCategory,
   client: Anthropic,
-): Promise<Record<string, number>> {
+): Promise<CategoryExtraction> {
   const skillDescriptions = category.skills.map(s => {
     const levels = s.descriptors
       .map(d => `  L${d.level}: ${d.description}`)
@@ -148,7 +180,8 @@ RÈGLES :
 - Note UNIQUEMENT les compétences clairement identifiables dans le CV
 - Si une compétence n'apparaît pas, ne l'inclus PAS
 - Sois conservateur : L2-L3 sauf preuve claire de L4-L5
-- Justifie chaque note dans le champ "reasoning"
+- Justifie chaque note dans le champ "reasoning" en citant la phrase ou l'expérience précise du CV
+- Pour chaque compétence notée, rédige dans "questions" UNE question de vérification (≤ 25 mots) que le recruteur posera au candidat. Cette question doit référencer un élément précis du CV, inviter le candidat à prouver son niveau, et être calibrée au niveau noté (L4+ → question d'architecture/conception, L2-L3 → question d'exécution)
 
 ÉCHELLE :
 0 = Inconnu — aucune mention dans le CV
@@ -173,7 +206,7 @@ ${cvText}
 
   const tools: Anthropic.Messages.Tool[] = [{
     name: 'submit_skill_ratings',
-    description: 'Submit the extracted skill ratings for this category',
+    description: 'Submit the extracted skill ratings, reasoning, and verification questions for this category',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -184,16 +217,21 @@ ${cvText}
         },
         reasoning: {
           type: 'object',
-          description: 'Map of skill IDs to one-line justification for the rating',
+          description: 'Map of skill IDs to one-line justification citing CV evidence',
+          additionalProperties: { type: 'string' },
+        },
+        questions: {
+          type: 'object',
+          description: 'Map of skill IDs to one French verification question (≤ 25 words) referencing a specific CV element',
           additionalProperties: { type: 'string' },
         },
       },
-      required: ['suggestions', 'reasoning'],
+      required: ['suggestions', 'reasoning', 'questions'],
     },
   }]
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: EXTRACTION_MODEL,
     max_tokens: 2048,
     temperature: 0,
     tools,
@@ -202,37 +240,66 @@ ${cvText}
     messages: [{ role: 'user', content: userPrompt }],
   })
 
+  const empty: CategoryExtraction = { ratings: {}, reasoning: {}, questions: {} }
+
   const toolBlock = message.content.find(b => b.type === 'tool_use')
-  if (!toolBlock || toolBlock.type !== 'tool_use') return {}
+  if (!toolBlock || toolBlock.type !== 'tool_use') return empty
 
   const input = toolBlock.input as {
     suggestions?: Record<string, unknown>
-    reasoning?: Record<string, string>
+    reasoning?: Record<string, unknown>
+    questions?: Record<string, unknown>
   }
 
-  if (!input.suggestions) return {}
+  if (!input.suggestions) return empty
 
-  // Return raw suggestions — validation happens in the caller after merge
-  const result: Record<string, number> = {}
+  // Keep only skills that belong to this category (prompt compliance guard)
+  // AND have a numeric rating. Validation of 0-5 range happens in the caller.
+  const categorySkillIds = new Set(category.skills.map(s => s.id))
+  const ratings: Record<string, number> = {}
   for (const [key, value] of Object.entries(input.suggestions)) {
-    if (typeof value === 'number') {
-      result[key] = value
+    if (typeof value === 'number' && categorySkillIds.has(key)) {
+      ratings[key] = value
     }
   }
-  return result
+  const reasoning: Record<string, string> = {}
+  for (const [key, value] of Object.entries(input.reasoning ?? {})) {
+    if (typeof value === 'string' && value.trim() && key in ratings) {
+      reasoning[key] = value.trim()
+    }
+  }
+  const questions: Record<string, string> = {}
+  for (const [key, value] of Object.entries(input.questions ?? {})) {
+    if (typeof value === 'string' && value.trim() && key in ratings) {
+      questions[key] = value.trim()
+    }
+  }
+  return { ratings, reasoning, questions }
 }
 
 /**
- * Use Claude tool_use to extract skill ratings from CV text,
- * matched against the full skill catalog.
- * Splits extraction into parallel per-category calls for consistency.
- * Returns ratings + list of failed categories, or null if extraction fails entirely.
+ * Use Claude tool_use to extract skill ratings from CV text against the full
+ * skill catalog. Splits into parallel per-category calls for consistency.
+ *
+ * Returns:
+ *   - `ratings`: skill id → integer 0-5 (validated)
+ *   - `reasoning`: skill id → CV-evidence justification
+ *   - `questions`: skill id → French verification question for the recruiter
+ *   - `failedCategories`: ids of categories whose LLM call rejected (partial)
+ * Returns null when the CV is too short or extraction fails entirely.
+ *
+ * @param posteContext wired but unused in Phase 0 (role-neutral baseline).
+ *   Phase 3 consumes this for the per-candidature delta pass.
  */
 export async function extractSkillsFromCv(
   cvText: string,
   catalog: SkillCategory[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _posteContext: PosteContext | null = null,
 ): Promise<ExtractionResult | null> {
   if (cvText.length < 50) return null
+  // _posteContext intentionally unused in Phase 0 (role-neutral baseline).
+  // Phase 3 will read it and spawn the role-aware delta pass.
 
   const client = new Anthropic()
 
@@ -241,7 +308,7 @@ export async function extractSkillsFromCv(
   )
 
   const fulfilled = results
-    .filter((r): r is PromiseFulfilledResult<Record<string, number>> => r.status === 'fulfilled')
+    .filter((r): r is PromiseFulfilledResult<CategoryExtraction> => r.status === 'fulfilled')
     .map(r => r.value)
 
   const failedCategories = results
@@ -254,9 +321,19 @@ export async function extractSkillsFromCv(
 
   if (fulfilled.length === 0) return null
 
-  const merged = Object.assign({}, ...fulfilled)
-  const valid = filterValidRatings(merged)
+  const mergedRatings = Object.assign({}, ...fulfilled.map(f => f.ratings))
+  const mergedReasoning = Object.assign({}, ...fulfilled.map(f => f.reasoning))
+  const mergedQuestions = Object.assign({}, ...fulfilled.map(f => f.questions))
+  const valid = filterValidRatings(mergedRatings)
   if (Object.keys(valid).length === 0) return null
 
-  return { ratings: valid, failedCategories }
+  // Drop reasoning/questions for skills that didn't survive rating validation.
+  const reasoning: Record<string, string> = {}
+  const questions: Record<string, string> = {}
+  for (const key of Object.keys(valid)) {
+    if (mergedReasoning[key]) reasoning[key] = mergedReasoning[key]
+    if (mergedQuestions[key]) questions[key] = mergedQuestions[key]
+  }
+
+  return { ratings: valid, reasoning, questions, failedCategories }
 }

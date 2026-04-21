@@ -150,7 +150,7 @@ describe('extractSkillsFromCv', () => {
     const result = await extractSkillsFromCv(cvText, mockCatalog)
 
     expect(mockCreate).toHaveBeenCalledTimes(2)
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ratings: { java: 3, typescript: 4, angular: 2 },
       failedCategories: [],
     })
@@ -183,7 +183,7 @@ describe('extractSkillsFromCv', () => {
     const cvText = 'A'.repeat(100)
     const result = await extractSkillsFromCv(cvText, mockCatalog)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ratings: { java: 3 },
       failedCategories: ['frontend-ui'],
     })
@@ -207,7 +207,7 @@ describe('extractSkillsFromCv', () => {
     const cvText = 'A'.repeat(100)
     const result = await extractSkillsFromCv(cvText, mockCatalog)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ratings: { java: 3 },
       failedCategories: [],
     })
@@ -222,7 +222,7 @@ describe('extractSkillsFromCv', () => {
     const cvText = 'A'.repeat(100)
     const result = await extractSkillsFromCv(cvText, mockCatalog)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ratings: { java: 3 },
       failedCategories: [],
     })
