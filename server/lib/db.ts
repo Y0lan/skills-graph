@@ -871,6 +871,13 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_reasoning TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_questions TEXT') } catch { /* already exists */ }
 
+  // Drupal-webhook idempotency key: the Webform submission UUID. When Drupal's
+  // queue replays a delivery (e.g. radar was down), we look this up and return
+  // the existing candidature without side effects. Partial unique index so
+  // admin-created candidatures (no submission id) stay valid.
+  try { db.exec('ALTER TABLE candidatures ADD COLUMN drupal_submission_id TEXT') } catch { /* already exists */ }
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_candidatures_drupal_submission ON candidatures(drupal_submission_id) WHERE drupal_submission_id IS NOT NULL') } catch { /* already exists */ }
+
   // Migration: allow 'photo' kind in candidate_assets. Older DBs had a CHECK
   // constraint restricted to ('cv_text','lettre_text','raw_pdf'). SQLite
   // can't ALTER an existing CHECK — rebuild the table in place.

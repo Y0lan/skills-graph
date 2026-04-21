@@ -83,21 +83,38 @@ class SkillRadarHandler extends WebformHandlerBase {
       }
     }
 
-    // Send to Skill Radar (non-blocking: log errors but don't fail the form)
+    // Enqueue for durable delivery to Skill Radar.
+    //
+    // Before: postSave made a synchronous HTTP POST. If radar was down,
+    // the log line was the only trace — candidature was effectively lost.
+    //
+    // Now: we push the payload + file reference into Drupal's DB-backed
+    // queue. SkillRadarSendWorker pulls it on cron (tuned to 60s via a
+    // K8s CronJob hitting /cron/<key>), retries on 5xx / network errors
+    // via SuspendQueueException. Zero data loss even if radar is down
+    // for hours — the webform submission row in Drupal is authoritative,
+    // and the queue item is its envelope until delivery succeeds.
     try {
-      $result = $this->skillRadarClient->sendCandidature($payload, $cv_path, $cv_filename);
-      $this->getLogger()->info('Candidature forwarded to Skill Radar: submission @sid -> candidature @cid', [
+      $queue = \Drupal::queue('sinapse_webhook_send');
+      $queue->createItem([
+        'submission_id' => $webform_submission->uuid(),
+        'payload' => $payload,
+        'cv_fid' => $cv_fid,
+        'cv_filename' => $cv_filename,
+      ]);
+      $this->getLogger()->info('Candidature queued for Skill Radar: submission=@sid uuid=@uuid', [
         '@sid' => $webform_submission->id(),
-        '@cid' => $result['candidatureId'] ?? 'unknown',
+        '@uuid' => $webform_submission->uuid(),
       ]);
     }
     catch (\Exception $e) {
-      $this->getLogger()->error('Failed to forward candidature to Skill Radar: @msg (submission @sid)', [
+      // The queue itself failing is a database-level error (extremely
+      // rare). Log and continue — the Webform submission row is already
+      // saved, so an ops person can manually re-queue from the UI.
+      $this->getLogger()->error('Failed to queue candidature for Skill Radar: @msg (submission @sid)', [
         '@msg' => $e->getMessage(),
         '@sid' => $webform_submission->id(),
       ]);
-      // Don't throw: the Drupal form submission should still succeed.
-      // The candidature can be manually created in Skill Radar if the webhook fails.
     }
   }
 

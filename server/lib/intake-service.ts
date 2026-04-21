@@ -20,6 +20,11 @@ interface IntakeFields {
   github?: string
   message?: string
   canal?: string
+  /** Drupal Webform submission UUID — idempotency key. When present and
+   *  already seen, processIntake returns the existing candidature without
+   *  side effects (no new row, no email, no doc upload). Sent by the
+   *  Drupal queue worker so retries after a radar outage don't duplicate. */
+  submission_id?: string
 }
 
 interface IntakeResult {
@@ -27,6 +32,8 @@ interface IntakeResult {
   candidatureId: string
   candidateId?: string
   updated: boolean
+  /** True when the call was a no-op replay of a prior successful intake. */
+  duplicate?: boolean
 }
 
 interface IntakeError {
@@ -39,10 +46,23 @@ export async function processIntake(
   cvFile: { buffer: Buffer; mimetype: string; originalname?: string } | null,
   lettreFile: { buffer: Buffer; mimetype: string; originalname?: string } | null,
 ): Promise<IntakeResult | IntakeError> {
-  const { nom, prenom, email, telephone, pays, poste_vise, linkedin, github, message, canal } = fields
+  const { nom, prenom, email, telephone, pays, poste_vise, linkedin, github, message, canal, submission_id } = fields
 
   if (!nom || !email || !poste_vise) {
     return { error: 'nom, email, et poste_vise sont requis', status: 400 }
+  }
+
+  // Idempotency: if Drupal sent us this submission before (queue retry after
+  // a radar outage), short-circuit and return the existing candidature. No
+  // new row, no duplicate emails, no re-scan.
+  if (submission_id) {
+    const prior = getDb().prepare(
+      'SELECT id, candidate_id FROM candidatures WHERE drupal_submission_id = ? LIMIT 1',
+    ).get(submission_id) as { id: string; candidate_id: string } | undefined
+    if (prior) {
+      console.log(`[INTAKE][idempotent] submissionId=${submission_id} existing candidatureId=${prior.id}`)
+      return { ok: true, candidatureId: prior.id, candidateId: prior.candidate_id, updated: true, duplicate: true }
+    }
   }
 
   // Validate poste exists
@@ -98,9 +118,9 @@ export async function processIntake(
       )
 
       getDb().prepare(`
-        INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal)
-        VALUES (?, ?, ?, 'postule', ?)
-      `).run(candidatureId, existingCandidate.id, poste_vise, resolvedCanal)
+        INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal, drupal_submission_id)
+        VALUES (?, ?, ?, 'postule', ?, ?)
+      `).run(candidatureId, existingCandidate.id, poste_vise, resolvedCanal, submission_id?.trim() || null)
 
       getDb().prepare(`
         INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
@@ -146,9 +166,9 @@ export async function processIntake(
     )
 
     getDb().prepare(`
-      INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal)
-      VALUES (?, ?, ?, 'postule', ?)
-    `).run(candidatureId, candidateId, poste_vise, resolvedCanal)
+      INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal, drupal_submission_id)
+      VALUES (?, ?, ?, 'postule', ?, ?)
+    `).run(candidatureId, candidateId, poste_vise, resolvedCanal, submission_id?.trim() || null)
 
     getDb().prepare(`
       INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
