@@ -317,6 +317,22 @@ candidatesRouter.delete('/:id', (req, res) => {
   }
 })
 
+/** Resolve the photo asset URL from ai_profile.identity.photoAssetId.
+ *  Returns null when no photo has been extracted — the frontend falls
+ *  back to InitialsBadge. */
+function derivePhotoUrl(rawAiProfile: string | null): string | null {
+  if (!rawAiProfile) return null
+  try {
+    const profile = JSON.parse(rawAiProfile) as {
+      identity?: { photoAssetId?: { value?: string | null } }
+    }
+    const id = profile?.identity?.photoAssetId?.value
+    return typeof id === 'string' && id.length > 0 ? `/api/recruitment/assets/${id}` : null
+  } catch {
+    return null
+  }
+}
+
 function formatCandidate(row: CandidateRow) {
   return {
     id: row.id,
@@ -336,6 +352,7 @@ function formatCandidate(row: CandidateRow) {
     aiReasoning: safeJsonParse<Record<string, string>>(row.ai_reasoning, {}),
     aiQuestions: safeJsonParse<Record<string, string>>(row.ai_questions, {}),
     aiProfile: row.ai_profile ? safeJsonParse<Record<string, unknown>>(row.ai_profile, {}) : null,
+    photoUrl: derivePhotoUrl(row.ai_profile),
     extractionStatus: row.extraction_status,
     extractionAttempts: row.extraction_attempts,
     lastExtractionAt: row.last_extraction_at,

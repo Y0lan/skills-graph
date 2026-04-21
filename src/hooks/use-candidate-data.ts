@@ -28,6 +28,7 @@ export interface CandidateDetail {
   promptVersion?: number
   aiProfile?: Record<string, unknown> | null
   aiSuggestions?: Record<string, number> | null
+  photoUrl?: string | null
 }
 
 export interface TeamAggregate {

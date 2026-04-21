@@ -51,6 +51,7 @@
     "d3-sankey": "^0.12.3",
     "express": "^5.2.0",
     "express-rate-limit": "^8.3.1",
+    "jpeg-js": "^0.4.4",
     "libphonenumber-js": "^1.12.41",
     "lucide-react": "^0.577.0",
     "mammoth": "^1.12.0",

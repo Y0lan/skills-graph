@@ -9,6 +9,7 @@ import {
 } from './compatibility.js'
 import type { ExtractionStatus } from './types.js'
 import { putAsset } from './asset-storage.js'
+import { extractPhotoFromCvPdf } from './cv-photo-extraction.js'
 import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs.js'
 import { pruneExtractionRuns } from './extraction-retention.js'
 import { extractCandidateProfile } from './cv-profile-extraction.js'
@@ -80,6 +81,48 @@ export async function processCvForCandidate(
       buffer: cvBuffer,
       mime: 'application/pdf',
     })
+
+    // 2b. Best-effort photo extraction. Sits between raw_pdf storage and
+    //     text extraction so a silent failure here doesn't block skills.
+    //     Respects the humanLockedAt guard in profile-merge: if a recruiter
+    //     uploaded a photo manually, we won't overwrite it.
+    try {
+      const photo = await extractPhotoFromCvPdf(cvBuffer)
+      if (photo) {
+        const photoAsset = putAsset({
+          candidateId,
+          kind: 'photo',
+          buffer: photo.buffer,
+          mime: photo.mime,
+        })
+        const existing = getDb()
+          .prepare('SELECT ai_profile FROM candidates WHERE id = ?')
+          .get(candidateId) as { ai_profile: string | null } | undefined
+        let current: Record<string, unknown> = {}
+        try {
+          current = existing?.ai_profile ? JSON.parse(existing.ai_profile) : {}
+        } catch { current = {} }
+        const identity = (current.identity ?? {}) as Record<string, unknown>
+        const existingPhoto = identity.photoAssetId as { value?: string | null; humanLockedAt?: string | null } | undefined
+        if (!existingPhoto?.humanLockedAt) {
+          const newIdentity = {
+            fullName: identity.fullName ?? { value: null, runId: null, sourceDoc: null, confidence: null, humanLockedAt: null, humanLockedBy: null },
+            photoAssetId: {
+              value: photoAsset.id,
+              runId: null,
+              sourceDoc: 'cv',
+              confidence: 0.9,
+              humanLockedAt: null,
+              humanLockedBy: null,
+            },
+          }
+          const merged = { ...current, identity: newIdentity }
+          getDb().prepare('UPDATE candidates SET ai_profile = ? WHERE id = ?').run(JSON.stringify(merged), candidateId)
+        }
+      }
+    } catch (err) {
+      console.warn('[cv-pipeline] photo extraction failed (non-fatal):', err instanceof Error ? err.message : err)
+    }
 
     // 3. Store CV text as a deduped asset + remember its id for the run record.
     const cvAsset = putAsset({

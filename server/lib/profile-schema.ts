@@ -89,6 +89,10 @@ const AdditionalFact = z.object({
 export const AiProfileZ = z.object({
   identity: z.object({
     fullName: ProfileField(z.string()),
+    /** ID of a candidate_assets row with kind='photo'. Referenced by the
+     *  frontend via GET /api/recruitment/assets/:id to render the hero
+     *  avatar. Null = show InitialsBadge fallback. */
+    photoAssetId: ProfileField(z.string()),
   }),
   contact: z.object({
     email: ProfileField(z.string()),
@@ -143,7 +147,7 @@ export type AiProfile = z.infer<typeof AiProfileZ>
  */
 export function emptyProfile(): AiProfile {
   return {
-    identity: { fullName: emptyField() },
+    identity: { fullName: emptyField(), photoAssetId: emptyField() },
     contact: {
       email: emptyField(),
       phone: emptyField(),

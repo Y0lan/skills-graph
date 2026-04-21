@@ -702,7 +702,7 @@ export function initDatabase(): void {
     CREATE TABLE IF NOT EXISTS candidate_assets (
       id TEXT PRIMARY KEY,
       candidate_id TEXT REFERENCES candidates(id) ON DELETE CASCADE,
-      kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf')),
+      kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf','photo')),
       mime TEXT,
       size_bytes INTEGER,
       sha256 TEXT NOT NULL,
@@ -785,6 +785,40 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_suggestions TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_reasoning TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_questions TEXT') } catch { /* already exists */ }
+
+  // Migration: allow 'photo' kind in candidate_assets. Older DBs had a CHECK
+  // constraint restricted to ('cv_text','lettre_text','raw_pdf'). SQLite
+  // can't ALTER an existing CHECK — rebuild the table in place.
+  try {
+    const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidate_assets'").get() as { sql: string } | undefined
+    if (existing && !existing.sql.includes("'photo'")) {
+      db.exec('PRAGMA foreign_keys=OFF')
+      db.exec(`
+        BEGIN;
+        ALTER TABLE candidate_assets RENAME TO candidate_assets_legacy;
+        CREATE TABLE candidate_assets (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT REFERENCES candidates(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf','photo')),
+          mime TEXT,
+          size_bytes INTEGER,
+          sha256 TEXT NOT NULL,
+          storage_path TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(candidate_id, kind, sha256)
+        );
+        INSERT INTO candidate_assets SELECT id, candidate_id, kind, mime, size_bytes, sha256, storage_path, created_at FROM candidate_assets_legacy;
+        DROP TABLE candidate_assets_legacy;
+        CREATE INDEX IF NOT EXISTS idx_candidate_assets_candidate ON candidate_assets(candidate_id, kind);
+        COMMIT;
+      `)
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  } catch (err) {
+    console.warn('[db] candidate_assets CHECK rebuild skipped:', err instanceof Error ? err.message : err)
+    try { db.exec('ROLLBACK') } catch { /* no active tx */ }
+    try { db.exec('PRAGMA foreign_keys=ON') } catch { /* ignore */ }
+  }
 
   // Per-skill target levels with requis/apprécié weighting for compatibility scoring
   db.exec(`

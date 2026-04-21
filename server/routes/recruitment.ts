@@ -20,7 +20,7 @@ import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js
 import { processIntake } from '../lib/intake-service.js'
 import { processCvForCandidate } from '../lib/cv-pipeline.js'
 import { listRuns, getRunPayload } from '../lib/extraction-runs.js'
-import { readAssetBuffer, getLatestAsset } from '../lib/asset-storage.js'
+import { readAssetBuffer, getLatestAsset, getAssetById } from '../lib/asset-storage.js'
 import { diffSuggestions, diffProfile } from '../lib/run-diff.js'
 import { recruitmentBus, type RecruitmentEventMap } from '../lib/event-bus.js'
 import { Webhook } from 'svix'
@@ -163,6 +163,27 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
 // ─── Protected routes (require lead) ────────────────────────────────
 const protectedRouter = Router()
 protectedRouter.use(requireLead)
+
+// Stream a candidate_asset by id. Used by the profile hero to render the
+// photo extracted from the CV — falls back to InitialsBadge on 404 at
+// the client. Only 'photo' kinds are exposed here; other kinds (raw_pdf,
+// cv_text) have dedicated endpoints with tighter validation.
+protectedRouter.get('/assets/:assetId', (req, res) => {
+  const asset = getAssetById(req.params.assetId)
+  if (!asset || asset.kind !== 'photo') {
+    res.status(404).json({ error: 'Asset introuvable' })
+    return
+  }
+  const buf = readAssetBuffer(asset.id)
+  if (!buf) {
+    res.status(404).json({ error: 'Asset file missing on disk' })
+    return
+  }
+  res.setHeader('Content-Type', asset.mime ?? 'application/octet-stream')
+  res.setHeader('Content-Length', String(buf.length))
+  res.setHeader('Cache-Control', 'private, max-age=3600')
+  res.send(buf)
+})
 
 // List all postes with candidate counts
 protectedRouter.get('/postes', (_req, res) => {

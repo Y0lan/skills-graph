@@ -540,6 +540,7 @@ export default function CandidateDetailPage() {
               candidateId={candidate.id}
               profile={candidate.aiProfile as unknown as AiProfile}
               topSkills={topSkills}
+              photoUrl={candidate.photoUrl ?? null}
             />
           </>
         ) : null}

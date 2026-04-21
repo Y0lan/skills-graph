@@ -6,7 +6,7 @@ import { getDb } from './db.js'
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 const ASSETS_DIR = path.join(DATA_DIR, 'assets')
 
-export type AssetKind = 'cv_text' | 'lettre_text' | 'raw_pdf'
+export type AssetKind = 'cv_text' | 'lettre_text' | 'raw_pdf' | 'photo'
 
 export interface AssetRecord {
   id: string
