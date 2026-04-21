@@ -52,9 +52,10 @@ export async function processIntake(
     return { error: 'nom, email, et poste_vise sont requis', status: 400 }
   }
 
-  // Idempotency: if Drupal sent us this submission before (queue retry after
-  // a radar outage), short-circuit and return the existing candidature. No
-  // new row, no duplicate emails, no re-scan.
+  // Idempotency fast-path: if Drupal already delivered this submission,
+  // return the existing candidature without acquiring any write locks. The
+  // authoritative check happens inside the transaction below — this fast
+  // path is just a performance win for the common case.
   if (submission_id) {
     const prior = getDb().prepare(
       'SELECT id, candidate_id FROM candidatures WHERE drupal_submission_id = ? LIMIT 1',
@@ -83,7 +84,7 @@ export async function processIntake(
   // Atomic creation: dedup-by-email + idempotence check + candidate (or reuse) + candidature + event
   // in one transaction. Prevents both duplicate candidates (same email applies to multiple postes)
   // and duplicate candidatures (parallel webhook redelivery on the same poste).
-  const intakeResult = getDb().transaction((): IntakeResult => {
+  const runTransaction = getDb().transaction((): IntakeResult => {
     // 1. Find existing candidate by email (case-insensitive). One person = one candidate.
     const existingCandidate = getDb().prepare(
       'SELECT id FROM candidates WHERE LOWER(email) = LOWER(?) ORDER BY created_at ASC LIMIT 1'
@@ -176,7 +177,31 @@ export async function processIntake(
     `).run(candidatureId, message?.trim() || null)
 
     return { ok: true, candidatureId, candidateId, updated: false }
-  })()
+  })
+
+  // Wrap the transaction so we can recover from a race where two Drupal
+  // queue deliveries (different pods, same submission_id) both missed the
+  // fast-path SELECT, both entered the transaction, and the loser hits the
+  // partial UNIQUE index on drupal_submission_id. Without this, the loser
+  // bubbles a SqliteError to the 500 handler and Drupal thinks we failed.
+  // With this, the loser re-reads and returns duplicate=true — same truth,
+  // no client-visible error.
+  let intakeResult: IntakeResult
+  try {
+    intakeResult = runTransaction()
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (submission_id && /UNIQUE constraint failed.*drupal_submission_id/i.test(msg)) {
+      const prior = getDb().prepare(
+        'SELECT id, candidate_id FROM candidatures WHERE drupal_submission_id = ? LIMIT 1',
+      ).get(submission_id) as { id: string; candidate_id: string } | undefined
+      if (prior) {
+        console.log(`[INTAKE][idempotent-race] submissionId=${submission_id} winner candidatureId=${prior.id}`)
+        return { ok: true, candidatureId: prior.id, candidateId: prior.candidate_id, updated: true, duplicate: true }
+      }
+    }
+    throw err
+  }
 
   if (intakeResult.updated) {
     // Redelivered webhook — retry any missing side effects

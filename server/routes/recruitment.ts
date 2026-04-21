@@ -1918,19 +1918,19 @@ protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {
     return
   }
 
-  // Source priority, same as the scoring side (see the pipeline view +
-  // calculatePosteCompatibility caller at line ~553):
-  //   1. role_aware_suggestions (per-candidature, calibrated to the fiche)
-  //   2. ai_suggestions (CV baseline, no role context)
-  //   3. ratings (manual form submission) — overlay on top if present
-  // Without this merge, any candidate who arrived via Drupal and never
-  // filled the form themselves sees 0/5 across the board, which is the
-  // "compat détail est complètement pété" bug.
+  // Source layering — same intent as the scoring side, but fixed after a
+  // codex review flagged that an either/or between role_aware and
+  // ai_suggestions would DROP baseline skills the role-aware pass never
+  // emitted (e.g. generalist skills present in the CV but outside the
+  // fiche's scope). Right layering:
+  //   1. ai_suggestions = widest base (everything the CV surfaced)
+  //   2. role_aware overrides per-skill — it's the calibrated version
+  //      of whatever skills it DID emit for this poste
+  //   3. manual (form submission) wins last if the recruiter touched it
   const roleAware = safeJsonParse<Record<string, number>>(row.role_aware ?? '{}', {})
   const aiSuggestions = safeJsonParse<Record<string, number>>(row.candidate_ai ?? '{}', {})
   const manual = safeJsonParse<Record<string, number>>(row.candidate_ratings ?? '{}', {})
-  const baseExtraction = Object.keys(roleAware).length > 0 ? roleAware : aiSuggestions
-  const ratings = { ...baseExtraction, ...manual }
+  const ratings = { ...aiSuggestions, ...roleAware, ...manual }
 
   if (metric === 'poste') {
     res.json(getPosteCompatBreakdown(ratings, row.poste_role_id))
