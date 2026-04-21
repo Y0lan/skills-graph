@@ -13,6 +13,7 @@ import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs
 import { pruneExtractionRuns } from './extraction-retention.js'
 import { extractCandidateProfile } from './cv-profile-extraction.js'
 import { persistMergedProfile } from './profile-merge.js'
+import { getDocumentForDownload } from './document-service.js'
 
 export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
 
@@ -140,16 +141,22 @@ export async function processCvForCandidate(
     // 6a. Profile extraction (Phase 4). Role-neutral — happens once per
     //     candidate. Failure does not block skill scoring; we just mark
     //     status=partial if profile fails.
+    //
+    //     Phase 5: enrich with the most recent lettre de motivation across
+    //     all candidatures. Best-effort — if lettre text extraction fails
+    //     or no lettre exists, profile extraction proceeds with CV only.
     let profileFailed = false
+    const lettreFetch = await fetchLatestLettreText(candidateId)
     const profileRunId = startRun({
       candidateId,
       kind: 'profile',
       promptVersion: PROMPT_VERSION,
       model: EXTRACTION_MODEL,
       cvAssetId: cvAsset.id,
+      lettreAssetId: lettreFetch.assetId,
     })
     try {
-      const profileResult = await extractCandidateProfile(cvText, null)
+      const profileResult = await extractCandidateProfile(cvText, lettreFetch.text)
       if (profileResult) {
         persistMergedProfile(candidateId, profileResult.profile, profileRunId)
         finishRun({
@@ -254,6 +261,52 @@ export async function processCvForCandidate(
  * Returns true when the row transitioned from non-running to running.
  * Returns false when another caller already holds the lock.
  */
+/**
+ * Fetch the most recent lettre de motivation across all candidatures of a
+ * candidate, extract its text, and store as a candidate_assets row so the
+ * run record can reference it. Returns the text (null if no lettre exists
+ * or extraction fails) and the asset id (when stored).
+ *
+ * Best-effort: on any failure, logs and returns null text so profile
+ * extraction can proceed with the CV alone.
+ */
+async function fetchLatestLettreText(candidateId: string): Promise<{ text: string | null; assetId: string | null }> {
+  const row = getDb().prepare(
+    `SELECT cd.id
+       FROM candidature_documents cd
+       JOIN candidatures c ON c.id = cd.candidature_id
+      WHERE c.candidate_id = ?
+        AND cd.type = 'lettre'
+        AND cd.deleted_at IS NULL
+      ORDER BY cd.created_at DESC
+      LIMIT 1`,
+  ).get(candidateId) as { id: string } | undefined
+  if (!row) return { text: null, assetId: null }
+
+  try {
+    const fetched = await getDocumentForDownload(row.id)
+    if ('error' in fetched) return { text: null, assetId: null }
+    let buffer: Buffer
+    if (fetched.kind === 'gcs') {
+      buffer = fetched.buffer
+    } else {
+      const fs = await import('fs')
+      buffer = fs.readFileSync(fetched.filePath)
+    }
+    const text = await extractCvText(buffer)
+    const asset = putAsset({
+      candidateId,
+      kind: 'lettre_text',
+      buffer: text,
+      mime: 'text/plain; charset=utf-8',
+    })
+    return { text, assetId: asset.id }
+  } catch (err) {
+    console.warn(`[cv-pipeline] Lettre extraction failed for candidate ${candidateId}:`, err)
+    return { text: null, assetId: null }
+  }
+}
+
 function acquireExtractionLock(candidateId: string): boolean {
   const result = getDb().prepare(
     `UPDATE candidates
