@@ -10,6 +10,7 @@ import FieldSourceTag from './field-source-tag'
 import InitialsBadge from '@/components/ui/initials-badge'
 import SkillPill from './skill-pill'
 import ExperienceTimeline, { type TimelineEntry } from './experience-timeline'
+import { formatCvDateRange } from '@/lib/constants'
 
 interface EducationEntry {
   degree: string | null
@@ -199,13 +200,13 @@ export default function CandidateProfileCard({
     (profile.softSignals.interests.value?.length ?? 0) > 0 ||
     (profile.softSignals.valuesMentioned.value?.length ?? 0) > 0
 
-  // ── Timeline entries ──
+  // ── Timeline entries ── formatCvDateRange handles bare years,
+  // YYYY-MM, YYYY-MM-DD and null end ("présent"), and auto-computes
+  // duration ("7 ans" / "8 mois") so recruiters don't have to.
   const expEntries: TimelineEntry[] = profile.experience.map(exp => ({
     primary: exp.company,
     secondary: exp.role,
-    dateRange: exp.start || exp.end
-      ? `${exp.start ?? '—'} → ${exp.end ?? 'présent'}`
-      : null,
+    dateRange: formatCvDateRange(exp.start, exp.end),
     location: exp.location,
     description: exp.description,
     tags: exp.technologies,
@@ -214,9 +215,7 @@ export default function CandidateProfileCard({
   const eduEntries: TimelineEntry[] = profile.education.map(ed => ({
     primary: ed.school,
     secondary: ed.degree ? `${ed.degree}${ed.field ? ' · ' + ed.field : ''}` : ed.field,
-    dateRange: ed.yearStart || ed.yearEnd
-      ? `${ed.yearStart ?? ''}${ed.yearStart && ed.yearEnd ? '–' : ''}${ed.yearEnd ?? ''}`
-      : null,
+    dateRange: formatCvDateRange(ed.yearStart, ed.yearEnd),
     location: null,
     description: ed.honors,
     tags: [],

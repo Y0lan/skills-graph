@@ -7,6 +7,8 @@ import { formatDateTime, STATUT_LABELS } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
+type EmailRecipient = 'candidate' | 'lead' | 'team'
+
 interface EmailEntry {
   event: CandidatureEvent
   messageId: string | null
@@ -14,15 +16,26 @@ interface EmailEntry {
   body: string | null
   statuses: Set<string>
   statusTo: string | null
+  recipient: EmailRecipient
 }
 
-function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string } {
+function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string } {
   if (!snapshot) return {}
   try {
     return JSON.parse(snapshot)
   } catch {
     return {}
   }
+}
+
+/** Best-effort recipient inference. The snapshot's `recipient` field is the
+ *  source of truth for recent emails. Fallbacks for older rows: "Notification
+ *  interne" / "envoyé à lead" in notes → team, everything else → candidate. */
+function inferRecipient(snapshot: { recipient?: string }, notes: string | null): EmailRecipient {
+  if (snapshot.recipient === 'lead' || snapshot.recipient === 'team') return 'lead'
+  if (snapshot.recipient === 'candidate') return 'candidate'
+  if (notes && /notification interne|envoy[ée]e? à (lead|l'équipe|director|directeur)/i.test(notes)) return 'lead'
+  return 'candidate'
 }
 
 /**
@@ -75,6 +88,7 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
       body: snap.body ?? null,
       statuses: messageId ? (statusMap.get(messageId) ?? new Set()) : new Set(),
       statusTo,
+      recipient: inferRecipient(snap, e.notes),
     })
   }
   return entries.reverse() // newest first
@@ -93,6 +107,8 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
   const readCount = entries.filter(e => e.statuses.has('email_clicked')).length
   const bouncedCount = entries.filter(e => e.statuses.has('email_failed')).length
   const complainedCount = entries.filter(e => e.statuses.has('email_complained')).length
+  const candidateCount = entries.filter(e => e.recipient === 'candidate').length
+  const teamCount = entries.length - candidateCount
 
   const toggle = (id: number) => {
     setExpanded(prev => {
@@ -109,7 +125,9 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
         <Mail className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-sm font-medium">Emails envoyés</span>
         <span className="text-xs text-muted-foreground">
-          {entries.length} envoyé{entries.length > 1 ? 's' : ''}
+          {candidateCount > 0 && `${candidateCount} au candidat`}
+          {candidateCount > 0 && teamCount > 0 && ' · '}
+          {teamCount > 0 && `${teamCount} à l'équipe`}
           {readCount > 0 && ` · ${readCount} lu${readCount > 1 ? 's' : ''}`}
           {complainedCount > 0 && ` · ${complainedCount} signalé${complainedCount > 1 ? 's' : ''} spam`}
           {bouncedCount > 0 && ` · ${bouncedCount} rebondi${bouncedCount > 1 ? 's' : ''}`}
@@ -133,6 +151,17 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                   {formatDateTime(entry.event.createdAt)}
                 </span>
                 <span className="text-xs font-medium shrink-0">{statusLabel}</span>
+                <Badge
+                  variant="outline"
+                  className={`${BADGE_SIZES.xs} shrink-0 ${
+                    entry.recipient === 'candidate'
+                      ? 'border-primary/30 bg-primary/10 text-primary'
+                      : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                  }`}
+                  title={entry.recipient === 'candidate' ? 'Envoyé au candidat' : "Envoyé à l'équipe"}
+                >
+                  {entry.recipient === 'candidate' ? 'Candidat' : 'Équipe'}
+                </Badge>
                 <span className="text-xs text-muted-foreground truncate flex-1">
                   {entry.subject ?? 'Email'}
                 </span>

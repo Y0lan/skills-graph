@@ -118,3 +118,64 @@ export function formatDateTime(dateStr: string | null | undefined): string {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 }
+
+/** Parse a CV date: "2018", "2018-01", "2018-01-15" → Date (UTC noon to dodge
+ *  TZ edge cases), or null if unparseable. */
+function parseCvDate(raw: string | number | null | undefined): Date | null {
+  if (raw == null) return null
+  const s = String(raw).trim()
+  if (!s) return null
+  const ym = s.match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/)
+  if (ym) {
+    const y = Number(ym[1])
+    const m = ym[2] ? Number(ym[2]) - 1 : 0
+    const d = ym[3] ? Number(ym[3]) : 1
+    const date = new Date(Date.UTC(y, m, d, 12, 0, 0))
+    return isNaN(date.getTime()) ? null : date
+  }
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
+
+/** "2018-01-01" → "janv. 2018". "2018" → "2018". */
+function formatMonthYear(d: Date, granular: boolean): string {
+  if (!granular) return String(d.getUTCFullYear())
+  return d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+}
+
+/** "7 ans · 3 mois" / "1 an" / "10 mois" / null if nonsensical. */
+function formatDurationBetween(start: Date, end: Date): string | null {
+  const ms = end.getTime() - start.getTime()
+  if (ms < 0) return null
+  const totalMonths = Math.round(ms / (1000 * 60 * 60 * 24 * 30.4375))
+  if (totalMonths < 1) return null
+  const years = Math.floor(totalMonths / 12)
+  const months = totalMonths % 12
+  const yPart = years > 0 ? `${years} an${years > 1 ? 's' : ''}` : ''
+  const mPart = months > 0 ? `${months} mois` : ''
+  if (yPart && mPart) return `${yPart} ${mPart}`
+  return yPart || mPart || null
+}
+
+/** Build a human-friendly CV date range with auto duration.
+ *  Examples:
+ *    formatCvDateRange("2018-01-01", "2025-01-01") → "janv. 2018 → janv. 2025 · 7 ans"
+ *    formatCvDateRange("2022", null)                → "2022 → présent · 4 ans"
+ *    formatCvDateRange("2020-03", "2020-11")        → "mars 2020 → nov. 2020 · 8 mois"
+ *    formatCvDateRange(null, null)                  → null (caller hides the range) */
+export function formatCvDateRange(startRaw: string | number | null | undefined, endRaw: string | number | null | undefined): string | null {
+  const start = parseCvDate(startRaw)
+  const endParsed = parseCvDate(endRaw)
+  if (!start && !endParsed) return null
+  const end = endParsed ?? new Date()
+  const isOngoing = !endParsed
+  // If both inputs are bare years (no month), render year-only. Otherwise
+  // render month + year so "Jan→Mar 2020" doesn't collapse to "2020→2020".
+  const startGranular = typeof startRaw === 'string' && /\d{4}-\d{1,2}/.test(startRaw)
+  const endGranular = typeof endRaw === 'string' && /\d{4}-\d{1,2}/.test(endRaw)
+  const granular = startGranular || endGranular
+  const startLabel = start ? formatMonthYear(start, granular) : '—'
+  const endLabel = isOngoing ? 'présent' : formatMonthYear(end, granular)
+  const duration = start ? formatDurationBetween(start, end) : null
+  return duration ? `${startLabel} → ${endLabel} · ${duration}` : `${startLabel} → ${endLabel}`
+}

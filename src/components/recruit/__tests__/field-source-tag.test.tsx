@@ -19,15 +19,15 @@ describe('<FieldSourceTag>', () => {
     expect(c2).toBeEmptyDOMElement()
   })
 
-  it('renders "L" when sourceDoc is lettre', () => {
+  it('renders "LM" when sourceDoc is lettre', () => {
     render(<FieldSourceTag field={{ sourceDoc: 'lettre' }} />)
-    expect(screen.getByText('L')).toBeInTheDocument()
-    expect(screen.getByLabelText('Lettre de motivation')).toBeInTheDocument()
+    expect(screen.getByText('LM')).toBeInTheDocument()
+    expect(screen.getByLabelText(/lettre de motivation/i)).toBeInTheDocument()
   })
 
-  it('renders "M" when sourceDoc is human (manual entry)', () => {
+  it('renders "Manuel" when sourceDoc is human (manual entry)', () => {
     render(<FieldSourceTag field={{ sourceDoc: 'human' }} />)
-    expect(screen.getByText('M')).toBeInTheDocument()
-    expect(screen.getByLabelText('Saisie manuelle')).toBeInTheDocument()
+    expect(screen.getByText('Manuel')).toBeInTheDocument()
+    expect(screen.getByLabelText(/saisie manuelle/i)).toBeInTheDocument()
   })
 })

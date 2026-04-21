@@ -14,13 +14,13 @@ export interface FieldSourceTagProps {
 
 export default function FieldSourceTag({ field, className }: FieldSourceTagProps) {
   if (field.sourceDoc !== 'lettre' && field.sourceDoc !== 'human') return null
-  const label = field.sourceDoc === 'lettre' ? 'L' : 'M'
-  const title = field.sourceDoc === 'lettre' ? 'Lettre de motivation' : 'Saisie manuelle'
+  const label = field.sourceDoc === 'lettre' ? 'LM' : 'Manuel'
+  const title = field.sourceDoc === 'lettre' ? 'Source : lettre de motivation' : 'Source : saisie manuelle'
   return (
     <span
       title={title}
       aria-label={title}
-      className={`inline-flex items-center justify-center text-[9px] font-semibold tracking-wide px-1 h-3.5 rounded bg-muted text-muted-foreground align-middle ${className ?? ''}`}
+      className={`inline-flex items-center justify-center text-[9px] font-semibold tracking-wide px-1.5 h-3.5 rounded bg-muted text-muted-foreground align-middle ${className ?? ''}`}
     >
       {label}
     </span>
