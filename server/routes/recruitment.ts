@@ -1896,19 +1896,41 @@ protectedRouter.get('/candidatures/:id/compat/:metric', (req, res) => {
   }
 
   const row = getDb().prepare(`
-    SELECT cand.ratings AS candidate_ratings, cand.role_id AS candidate_role_id, p.role_id AS poste_role_id
+    SELECT cand.ratings AS candidate_ratings,
+           cand.ai_suggestions AS candidate_ai,
+           c.role_aware_suggestions AS role_aware,
+           cand.role_id AS candidate_role_id,
+           p.role_id AS poste_role_id
     FROM candidatures c
     JOIN candidates cand ON cand.id = c.candidate_id
     JOIN postes p ON p.id = c.poste_id
     WHERE c.id = ?
-  `).get(req.params.id) as { candidate_ratings: string | null; candidate_role_id: string | null; poste_role_id: string } | undefined
+  `).get(req.params.id) as {
+    candidate_ratings: string | null;
+    candidate_ai: string | null;
+    role_aware: string | null;
+    candidate_role_id: string | null;
+    poste_role_id: string
+  } | undefined
 
   if (!row) {
     res.status(404).json({ error: 'Candidature introuvable' })
     return
   }
 
-  const ratings = safeJsonParse<Record<string, number>>(row.candidate_ratings ?? '{}', {})
+  // Source priority, same as the scoring side (see the pipeline view +
+  // calculatePosteCompatibility caller at line ~553):
+  //   1. role_aware_suggestions (per-candidature, calibrated to the fiche)
+  //   2. ai_suggestions (CV baseline, no role context)
+  //   3. ratings (manual form submission) — overlay on top if present
+  // Without this merge, any candidate who arrived via Drupal and never
+  // filled the form themselves sees 0/5 across the board, which is the
+  // "compat détail est complètement pété" bug.
+  const roleAware = safeJsonParse<Record<string, number>>(row.role_aware ?? '{}', {})
+  const aiSuggestions = safeJsonParse<Record<string, number>>(row.candidate_ai ?? '{}', {})
+  const manual = safeJsonParse<Record<string, number>>(row.candidate_ratings ?? '{}', {})
+  const baseExtraction = Object.keys(roleAware).length > 0 ? roleAware : aiSuggestions
+  const ratings = { ...baseExtraction, ...manual }
 
   if (metric === 'poste') {
     res.json(getPosteCompatBreakdown(ratings, row.poste_role_id))

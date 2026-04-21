@@ -1,62 +1,44 @@
-# SINAPSE Webhook — Drupal Module
+# SINAPSE Webhook — Drupal delta note
 
-Forwards `postuler` webform submissions from sinapse.nc to Skill Radar's recruitment API.
+> **NOT DEPLOYABLE.** This directory is a delta note, not a module source.
+> The live module lives in the sinapse.nc Drupal repo (not in this workspace).
+> To see what's actually running: `kubectl exec -n apps <drupal-pod> -c drupal -- cat /opt/drupal/web/web/modules/custom/sinapse_webhook/...`
 
-## Installation
+## The only change to apply
 
-1. Copy `sinapse_webhook/` to `web/modules/custom/sinapse_webhook/`
-2. Enable: `drush en sinapse_webhook`
-3. Configure the API URL and webhook secret in `settings.php`:
+Radar-side idempotency (`drupal_submission_id` column + partial unique index)
+is already live on the radar, backward-compatible: if Drupal doesn't send the
+field, radar creates the candidature as before.
+
+To **activate** idempotent replay (so queue retries don't create duplicates),
+add one line to the payload built by `SkillRadarHandler::postSave()` in the
+real Drupal repo:
 
 ```php
-$config['sinapse_webhook.settings']['api_url'] = 'https://dev.radar.sinapse.nc';
-$config['sinapse_webhook.settings']['webhook_secret'] = 'your-shared-secret';
+$payload = [
+    'nom'           => $data['nom'] ?? '',
+    // ... other fields unchanged ...
+    'canal'         => 'site',
+    'submission_id' => $webform_submission->uuid(),  // ← add this line
+];
 ```
 
-4. Update the poste mapping in `config/install/sinapse_webhook.settings.yml`:
-   - Check the actual taxonomy term IDs for `thematique_d_emploi` in Drupal
-   - Map each term ID to the corresponding Skill Radar poste ID
+That's the whole delta. `submission_id` is the Drupal submission UUID;
+radar uses it as an idempotency key (see `drupal_submission_id` partial
+unique index on the `candidatures` table, commit `e2ffb00`).
 
-5. Add the handler to the `postuler` webform:
-   - Go to `/admin/structure/webform/manage/postuler/handlers`
-   - Click "Add handler"
-   - Select "Skill Radar Intake"
-   - Save
+## Why the old drafts were removed
 
-## How it works
+Earlier drafts in this folder (`SkillRadarSendWorker.php`, a rewritten
+`SkillRadarHandler.php`) proposed switching to async-only enqueue with
+`SuspendQueueException`. That would have:
 
-When a candidate submits the `postuler` form on sinapse.nc:
+- regressed `lettre` (cover letter) support — the drafts only handled CV,
+- lost the sync-first dispatch path (candidate appears instantly),
+- changed plugin id from `skill_radar_intake` to `sinapse_webhook_send`,
+  orphaning any items already in the live queue.
 
-1. The `SkillRadarHandler` fires on `postSave`
-2. It maps the Drupal form fields to the Skill Radar intake format:
-   - `nom`, `prenom`, `email`, `linkedin`, `github`, `message` -> direct mapping
-   - `poste_vise` -> mapped from Drupal taxonomy term ID to Skill Radar poste ID
-   - `cv` -> resolved from Drupal file ID to disk path, sent as multipart upload
-   - `canal` -> hardcoded to `'site'` (all Drupal submissions)
-3. POSTs to `{api_url}/api/recruitment/intake` with `X-Webhook-Secret` header
-4. Skill Radar creates the candidate, extracts CV skills via AI, calculates compatibility
-
-## Skill Radar poste IDs
-
-| Poste | Skill Radar ID |
-|-------|---------------|
-| Tech Lead Adélia | `poste-1-tech-lead-adelia` |
-| Dev Senior Adélia | `poste-2-dev-senior-adelia` |
-| Tech Lead Java / JBoss | `poste-3-tech-lead-java` |
-| Dev Java Senior Full Stack | `poste-4-dev-java-fullstack` |
-| Dev JBoss Senior | `poste-5-dev-jboss-senior` |
-| Architecte SI Logiciel | `poste-6-architecte-si` |
-| Business Analyst | `poste-7-business-analyst` |
-| Candidature Libre | `candidature-libre` |
-
-## Error handling
-
-- If the API is unreachable, the Drupal form submission still succeeds (non-blocking)
-- Errors are logged to Drupal's watchdog (`drush ws --type=sinapse_webhook`)
-- Duplicate submissions (same email + same poste) are handled by Skill Radar (idempotent)
-
-## Webhook secret
-
-Both systems must share the same secret. Set `DRUPAL_WEBHOOK_SECRET` on Skill Radar
-and `webhook_secret` in Drupal's config. If empty on Skill Radar, the endpoint is open
-(useful for testing, not recommended for production).
+The live handler (deployed Apr 21) already does sync-first + queue
+fallback with `MAX_ATTEMPTS=3` via `RequeueException`. That's the
+zero-data-loss guarantee; the only missing piece is the `submission_id`
+idempotency key above.
