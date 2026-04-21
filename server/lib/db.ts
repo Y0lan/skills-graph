@@ -871,6 +871,11 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_reasoning TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_questions TEXT') } catch { /* already exists */ }
 
+  // NOTE: ALTER TABLE poste_skill_requirements moved below the CREATE —
+  // codex spotted that on a fresh DB the ALTERs here silently fail
+  // (table doesn't exist yet), then the CREATE runs without the new
+  // columns, and subsequent inserts crash on unknown columns.
+
   // Drupal-webhook idempotency key: the Webform submission UUID. When Drupal's
   // queue replays a delivery (e.g. radar was down), we look this up and return
   // the existing candidature without side effects. Partial unique index so
@@ -965,6 +970,21 @@ export function initDatabase(): void {
       PRIMARY KEY (poste_id, skill_id)
     )
   `)
+
+  // Requirements extraction audit (PR 2). Provenance columns on the join
+  // table + status/error tracking on postes. + requirements_extraction_run_id
+  // for race-safe CAS updates (codex #3 & #4 — without this, two
+  // concurrent extractions could last-writer-wins and status could be
+  // clobbered by a losing run).
+  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN source TEXT") } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN reasoning TEXT") } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN extracted_at TEXT") } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN model TEXT") } catch { /* already exists */ }
+  try { db.exec("ALTER TABLE postes ADD COLUMN requirements_extraction_status TEXT DEFAULT 'idle' CHECK(requirements_extraction_status IN ('idle','running','succeeded','failed','skipped'))") } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_error TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extracted_at TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_model TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_run_id TEXT') } catch { /* already exists */ }
 
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')

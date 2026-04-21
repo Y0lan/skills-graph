@@ -1,4 +1,5 @@
 import express, { Router } from 'express'
+import crypto from 'crypto'
 import { Readable } from 'stream'
 import busboy from 'busboy'
 import rateLimit from 'express-rate-limit'
@@ -10,6 +11,7 @@ import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTra
 import { previewizeEmailHtml } from '../lib/brand.js'
 import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
 import { loadEffectiveRatings, rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
+import { extractPosteRequirements, MissingApiKeyError, type PosteRequirement } from '../lib/poste-requirements-extraction.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip, triggerDocumentScan } from '../lib/document-service.js'
 import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
@@ -217,7 +219,7 @@ protectedRouter.get('/postes', (_req, res) => {
 
 // Update poste description (fiche de poste text, fed to role-aware CV extraction)
 const MAX_DESCRIPTION_CHARS = 20000
-protectedRouter.put('/postes/:posteId', mutationRateLimit, (req, res) => {
+protectedRouter.put('/postes/:posteId', mutationRateLimit, async (req, res) => {
   const { description } = req.body ?? {}
   if (description !== null && typeof description !== 'string') {
     res.status(400).json({ error: 'description doit être une chaîne ou null' })
@@ -229,17 +231,195 @@ protectedRouter.put('/postes/:posteId', mutationRateLimit, (req, res) => {
     })
     return
   }
-  // Normalize empty strings to NULL so downstream prompt builders treat
-  // "not authored yet" and "cleared" identically.
-  const normalized = typeof description === 'string' && description.trim().length > 0 ? description : null
-  const result = getDb().prepare('UPDATE postes SET description = ? WHERE id = ?')
-    .run(normalized, req.params.posteId)
-  if (result.changes === 0) {
+
+  // Read old description BEFORE overwriting so we can detect a meaningful
+  // change (codex fix — was "write blindly"). Normalize whitespace on
+  // both sides so "foo \n bar" vs "foo\nbar" doesn't re-trigger extraction.
+  const existing = getDb().prepare('SELECT description FROM postes WHERE id = ?')
+    .get(String(req.params.posteId)) as { description: string | null } | undefined
+  if (!existing) {
     res.status(404).json({ error: 'Poste introuvable' })
     return
   }
-  res.json({ ok: true, description: normalized })
+
+  const normalized = typeof description === 'string' && description.trim().length > 0 ? description : null
+  getDb().prepare('UPDATE postes SET description = ? WHERE id = ?').run(normalized, String(req.params.posteId))
+
+  const normalizeWhitespace = (s: string | null): string => (s ?? '').replace(/\s+/g, ' ').trim()
+  const descriptionChanged = normalizeWhitespace(existing.description) !== normalizeWhitespace(normalized)
+
+  // Trigger background extraction only if description actually changed
+  // AND we have something to extract from. Fire-and-forget: the admin
+  // UI reads requirements_extraction_status to know if it's running.
+  if (descriptionChanged && normalized) {
+    triggerRequirementsExtraction(String(req.params.posteId), normalized).catch(err => {
+      console.error('[requirements] background extraction failed:', err)
+    })
+  }
+
+  res.json({ ok: true, description: normalized, extractionTriggered: descriptionChanged && !!normalized })
 })
+
+// Manual one-shot extraction — for re-running without touching the
+// description. Synchronous: returns once extraction completes (or fails).
+// Admin-only.
+protectedRouter.post('/postes/:posteId/extract-requirements', heavyRateLimit, async (req, res) => {
+  const posteId = String(req.params.posteId)
+  const row = getDb().prepare('SELECT description FROM postes WHERE id = ?')
+    .get(posteId) as { description: string | null } | undefined
+  if (!row) {
+    res.status(404).json({ error: 'Poste introuvable' })
+    return
+  }
+  if (!row.description || !row.description.trim()) {
+    res.status(400).json({ error: "Le poste n'a pas de description (fiche de poste)." })
+    return
+  }
+
+  try {
+    const result = await runRequirementsExtraction(posteId, row.description)
+    res.json({
+      ok: true,
+      extractedCount: result.requirements.length,
+      rejectedCount: result.rejected.length,
+      rescored: result.rescored,
+      model: result.model,
+      requirements: result.requirements.map(r => ({
+        skillId: r.skillId,
+        targetLevel: r.targetLevel,
+        importance: r.importance,
+      })),
+    })
+  } catch (err) {
+    if (err instanceof MissingApiKeyError) {
+      res.status(503).json({ error: 'ANTHROPIC_API_KEY not configured', status: 'skipped' })
+      return
+    }
+    console.error('[requirements] extraction failed:', err)
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+  }
+})
+
+/** Fire-and-forget wrapper. Caller (PUT /postes/:id) doesn't await; we
+ *  still want errors surfaced in DB status + logs so admin UI + oncall
+ *  can see what happened. */
+async function triggerRequirementsExtraction(posteId: string, description: string): Promise<void> {
+  try {
+    await runRequirementsExtraction(posteId, description)
+  } catch {
+    // Already logged by runRequirementsExtraction — swallow to satisfy
+    // the fire-and-forget contract (we don't want an uncaught promise
+    // rejection crashing the process).
+  }
+}
+
+/** Synchronous extraction path — LLM call OUTSIDE the DB transaction
+ *  (codex fix — holding the tx across a 60s LLM call would block SQLite
+ *  writers for the whole duration). Returns the rescored candidature
+ *  count for observability. */
+async function runRequirementsExtraction(posteId: string, description: string): Promise<{
+  requirements: PosteRequirement[]
+  rejected: Array<{ raw: unknown; reason: string }>
+  model: string
+  rescored: number
+}> {
+  const db = getDb()
+  const posteRow = db.prepare('SELECT titre FROM postes WHERE id = ?')
+    .get(posteId) as { titre: string } | undefined
+  if (!posteRow) throw new Error(`Poste ${posteId} introuvable`)
+
+  // Race-safe CAS (codex #3 + #4): each run gets a UUID. Later commits
+  // only apply if the stored run_id still matches ours — a newer run
+  // takes over and we become stale. Failure status never clobbers a
+  // success from a newer run because we gate on run_id too.
+  const runId = crypto.randomUUID()
+  db.prepare(`
+    UPDATE postes
+    SET requirements_extraction_status = 'running',
+        requirements_extraction_error = NULL,
+        requirements_extraction_run_id = ?
+    WHERE id = ?
+  `).run(runId, posteId)
+
+  try {
+    const llmResult = await extractPosteRequirements({
+      posteTitre: posteRow.titre,
+      posteDescription: description,
+      skillCatalog: getSkillCategories(),
+    })
+
+    // Codex #5: zero valid requirements = treat as failure. "Policy:
+    // keep old requirements on failure" means we don't wipe if the LLM
+    // gave us nothing usable.
+    if (llmResult.requirements.length === 0) {
+      throw new Error(`LLM produced zero valid requirements (rejected ${llmResult.rejected.length} rows)`)
+    }
+
+    // Atomic DB swap — LLM call is DONE, this transaction is fast.
+    // CAS gate: skip entirely if a newer run took over while we were
+    // waiting on the LLM.
+    const now = new Date().toISOString()
+    let committed = true
+    db.transaction(() => {
+      const stillOurRun = db.prepare(
+        'SELECT 1 FROM postes WHERE id = ? AND requirements_extraction_run_id = ?',
+      ).get(posteId, runId)
+      if (!stillOurRun) {
+        console.log(`[requirements] poste=${posteId} run=${runId} superseded — skipping commit`)
+        committed = false
+        return
+      }
+      db.prepare('DELETE FROM poste_skill_requirements WHERE poste_id = ?').run(posteId)
+      const insert = db.prepare(`
+        INSERT INTO poste_skill_requirements
+          (poste_id, skill_id, target_level, importance, source, reasoning, extracted_at, model)
+        VALUES (?, ?, ?, ?, 'llm', ?, ?, ?)
+      `)
+      for (const r of llmResult.requirements) {
+        insert.run(posteId, r.skillId, r.targetLevel, r.importance, r.reasoning, now, llmResult.model)
+      }
+      db.prepare(`
+        UPDATE postes
+        SET requirements_extraction_status = 'succeeded',
+            requirements_extraction_error = NULL,
+            requirements_extracted_at = ?,
+            requirements_extraction_model = ?
+        WHERE id = ? AND requirements_extraction_run_id = ?
+      `).run(now, llmResult.model, posteId, runId)
+    })()
+
+    if (!committed) {
+      return {
+        requirements: llmResult.requirements,
+        rejected: llmResult.rejected,
+        model: llmResult.model,
+        rescored: 0,
+      }
+    }
+
+    const rescored = rescorePoste(posteId)
+    console.log(`[requirements] poste=${posteId} run=${runId} extracted=${llmResult.requirements.length} rejected=${llmResult.rejected.length} rescored=${rescored.length}`)
+
+    return {
+      requirements: llmResult.requirements,
+      rejected: llmResult.rejected,
+      model: llmResult.model,
+      rescored: rescored.length,
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    const status = err instanceof MissingApiKeyError ? 'skipped' : 'failed'
+    // CODEX POLICY: keep old requirements on failure. Stale > missing.
+    // CAS-guarded so a losing run can't clobber a concurrent success.
+    db.prepare(`
+      UPDATE postes
+      SET requirements_extraction_status = ?,
+          requirements_extraction_error = ?
+      WHERE id = ? AND requirements_extraction_run_id = ?
+    `).run(status, msg, posteId, runId)
+    throw err
+  }
+}
 
 // List skill requirements for a poste
 protectedRouter.get('/postes/:posteId/requirements', (req, res) => {
