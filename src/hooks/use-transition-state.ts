@@ -171,6 +171,7 @@ export function useTransitionState(
       // Runs on every Confirm — including the retry-after-status-already-applied
       // path, which is the whole point of this retry mechanic.
       let fileUploadFailed = false
+      let uploadErrorMsg: string | null = null
       if (transitionFile) {
         try {
           const formData = new FormData()
@@ -191,9 +192,14 @@ export function useTransitionState(
           })
           if (!fileRes.ok) {
             fileUploadFailed = true
+            try {
+              const body = await fileRes.json() as { error?: string }
+              if (body.error) uploadErrorMsg = body.error
+            } catch { /* body wasn't JSON, keep the generic fallback */ }
           }
-        } catch {
+        } catch (err) {
           fileUploadFailed = true
+          uploadErrorMsg = err instanceof Error ? err.message : null
         }
       }
 
@@ -256,10 +262,11 @@ export function useTransitionState(
       // (retry path) or just succeeded, keep the dialog open so the user
       // can retry the upload alone.
       if (fileUploadFailed) {
-        setTransitionFileError('Le fichier n\'a pas pu être uploadé. Vous pouvez réessayer ou fermer la boîte de dialogue.')
+        const detail = uploadErrorMsg ?? 'raison inconnue'
+        setTransitionFileError(`Upload du fichier échoué : ${detail}. Vous pouvez modifier le fichier et réessayer, ou fermer la boîte.`)
         toast.warning(transitionStatusApplied
-          ? 'Nouvelle tentative d\u2019upload échouée'
-          : 'Statut changé, mais l\u2019upload du fichier a échoué')
+          ? `Upload échoué : ${detail}`
+          : `Statut changé — upload du fichier échoué : ${detail}`)
         setChangingStatus(false)
         return
       }

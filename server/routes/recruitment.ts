@@ -36,17 +36,41 @@ interface ParsedIntake {
   warnings: string[]
 }
 
-function parseMultipartIntake(req: import('express').Request): Promise<ParsedIntake> {
+// Default MIME whitelist used by the public Drupal intake path. Admin uploads
+// accept a wider list (images, plain text, spreadsheets...) — see
+// ADMIN_DOC_MIMES.
+const INTAKE_DOC_MIMES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+]
+
+const ADMIN_DOC_MIMES = [
+  ...INTAKE_DOC_MIMES,
+  'text/plain',
+  'text/csv',
+  'application/rtf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+  'application/vnd.ms-excel', // xls
+]
+
+function parseMultipartIntake(
+  req: import('express').Request,
+  opts: { allowedMimes?: readonly string[]; maxFiles?: number } = {},
+): Promise<ParsedIntake> {
   return new Promise((resolve, reject) => {
     const fields: Record<string, string> = {}
     const files = new Map<string, { buffer: Buffer; mimetype: string; filename: string }>()
     const warnings: string[] = []
     const bb = busboy({
       headers: req.headers,
-      limits: { fileSize: 10 * 1024 * 1024, files: 2 }
+      limits: { fileSize: 10 * 1024 * 1024, files: opts.maxFiles ?? 2 }
     })
     bb.on('field', (name: string, val: string) => { fields[name] = val })
-    const allowedMimes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']
+    const allowedMimes = opts.allowedMimes ?? INTAKE_DOC_MIMES
     bb.on('file', (name: string, stream: Readable, info: { filename: string; mimeType: string }) => {
       if (!allowedMimes.includes(info.mimeType)) {
         warnings.push(`Fichier ${info.filename} ignoré : type ${info.mimeType} non supporté`)
@@ -1545,10 +1569,14 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
   }
 
   try {
-    const parsed = await parseMultipartIntake(req)
+    const parsed = await parseMultipartIntake(req, { allowedMimes: ADMIN_DOC_MIMES, maxFiles: 1 })
     const file = parsed.files.get('file')
     if (!file) {
-      res.status(400).json({ error: 'Fichier requis' })
+      // If busboy rejected the file for MIME reasons, surface the warning.
+      // Without this, the frontend saw a bare "Fichier requis" with no way
+      // to understand why — e.g., INFO.txt got silently dropped.
+      const reason = parsed.warnings[0] ?? 'Fichier requis'
+      res.status(400).json({ error: reason, warnings: parsed.warnings })
       return
     }
 
@@ -1584,9 +1612,12 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
     }
 
     res.status(201).json({ ...result, supersededDocumentId: previousActive?.id ?? null })
-  } catch {
-    console.error('[DOCUMENT_UPLOAD] Upload failed')
-    res.status(500).json({ error: 'Erreur upload' })
+  } catch (err) {
+    // Surface the real cause instead of a generic message. Without this,
+    // MIME-whitelist drops and GCS failures both looked identical client-side.
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[DOCUMENT_UPLOAD] Upload failed: ${msg}`)
+    res.status(500).json({ error: `Erreur upload : ${msg}` })
   }
 })
 
