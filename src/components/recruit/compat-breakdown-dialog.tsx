@@ -169,7 +169,7 @@ export default function CompatBreakdownDialog({ open, onClose, candidatureId, me
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="w-full sm:max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2">
             <span>{METRIC_TITLES[metric]}</span>
@@ -280,8 +280,8 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
     bonusByCategory.set(b.categoryLabel, list)
   }
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className="space-y-4 min-w-0">
+      <div className="space-y-2 min-w-0">
         {data.items.map(item => (
           <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5 min-w-0">
             <div className="flex items-center justify-between gap-2 text-sm min-w-0">
@@ -300,9 +300,9 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
       </div>
 
       {sortedGaps.length > 0 ? (
-        <div>
+        <div className="min-w-0">
           <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Écart avec l'équipe</h4>
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             {sortedGaps.map(g => (
               <div key={g.categoryId} className="rounded border p-2 text-xs space-y-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 min-w-0">
@@ -322,9 +322,9 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
       ) : null}
 
       {bonusByCategory.size > 0 ? (
-        <div>
+        <div className="min-w-0">
           <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Compétences bonus (hors poste)</h4>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 min-w-0">
             {Array.from(bonusByCategory.entries()).map(([catLabel, skills]) => (
               <div key={catLabel} className="rounded border p-2">
                 <div className="text-xs font-medium text-muted-foreground mb-1">{catLabel}</div>
@@ -353,13 +353,13 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
 
 function SoftBreakdownView({ data }: { data: SoftBreakdown }) {
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
+    <div className="space-y-3 min-w-0">
+      <div className="space-y-2 min-w-0">
         {data.groups.map(g => (
-          <div key={g.name} className="rounded-md border p-2.5 space-y-1.5">
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <span className="font-medium capitalize">{g.name}</span>
-              <span className="text-xs tabular-nums text-muted-foreground">poids {g.weight} · {g.avg}/10</span>
+          <div key={g.name} className="rounded-md border p-2.5 space-y-1.5 min-w-0">
+            <div className="flex items-center justify-between gap-2 text-sm min-w-0">
+              <span className="font-medium capitalize truncate min-w-0">{g.name}</span>
+              <span className="text-xs tabular-nums text-muted-foreground shrink-0">poids {g.weight} · {g.avg}/10</span>
             </div>
             <div className="flex flex-wrap gap-1">
               {g.traits.map(t => (
