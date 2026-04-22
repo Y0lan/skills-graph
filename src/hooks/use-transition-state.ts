@@ -70,6 +70,12 @@ export function useTransitionState(
   const [transitionHasEmailTemplate, setTransitionHasEmailTemplate] = useState(false)
   const [transitionEmailLoading, setTransitionEmailLoading] = useState(false)
   const [transitionFileError, setTransitionFileError] = useState<string | null>(null)
+  // Tracks whether the PATCH /status already succeeded for the current
+  // dialog. If the status change succeeds but the file upload fails, we
+  // keep the dialog open so the user can retry the upload — but the next
+  // Confirm click must NOT re-PATCH (server would 409 on stale currentStatut
+  // and the state machine would reject the same-statut transition).
+  const [transitionStatusApplied, setTransitionStatusApplied] = useState(false)
 
   // Fetch email template when dialog opens
   useEffect(() => {
@@ -129,11 +135,13 @@ export function useTransitionState(
     setTransitionHasEmailTemplate(false)
     setTransitionEmailLoading(false)
     setTransitionFileError(null)
+    setTransitionStatusApplied(false)
   }, [allowedTransitions])
 
   const closeTransitionDialog = useCallback(() => {
     setTransitionDialog(null)
     setTransitionFileError(null)
+    setTransitionStatusApplied(false)
   }, [])
 
   const confirmTransition = useCallback(async () => {
@@ -152,7 +160,9 @@ export function useTransitionState(
     setChangingStatus(true)
     setTransitionFileError(null)
     try {
-      // Upload file if present (for aboro or any transition with attachment)
+      // Upload file if present (for aboro or any transition with attachment).
+      // Runs on every Confirm — including the retry-after-status-already-applied
+      // path, which is the whole point of this retry mechanic.
       let fileUploadFailed = false
       if (transitionFile) {
         try {
@@ -172,28 +182,35 @@ export function useTransitionState(
         }
       }
 
-      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          statut: targetStatut,
-          currentStatut: currentStatut || undefined,
-          notes: transitionNotes.trim() || undefined,
-          skipReason: isSkip ? transitionSkipReason.trim() : undefined,
-          sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
-          skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
-            ? transitionSkipEmailReason.trim() || undefined
-            : undefined,
-          includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
-          customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
-          aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
-        }),
-      })
+      // Skip the PATCH if a previous attempt already changed the status —
+      // the server would 409 (stale currentStatut) AND the state machine
+      // would reject a same-statut transition. The user is just retrying
+      // the upload here; the status change is already done.
+      if (!transitionStatusApplied) {
+        const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            statut: targetStatut,
+            currentStatut: currentStatut || undefined,
+            notes: transitionNotes.trim() || undefined,
+            skipReason: isSkip ? transitionSkipReason.trim() : undefined,
+            sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
+            skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
+              ? transitionSkipEmailReason.trim() || undefined
+              : undefined,
+            includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
+            customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
+            aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
+          }),
+        })
 
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Erreur')
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Erreur')
+        }
+        setTransitionStatusApplied(true)
       }
 
       setCandidatures(prev => prev.map(c =>
@@ -220,22 +237,28 @@ export function useTransitionState(
         }))
       }
 
-      // If file upload failed but transition succeeded, keep dialog open with error
+      // If file upload failed but the status PATCH was either already done
+      // (retry path) or just succeeded, keep the dialog open so the user
+      // can retry the upload alone.
       if (fileUploadFailed) {
         setTransitionFileError('Le fichier n\'a pas pu être uploadé. Vous pouvez réessayer ou fermer la boîte de dialogue.')
-        toast.warning('Statut changé, mais l\'upload du fichier a échoué')
+        toast.warning(transitionStatusApplied
+          ? 'Nouvelle tentative d\u2019upload échouée'
+          : 'Statut changé, mais l\u2019upload du fichier a échoué')
         setChangingStatus(false)
         return
       }
 
-      toast.success(`Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
+      toast.success(transitionStatusApplied
+        ? 'Document uploadé'
+        : `Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
       setTransitionDialog(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, transitionStatusApplied, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
   return {
     changingStatus,

@@ -565,6 +565,17 @@ export default function CandidateDetailPage() {
             status badges below (they communicate pipeline meta, not
             profile data).
         */}
+        {(() => {
+          // Status badges + Rouvrir button. When the AI profile card already
+          // owns the hero, this row collapses to badges only — and we suppress
+          // it entirely when there are no badges to show, so it doesn't render
+          // an orphan flex spacer between two cards.
+          const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
+          const hasBadge = awaitingRadar || !!candidate.submittedAt
+          const hasReopen = !!candidate.submittedAt
+          const hasAny = hasBadge || hasReopen
+          if (candidate.aiProfile && !hasAny) return null
+          return (
         <div className="flex items-start gap-4 flex-wrap">
           {!candidate.aiProfile ? (
             <div className="flex-1 min-w-0">
@@ -666,6 +677,8 @@ export default function CandidateDetailPage() {
             )}
           </div>
         </div>
+          )
+        })()}
 
         {/* ── 2. PER-CANDIDATURE: STEPPER + SCORES + DOSSIER + ACTIONS ── */}
         {candidatures.map(c => {
@@ -1217,7 +1230,7 @@ export default function CandidateDetailPage() {
         </AlertDialog>
 
         <Dialog open={emailPreviewOpen} onOpenChange={setEmailPreviewOpen}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col gap-3">
+          <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col gap-3">
             <DialogHeader>
               <DialogTitle className="text-base">
                 Aperçu — {emailPreviewSubject || 'Email'}

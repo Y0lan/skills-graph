@@ -52,7 +52,10 @@ function AlertDialogContent({
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(
-          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 ring-1 ring-foreground/10 duration-100 outline-none max-h-[90vh] overflow-y-auto data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=lg]:max-w-lg data-[size=xl]:max-w-2xl data-[size=2xl]:max-w-4xl data-[size=default]:sm:max-w-sm data-[size=lg]:sm:max-w-lg data-[size=xl]:sm:max-w-2xl data-[size=2xl]:sm:max-w-4xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Same universal scrollbar fix as DialogContent: overflow-x-hidden
+          // clips horizontal overflow, [&>*]:min-w-0 lets grid children
+          // shrink so truncate can take effect.
+          "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-background p-4 ring-1 ring-foreground/10 duration-100 outline-none max-h-[90vh] overflow-y-auto overflow-x-hidden [&>*]:min-w-0 data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=lg]:max-w-lg data-[size=xl]:max-w-2xl data-[size=2xl]:max-w-4xl data-[size=default]:sm:max-w-sm data-[size=lg]:sm:max-w-lg data-[size=xl]:sm:max-w-2xl data-[size=2xl]:sm:max-w-4xl data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
