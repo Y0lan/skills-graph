@@ -573,21 +573,14 @@ export default function CandidateDetailPage() {
             status badges below (they communicate pipeline meta, not
             profile data).
         */}
-        {(() => {
-          // Status badges + Rouvrir button. When the AI profile card already
-          // owns the hero, drop the empty flex spacer so the badges don't
-          // float in mid-air — render them as a tight right-aligned row
-          // tucked under the card above instead.
-          const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
-          const hasBadge = awaitingRadar || !!candidate.submittedAt
-          const hasReopen = !!candidate.submittedAt
-          const hasAny = hasBadge || hasReopen
-          if (candidate.aiProfile && !hasAny) return null
-          return (
-        <div className={candidate.aiProfile
-          ? 'flex justify-end items-center gap-2 flex-wrap -mt-3'
-          : 'flex items-start gap-4 flex-wrap'}>
-          {!candidate.aiProfile ? (
+        {/* Fallback hero for candidates without an aiProfile. When aiProfile
+            exists, CandidateProfileCard already owns the hero so this whole
+            row is dropped — the Skill Radar en attente badge now lives in
+            the per-candidature card header below (semantically: it's about
+            a specific candidature, not the candidate), and the Rouvrir
+            button lives next to it when the form has been submitted. */}
+        {!candidate.aiProfile && (
+          <div className="flex items-start gap-4 flex-wrap">
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
                 {candidate.name}
@@ -632,57 +625,8 @@ export default function CandidateDetailPage() {
                 )}
               </div>
             </div>
-          ) : null /* aiProfile owns the hero — see wrapper className above */}
-
-          {/* Status badges — keep only genuinely actionable signals. Dropped
-              the canal + "CV uploadé" chips: the per-candidature card below
-              already shows canal + date, and the Documents panel shows CV
-              presence directly. The Skill Radar chip only surfaces when it's
-              actionable. */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {(() => {
-              const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
-              if (awaitingRadar) {
-                return (
-                  <Badge variant="secondary" className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200" title="Le Skill Radar a été envoyé au candidat, on attend qu'il complète l'auto-évaluation">
-                    <Clock className="mr-1 h-3 w-3" /> Skill Radar en attente
-                  </Badge>
-                )
-              }
-              if (candidate.submittedAt && candidate.aiReport) {
-                return <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
-              }
-              if (candidate.submittedAt) {
-                return <Badge variant="default" className="bg-primary">Skill Radar soumis</Badge>
-              }
-              return null
-            })()}
-            {candidate.submittedAt && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
-                    method: 'POST',
-                    credentials: 'include',
-                  })
-                  if (res.ok) {
-                    toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
-                    window.location.reload()
-                  } else {
-                    toast.error('Erreur lors de la reouverture')
-                  }
-                }}
-                className="gap-1.5 h-7"
-              >
-                <RotateCcw className="h-3 w-3" />
-                Rouvrir
-              </Button>
-            )}
           </div>
-        </div>
-          )
-        })()}
+        )}
 
         {/* ── 2. PER-CANDIDATURE: STEPPER + SCORES + DOSSIER + ACTIONS ── */}
         {candidatures.map(c => {
@@ -694,16 +638,71 @@ export default function CandidateDetailPage() {
           return (
             <Card key={c.id} className="mt-6">
               <CardContent className="py-5 px-5 space-y-5">
-                {/* Candidature context */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <p className="text-sm font-medium">{c.posteTitre}</p>
-                  <Badge variant="secondary" className={`text-xs ${STATUT_COLORS[c.statut] ?? ''}`}>
-                    {STATUT_LABELS[c.statut] ?? c.statut}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
-                  </span>
-                </div>
+                {/* Candidature context. Pending-radar + Submitted /
+                    Analyse / Rouvrir badges live here next to the statut
+                    instead of floating above in empty space between the
+                    profile card and this one. Semantically: these are
+                    per-candidature signals, not candidate-level. */}
+                {(() => {
+                  const awaitingRadar = isPending && c.statut === 'skill_radar_envoye'
+                  const submitted = !!candidate.submittedAt
+                  const analysed = submitted && !!candidate.aiReport
+                  return (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <p className="text-sm font-medium">{c.posteTitre}</p>
+                      {awaitingRadar ? (
+                        // Merged badge: the statut itself already says
+                        // "Skill Radar envoyé", so tack the pending state
+                        // onto the same pill with a clock icon + amber
+                        // tint instead of rendering a second badge that
+                        // says the same thing in different words.
+                        <Badge
+                          variant="secondary"
+                          className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                          title="Le Skill Radar a été envoyé au candidat, on attend qu'il complète l'auto-évaluation"
+                        >
+                          <Clock className="mr-1 h-3 w-3" />
+                          Skill Radar envoyé · en attente de réponse
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className={`text-xs ${STATUT_COLORS[c.statut] ?? ''}`}>
+                          {STATUT_LABELS[c.statut] ?? c.statut}
+                        </Badge>
+                      )}
+                      {!awaitingRadar && analysed && (
+                        <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
+                      )}
+                      {!awaitingRadar && submitted && !analysed && (
+                        <Badge variant="default" className="bg-primary">Skill Radar soumis</Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
+                      </span>
+                      {submitted && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
+                              method: 'POST',
+                              credentials: 'include',
+                            })
+                            if (res.ok) {
+                              toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
+                              window.location.reload()
+                            } else {
+                              toast.error('Erreur lors de la reouverture')
+                            }
+                          }}
+                          className="gap-1.5 h-7 ml-auto"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          Rouvrir
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* Scheduled-email banner — shows whenever a candidate-facing
                     email is queued at Resend but hasn't fired yet. Lets the
