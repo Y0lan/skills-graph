@@ -175,7 +175,15 @@ export function useTransitionState(
         try {
           const formData = new FormData()
           formData.append('file', transitionFile)
-          formData.append('type', targetStatut === 'aboro' ? 'aboro' : 'document')
+          // Server rejects unknown doc types (ALLOWED_DOC_TYPES whitelist:
+          // cv / lettre / aboro / entretien / proposition / administratif /
+          // other). Map transition types to a valid bucket so the upload
+          // doesn't silently 400 — that bug masqueraded as "upload échoué".
+          const docType = targetStatut === 'aboro' ? 'aboro'
+            : targetStatut === 'proposition' ? 'proposition'
+            : targetStatut.startsWith('entretien') ? 'entretien'
+            : 'other'
+          formData.append('type', docType)
           const fileRes = await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
             method: 'POST',
             credentials: 'include',
@@ -256,9 +264,16 @@ export function useTransitionState(
         return
       }
 
-      toast.success(transitionStatusApplied
-        ? 'Document uploadé'
-        : `Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`)
+      // Toast must reflect what actually happened. Three flavours:
+      //   - First-time success with file:   "Statut changé"
+      //   - First-time success without file: "Statut changé"
+      //   - Retry with file uploaded:       "Document uploadé"
+      //   - Retry with NO file (user cleared it): "Boîte fermée — statut déjà changé"
+      //     (otherwise we used to lie with a "Document uploadé" badge.)
+      const toastMsg = transitionStatusApplied
+        ? (transitionFile ? 'Document uploadé' : 'Statut déjà changé — fermeture de la boîte')
+        : `Statut changé : ${STATUT_LABELS[targetStatut] ?? targetStatut}`
+      toast.success(toastMsg)
       setTransitionDialog(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erreur lors du changement de statut')

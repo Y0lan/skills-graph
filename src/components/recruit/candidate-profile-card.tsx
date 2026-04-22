@@ -472,7 +472,7 @@ export default function CandidateProfileCard({
             {hasContactCard ? (
               <SidebarCard icon={<Mail className="h-3.5 w-3.5" />} title="Contact">
                 {sidebarRow('Email', profile.contact.email)}
-                {sidebarRow('Téléphone', profile.contact.phone)}
+                {sidebarRow('Téléphone', profile.contact.phone, v => formatPhone(String(v)))}
                 {sidebarRow('LinkedIn', profile.contact.linkedinUrl)}
                 {sidebarRow('GitHub', profile.contact.githubUrl)}
                 {sidebarRow('Portfolio', profile.contact.portfolioUrl)}
