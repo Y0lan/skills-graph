@@ -305,17 +305,23 @@ function attachDocsToTransitions(
       byEventId.get(doc.event_id)!.push(doc)
       continue
     }
-    // Fallback for legacy rows (pre-migration): 60s window after the most
-    // recent status_change. Kept to not orphan historical uploads.
+    // Fallback for legacy rows (pre event_id wiring): attach to the
+    // NEAREST transition within ±60s. Symmetric on purpose — old
+    // transition dialogs uploaded BEFORE the status PATCH, new ones
+    // upload AFTER, so a one-sided window misses half the legacy data.
     const docTs = parseUtcMs(doc.created_at)
-    let parent: { id: number; ts: number } | null = null
+    let bestParent: { id: number; ts: number } | null = null
+    let bestDistance = Infinity
     for (const t of transitions) {
-      if (t.ts <= docTs && docTs - t.ts <= ATTACHED_DOC_WINDOW_MS) parent = t
-      else if (t.ts > docTs) break
+      const d = Math.abs(t.ts - docTs)
+      if (d <= ATTACHED_DOC_WINDOW_MS && d < bestDistance) {
+        bestParent = t
+        bestDistance = d
+      }
     }
-    if (parent) {
-      if (!byEventId.has(parent.id)) byEventId.set(parent.id, [])
-      byEventId.get(parent.id)!.push(doc)
+    if (bestParent) {
+      if (!byEventId.has(bestParent.id)) byEventId.set(bestParent.id, [])
+      byEventId.get(bestParent.id)!.push(doc)
     } else {
       unattached.push(doc)
     }
