@@ -80,6 +80,11 @@ export function useTransitionState(
   // Confirm click must NOT re-PATCH (server would 409 on stale currentStatut
   // and the state machine would reject the same-statut transition).
   const [transitionStatusApplied, setTransitionStatusApplied] = useState(false)
+  // The candidature_events row id emitted by the successful PATCH /status.
+  // Carried so a retry-upload after a failed upload can still stamp the same
+  // event id on the document, and the per-stage history can attach the doc
+  // to its transition row deterministically.
+  const [appliedStatusEventId, setAppliedStatusEventId] = useState<number | null>(null)
 
   // Fetch email template when dialog opens
   useEffect(() => {
@@ -143,12 +148,14 @@ export function useTransitionState(
     setTransitionEmailLoading(false)
     setTransitionFileError(null)
     setTransitionStatusApplied(false)
+    setAppliedStatusEventId(null)
   }, [allowedTransitions])
 
   const closeTransitionDialog = useCallback(() => {
     setTransitionDialog(null)
     setTransitionFileError(null)
     setTransitionStatusApplied(false)
+    setAppliedStatusEventId(null)
   }, [])
 
   const confirmTransition = useCallback(async () => {
@@ -166,6 +173,10 @@ export function useTransitionState(
 
     setChangingStatus(true)
     setTransitionFileError(null)
+    // Local mirror of appliedStatusEventId so the upload block below picks
+    // up the id just minted by the PATCH in the same call — the state
+    // setter queues the update for the next render.
+    let statusEventIdLocal: number | null = appliedStatusEventId
     try {
       // PATCH status FIRST, THEN upload. This ordering matters for the
       // per-stage history view: if we upload before the status_change row is
@@ -198,6 +209,11 @@ export function useTransitionState(
           const err = await res.json()
           throw new Error(err.error || 'Erreur')
         }
+        const body = await res.json() as { statusEventId?: number | null }
+        if (typeof body.statusEventId === 'number') {
+          statusEventIdLocal = body.statusEventId
+          setAppliedStatusEventId(body.statusEventId)
+        }
         setTransitionStatusApplied(true)
       }
 
@@ -219,6 +235,11 @@ export function useTransitionState(
             : targetStatut.startsWith('entretien') ? 'entretien'
             : 'other'
           formData.append('type', docType)
+          // Stamp the upload with the status_change event that caused it so
+          // the per-stage history can attach the doc to its transition row
+          // deterministically (no timestamp guessing). Server validates the
+          // event id belongs to this candidature.
+          if (statusEventIdLocal) formData.append('eventId', String(statusEventIdLocal))
           const fileRes = await fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, {
             method: 'POST',
             credentials: 'include',
@@ -241,22 +262,30 @@ export function useTransitionState(
         c.id === candidatureId ? { ...c, statut: targetStatut } : c
       ))
 
-      // Refresh events + transitions
-      const [detail, transitions] = await Promise.all([
+      // Refresh events + transitions + documents. The detail endpoint does
+      // NOT return documents, so fetch /documents explicitly — otherwise
+      // candidatureDataMap.documents stays stale and the per-stage history
+      // never sees the file we just uploaded.
+      const [detail, transitions, freshDocs] = await Promise.all([
         fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json()),
         fetch(`/api/recruitment/candidatures/${candidatureId}/transitions`, { credentials: 'include' }).then(r => r.json()),
+        fetch(`/api/recruitment/candidatures/${candidatureId}/documents`, { credentials: 'include' })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null),
       ])
       if (detail?.events) setEvents(detail.events)
       if (transitions) setAllowedTransitions(transitions)
       // Also refresh the per-candidature map the stepper reads from — otherwise
       // the UI shows stale events/transitions until a manual reload.
-      if (setCandidatureDataMap && (detail?.events || transitions || detail?.documents)) {
+      if (setCandidatureDataMap) {
         setCandidatureDataMap(prev => ({
           ...prev,
           [candidatureId]: {
             events: detail?.events ?? prev[candidatureId]?.events ?? [],
             allowedTransitions: transitions ?? prev[candidatureId]?.allowedTransitions ?? null,
-            documents: detail?.documents ?? prev[candidatureId]?.documents ?? [],
+            documents: Array.isArray(freshDocs)
+              ? freshDocs
+              : detail?.documents ?? prev[candidatureId]?.documents ?? [],
           },
         }))
       }
@@ -290,7 +319,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, transitionStatusApplied, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, transitionStatusApplied, appliedStatusEventId, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
   return {
     changingStatus,

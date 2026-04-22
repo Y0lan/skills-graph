@@ -273,9 +273,17 @@ function NoteContent({ content }: { content: string }) {
 }
 
 /** Documents uploaded within this window after a status_change event are
- *  treated as attached to that transition (the transition dialog PATCHes
- *  status then uploads the file — typical round-trip is 500ms-2s). */
+ *  treated as attached to that transition. Only used as a legacy fallback
+ *  for rows without event_id (new uploads carry the id explicitly). */
 const ATTACHED_DOC_WINDOW_MS = 60_000
+
+/** Parse SQLite-style "YYYY-MM-DD HH:MM:SS" (no timezone) as UTC, same as
+ *  Date's native handling for ISO strings. Without this, new Date(str)
+ *  interprets it as LOCAL time and comparisons against ISO timestamps
+ *  drift by the local TZ offset — blowing past the 60s attach window. */
+function parseUtcMs(s: string): number {
+  return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z').getTime()
+}
 
 function attachDocsToTransitions(
   timelineEvents: CandidatureEvent[],
@@ -283,13 +291,23 @@ function attachDocsToTransitions(
 ): { byEventId: Map<number, CandidatureDocument[]>; unattached: CandidatureDocument[] } {
   const byEventId = new Map<number, CandidatureDocument[]>()
   const unattached: CandidatureDocument[] = []
+  const eventIdsInStage = new Set(timelineEvents.map(e => e.id))
   const transitions = timelineEvents
     .filter(e => e.type === 'status_change')
-    .map(e => ({ id: e.id, ts: new Date(e.createdAt).getTime() }))
+    .map(e => ({ id: e.id, ts: parseUtcMs(e.createdAt) }))
     .sort((a, b) => a.ts - b.ts)
+
   for (const doc of stageDocs) {
-    const docTs = new Date(doc.created_at).getTime()
-    // Pick the most recent transition whose ts <= docTs AND within the window.
+    // Primary link: candidature_documents.event_id, populated by the
+    // transition dialog. Deterministic — no timestamp guessing needed.
+    if (doc.event_id && eventIdsInStage.has(doc.event_id)) {
+      if (!byEventId.has(doc.event_id)) byEventId.set(doc.event_id, [])
+      byEventId.get(doc.event_id)!.push(doc)
+      continue
+    }
+    // Fallback for legacy rows (pre-migration): 60s window after the most
+    // recent status_change. Kept to not orphan historical uploads.
+    const docTs = parseUtcMs(doc.created_at)
     let parent: { id: number; ts: number } | null = null
     for (const t of transitions) {
       if (t.ts <= docTs && docTs - t.ts <= ATTACHED_DOC_WINDOW_MS) parent = t
@@ -372,8 +390,28 @@ function EventRow({
           </Badge>
         )}
         {isEmailSent && <EmailDeliveryBadges messageId={messageId} deliveryMap={deliveryMap} />}
-        {event.notes && <span className="text-foreground">{event.notes}</span>}
+        {/* Short notes on non-status events (email send descriptions etc.)
+            stay inline. Status-change notes get the full quoted-block
+            treatment below so typed-in transition notes are readable
+            even when multi-line. */}
+        {event.notes && event.type !== 'status_change' && (
+          <span className="text-foreground">{event.notes}</span>
+        )}
       </div>
+
+      {/* Transition notes — the free-text field from the transition dialog
+          lands here as status_change.notes. Rendered as a bordered card
+          under the event line so multi-line notes are actually readable
+          (used to be a squished inline <span>). */}
+      {event.type === 'status_change' && event.notes && (
+        <div className="mt-2 ml-7 rounded-md border bg-muted/20 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
+            <MessageSquare className="h-3 w-3" />
+            Note de transition
+          </p>
+          <NoteContent content={event.notes} />
+        </div>
+      )}
 
       {/* Markdown content */}
       {event.contentMd && <NoteContent content={event.contentMd} />}
@@ -511,9 +549,14 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
           // Build a scannable count line, e.g. "2 transitions · 1 note · 3 documents".
           // Readable text beats three ambiguous icon+number pills (codex
           // design P1: "compact but ambiguous and visually fussy").
+          // Notes come from two places: standalone note events (contentMd)
+          // AND the free-text field on transition events. Count both so
+          // the pill is honest.
+          const transitionNoteCount = group.events.filter(e => e.type === 'status_change' && !!e.notes).length
+          const totalNotes = noteEvents.length + transitionNoteCount
           const countParts: string[] = []
           if (visibleTimelineCount > 0) countParts.push(`${visibleTimelineCount} transition${visibleTimelineCount > 1 ? 's' : ''}`)
-          if (noteEvents.length > 0) countParts.push(`${noteEvents.length} note${noteEvents.length > 1 ? 's' : ''}`)
+          if (totalNotes > 0) countParts.push(`${totalNotes} note${totalNotes > 1 ? 's' : ''}`)
           if (group.documents.length > 0) countParts.push(`${group.documents.length} document${group.documents.length > 1 ? 's' : ''}`)
           return (
             <AccordionItem key={group.statut} value={index} className={isCurrent ? 'border-l-2 border-l-primary pl-1 -ml-[2px]' : undefined}>

@@ -966,6 +966,12 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
 
   const user = getUser(req)
 
+  // Captured inside the tx, surfaced in the response so the transition
+  // dialog can stamp the same id on the follow-up file upload — that's
+  // what lets the per-stage history card attach the document to its
+  // transition row deterministically (no timestamp guessing).
+  let statusEventId: number | null = null
+
   try {
     getDb().transaction(() => {
       const result = getDb().prepare(
@@ -985,10 +991,11 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         eventNotes = `${eventNotes ? eventNotes + '\n' : ''}[Email non envoyé — raison: ${skipEmailReason.trim()}]`
       }
 
-      getDb().prepare(`
+      const inserted = getDb().prepare(`
         INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
+      statusEventId = Number(inserted.lastInsertRowid)
     })()
 
     // Item 8: publish to the event bus so any open SSE stream refreshes
@@ -1193,7 +1200,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     }
   }
 
-  res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip, emailSent })
+  res.json({ ok: true, previousStatut: current.statut, newStatut: statut, skipped: isSkip, emailSent, statusEventId })
 })
 
 // Add note to candidature
@@ -1584,6 +1591,17 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
     const docType = rawType.replace(/[^a-zA-Z0-9_-]/g, '_')
     const user = getUser(req)
 
+    // Optional link back to the candidature_event that triggered the upload
+    // (the transition dialog passes the status_change event id here).
+    // Validated against this candidature to prevent cross-linking.
+    let linkedEventId: number | null = null
+    const rawEventId = parsed.fields.eventId
+    if (rawEventId && /^\d+$/.test(rawEventId)) {
+      const candidate = Number(rawEventId)
+      const hit = getDb().prepare('SELECT id FROM candidature_events WHERE id = ? AND candidature_id = ?').get(candidate, req.params.id) as { id: number } | undefined
+      if (hit) linkedEventId = candidate
+    }
+
     // For slot types, find the existing active doc to supersede.
     const previousActive = SLOT_TYPES.has(docType)
       ? getDb().prepare(
@@ -1596,6 +1614,7 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
       file,
       docType,
       userSlug: user.slug || 'unknown',
+      eventId: linkedEventId,
     })
 
     // Link replacement and soft-delete the old slot, atomically.
@@ -1625,12 +1644,13 @@ protectedRouter.post('/candidatures/:id/documents', uploadRateLimit, async (req,
 // per-slot supersede history. Used by the candidate detail page document panel.
 protectedRouter.get('/candidatures/:id/documents/slots', (req, res) => {
   const all = getDb().prepare(`
-    SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status, deleted_at, replaces_document_id
+    SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status, deleted_at, replaces_document_id, event_id
     FROM candidature_documents WHERE candidature_id = ? ORDER BY created_at DESC
   `).all(req.params.id) as Array<{
     id: string; type: string; filename: string; display_filename: string | null;
     uploaded_by: string; created_at: string; scan_status: string | null;
-    deleted_at: string | null; replaces_document_id: string | null
+    deleted_at: string | null; replaces_document_id: string | null;
+    event_id: number | null
   }>
 
   const active = (type: string) =>
@@ -1659,9 +1679,9 @@ protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
 // List documents for a candidature
 protectedRouter.get('/candidatures/:id/documents', (req, res) => {
   const includeDeleted = req.query.deleted === '1'
-  const baseSql = 'SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status, deleted_at FROM candidature_documents WHERE candidature_id = ?'
+  const baseSql = 'SELECT id, type, filename, display_filename, uploaded_by, created_at, scan_status, deleted_at, event_id FROM candidature_documents WHERE candidature_id = ?'
   const sql = includeDeleted ? baseSql + ' ORDER BY created_at DESC' : baseSql + ' AND deleted_at IS NULL ORDER BY created_at DESC'
-  const docs = getDb().prepare(sql).all(req.params.id) as { id: string; type: string; filename: string; display_filename: string | null; uploaded_by: string; created_at: string; scan_status: string | null; deleted_at: string | null }[]
+  const docs = getDb().prepare(sql).all(req.params.id) as { id: string; type: string; filename: string; display_filename: string | null; uploaded_by: string; created_at: string; scan_status: string | null; deleted_at: string | null; event_id: number | null }[]
 
   res.json(docs)
 })

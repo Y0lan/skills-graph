@@ -207,17 +207,17 @@ export default function CandidatePipelineStepper({ candidature, events }: Candid
             <HelpCircle className="h-3.5 w-3.5" />
             <span className="text-[11px]">Légende des étapes</span>
           </TooltipTrigger>
-          <TooltipContent className="w-80 max-w-[min(22rem,calc(100vw-2rem))] text-xs p-3 space-y-1.5">
+          <TooltipContent side="bottom" align="end" className="w-80 max-w-[calc(100vw-2rem)] text-xs p-3 space-y-1.5">
             <p className="font-medium mb-1">Les 9 étapes du pipeline</p>
             {COLUMN_ORDER.map(s => (
-              <div key={s} className="grid grid-cols-[7rem_1fr] gap-2">
+              <div key={s} className="grid w-full min-w-0 grid-cols-[7rem_minmax(0,1fr)] gap-2">
                 <span className="font-medium">{STATUT_LABELS[s]}</span>
-                <span className="text-muted-foreground leading-snug">{STATUT_DESCRIPTIONS[s]}</span>
+                <span className="min-w-0 break-words leading-snug text-muted-foreground">{STATUT_DESCRIPTIONS[s]}</span>
               </div>
             ))}
-            <div className="grid grid-cols-[7rem_1fr] gap-2 pt-1 border-t">
+            <div className="grid w-full min-w-0 grid-cols-[7rem_minmax(0,1fr)] gap-2 pt-1 border-t">
               <span className="font-medium text-red-600 dark:text-red-400">{STATUT_LABELS.refuse}</span>
-              <span className="text-muted-foreground leading-snug">{STATUT_DESCRIPTIONS.refuse}</span>
+              <span className="min-w-0 break-words leading-snug text-muted-foreground">{STATUT_DESCRIPTIONS.refuse}</span>
             </div>
             <p className="pt-2 text-[11px] text-muted-foreground/80 leading-snug">
               <strong>Transitions :</strong> avance normale (« Action suivante »), saut (ex. « sauter Skill Radar envoyé »), annulation (dans les 10 min) ou refus.

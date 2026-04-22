@@ -81,6 +81,11 @@ export interface CandidatureDocument {
   scanned_at?: string
   deleted_at?: string | null
   size_bytes?: number | null
+  /** Links the doc back to the candidature_event that produced it.
+   *  Populated by the transition dialog so the per-stage history can
+   *  render the doc inline under its transition row. Null for ad-hoc
+   *  uploads and legacy rows. */
+  event_id?: number | null
 }
 
 export interface AboroProfile {

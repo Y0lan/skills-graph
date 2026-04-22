@@ -478,6 +478,32 @@ async function wrapInEmailLayout(htmlContent: string): Promise<string> {
  * endpoint (Item 16), the /dev/emails inspector route (Item 17), and the
  * AI body wrapper (Item 18). Returns null when the statut has no template.
  */
+/** Replace the first CTA-style anchor (text contains "Commencer l'évaluation"
+ *  or "Compléter mon Skill Radar", etc.) with a centred, table-wrapped
+ *  inline-styled button. Email clients ignore most CSS — inline styles on
+ *  a `<table>` + `<a>` is the combo that works everywhere from Gmail to
+ *  Outlook 2016.
+ *
+ *  Only runs for the skill_radar_envoye transition: other transitions'
+ *  links stay as normal hyperlinks. */
+function promoteCtaLink(html: string, statut: string): string {
+  if (statut !== 'skill_radar_envoye') return html
+  const ctaPatterns = /(Commencer l['’]évaluation|Compléter mon Skill Radar|Démarrer l['’]auto[- ]évaluation)/i
+  const anchorRe = /<a\s+href="([^"]+)"\s*>([^<]+)<\/a>/i
+  return html.replace(anchorRe, (match, href: string, text: string) => {
+    if (!ctaPatterns.test(text)) return match
+    const cleanText = text.trim()
+    return `
+<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:28px auto;">
+  <tr>
+    <td align="center" bgcolor="#2563eb" style="background-color:#2563eb;border-radius:8px;">
+      <a href="${href}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 28px;color:#ffffff;background-color:#2563eb;border-radius:8px;text-decoration:none;font-weight:600;font-size:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">${cleanText}</a>
+    </td>
+  </tr>
+</table>`
+  })
+}
+
 export async function renderTransitionEmail(opts: {
   candidateName: string
   role: string
@@ -490,7 +516,15 @@ export async function renderTransitionEmail(opts: {
   if (opts.customBody) {
     const rawHtml = await marked.parse(opts.customBody)
     const cleanHtml = sanitizeHtml(rawHtml, SANITIZE_OPTIONS)
-    const html = await wrapInEmailLayout(cleanHtml)
+    // Promote the CTA link into a proper button. The recruiter's editable
+    // body renders via markdown → `<a>` is a plain hyperlink and the
+    // sanitizer strips style attributes, so we can't pre-style the anchor.
+    // Post-process: find anchors whose text looks like a CTA and wrap them
+    // in a table-row with inline styles (the only thing email clients can
+    // be trusted to respect). Table layout is deliberate — Outlook ignores
+    // padding on divs.
+    const withCta = promoteCtaLink(cleanHtml, opts.statut)
+    const html = await wrapInEmailLayout(withCta)
     const template = getEmailTemplate(opts.statut, {
       candidateName: opts.candidateName,
       role: opts.role,

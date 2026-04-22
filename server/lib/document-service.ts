@@ -17,6 +17,10 @@ interface UploadDocumentParams {
   file: { buffer: Buffer; mimetype: string; filename: string }
   docType: string
   userSlug: string
+  /** Optional link to the candidature_event that produced this upload.
+   *  Populated by the transition dialog so the per-stage history can
+   *  attach the doc to its transition row deterministically. */
+  eventId?: number | null
 }
 
 interface UploadDocumentResult {
@@ -27,7 +31,7 @@ interface UploadDocumentResult {
 }
 
 export async function uploadDocument(params: UploadDocumentParams): Promise<UploadDocumentResult> {
-  const { candidatureId, file, docType, userSlug } = params
+  const { candidatureId, file, docType, userSlug, eventId } = params
 
   // Save file to GCS
   const safeFilename = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -68,12 +72,15 @@ export async function uploadDocument(params: UploadDocumentParams): Promise<Uplo
     displayFilename = candidateName ? buildCanonicalFilename(candidateName, file.filename) : null
   }
 
-  // Save metadata (path is now gs://bucket/prefix/candidatureId/filename)
+  // Save metadata (path is now gs://bucket/prefix/candidatureId/filename).
+  // event_id links the doc to the candidature_event that caused the upload
+  // — populated by the transition dialog so the per-stage history can show
+  // the doc inline under its transition row.
   const docId = crypto.randomUUID()
   getDb().prepare(`
-    INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by, display_filename)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(docId, candidatureId, docType, file.filename, storedPath, userSlug, displayFilename)
+    INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by, display_filename, event_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(docId, candidatureId, docType, file.filename, storedPath, userSlug, displayFilename, eventId ?? null)
 
   // Log event
   getDb().prepare(`
