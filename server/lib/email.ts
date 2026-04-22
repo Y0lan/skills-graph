@@ -304,8 +304,8 @@ export async function sendTransitionNotification(opts: {
 
   switch (opts.statut) {
     case 'preselectionne':
-      subject = `Votre candidature a été retenue — ${opts.role}`
-      bodyHtml = `Bonne nouvelle ! Votre profil a retenu notre attention pour le poste de <strong>${escapeHtml(opts.role)}</strong>. Nous reviendrons vers vous pour la suite.`
+      subject = `Votre candidature a été présélectionnée — ${opts.role}`
+      bodyHtml = `Nous vous informons que votre candidature pour le poste de <strong>${escapeHtml(opts.role)}</strong> a été présélectionnée pour la suite du processus. L'évaluation se poursuit avec d'autres candidats. Nous reviendrons vers vous dès que nous aurons avancé dans notre sélection.`
       break
     case 'entretien_1':
     case 'entretien_2':
@@ -376,8 +376,8 @@ export function getEmailTemplate(statut: string, context: {
       }
     case 'preselectionne':
       return {
-        subject: `Votre candidature a été retenue — ${role}`,
-        body: `Bonjour ${candidateName},\n\nBonne nouvelle ! Votre profil a retenu notre attention pour le poste de **${role}**. Nous reviendrons vers vous pour la suite.\n\nCordialement,\nL'équipe SINAPSE`,
+        subject: `Votre candidature a été présélectionnée — ${role}`,
+        body: `Bonjour ${candidateName},\n\nNous vous informons que votre candidature pour le poste de **${role}** a été présélectionnée pour la suite du processus.\n\nL'évaluation se poursuit avec d'autres candidats. Nous reviendrons vers vous dès que nous aurons avancé dans notre sélection.\n\nCordialement,\nL'équipe SINAPSE`,
       }
     case 'entretien_1':
     case 'entretien_2':
@@ -438,8 +438,8 @@ async function buildDefaultHtml(statut: string, context: {
 
   switch (statut) {
     case 'preselectionne':
-      subject = `Votre candidature a été retenue — ${role}`
-      bodyHtml = `Bonne nouvelle ! Votre profil a retenu notre attention pour le poste de <strong>${escapeHtml(role)}</strong>. Nous reviendrons vers vous pour la suite.`
+      subject = `Votre candidature a été présélectionnée — ${role}`
+      bodyHtml = `Nous vous informons que votre candidature pour le poste de <strong>${escapeHtml(role)}</strong> a été présélectionnée pour la suite du processus. L'évaluation se poursuit avec d'autres candidats. Nous reviendrons vers vous dès que nous aurons avancé dans notre sélection.`
       break
     case 'entretien_1':
     case 'entretien_2':
