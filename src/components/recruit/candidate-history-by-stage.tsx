@@ -272,7 +272,50 @@ function NoteContent({ content }: { content: string }) {
   )
 }
 
-function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap: Map<string, Set<string>> }) {
+/** Documents uploaded within this window after a status_change event are
+ *  treated as attached to that transition (the transition dialog PATCHes
+ *  status then uploads the file — typical round-trip is 500ms-2s). */
+const ATTACHED_DOC_WINDOW_MS = 60_000
+
+function attachDocsToTransitions(
+  timelineEvents: CandidatureEvent[],
+  stageDocs: CandidatureDocument[],
+): { byEventId: Map<number, CandidatureDocument[]>; unattached: CandidatureDocument[] } {
+  const byEventId = new Map<number, CandidatureDocument[]>()
+  const unattached: CandidatureDocument[] = []
+  const transitions = timelineEvents
+    .filter(e => e.type === 'status_change')
+    .map(e => ({ id: e.id, ts: new Date(e.createdAt).getTime() }))
+    .sort((a, b) => a.ts - b.ts)
+  for (const doc of stageDocs) {
+    const docTs = new Date(doc.created_at).getTime()
+    // Pick the most recent transition whose ts <= docTs AND within the window.
+    let parent: { id: number; ts: number } | null = null
+    for (const t of transitions) {
+      if (t.ts <= docTs && docTs - t.ts <= ATTACHED_DOC_WINDOW_MS) parent = t
+      else if (t.ts > docTs) break
+    }
+    if (parent) {
+      if (!byEventId.has(parent.id)) byEventId.set(parent.id, [])
+      byEventId.get(parent.id)!.push(doc)
+    } else {
+      unattached.push(doc)
+    }
+  }
+  return { byEventId, unattached }
+}
+
+function EventRow({
+  event,
+  deliveryMap,
+  attachedDocs,
+  onPreviewDoc,
+}: {
+  event: CandidatureEvent
+  deliveryMap: Map<string, Set<string>>
+  attachedDocs?: CandidatureDocument[]
+  onPreviewDoc?: (d: CandidatureDocument) => void
+}) {
   const isDocument = event.type === 'document'
   const isEmailSent = event.type === 'email_sent'
   const messageId = extractMessageId(event.emailSnapshot)
@@ -334,6 +377,18 @@ function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap
 
       {/* Markdown content */}
       {event.contentMd && <NoteContent content={event.contentMd} />}
+
+      {/* Attached documents — docs uploaded within ~1min of this transition
+          are treated as "added while moving to this stage" and surfaced
+          inline so the recruiter sees exactly which file goes with which
+          action instead of hunting the separate documents panel. */}
+      {attachedDocs && attachedDocs.length > 0 && onPreviewDoc && (
+        <div className="mt-2 ml-7 grid gap-0.5">
+          {attachedDocs.map(d => (
+            <DocumentCard key={d.id} doc={d} onPreview={onPreviewDoc} />
+          ))}
+        </div>
+      )}
 
       {/* Email snapshot as bordered inline preview */}
       {event.emailSnapshot && <EmailInlinePreview snapshot={event.emailSnapshot} />}
@@ -447,6 +502,11 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
           const visibleTimelineCount = timelineEvents.filter(e =>
             !isDeliverability(e.type) && !isRedundantUpload(e)
           ).length
+          // Match each document to the transition that produced it (doc
+          // uploaded within 60s after a status_change lands in that event).
+          // Unattached docs (ad-hoc uploads outside the transition dialog)
+          // fall into the "Autres documents" section at the bottom.
+          const { byEventId: docsByEvent, unattached: unattachedDocs } = attachDocsToTransitions(timelineEvents, group.documents)
           const isCurrent = group.statut === currentStatut
           // Build a scannable count line, e.g. "2 transitions · 1 note · 3 documents".
           // Readable text beats three ambiguous icon+number pills (codex
@@ -481,9 +541,11 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
               </AccordionTrigger>
               <AccordionContent className="px-2">
                 <div className="space-y-4">
-                  {/* Transitions + emails — labeled like the other sections so
-                      the stage content reads as three consistent blocks
-                      rather than "leftovers followed by notes and docs". */}
+                  {/* Transitions + emails — each transition carries its
+                      attached document(s) inline below it (see attachDocsTo
+                      Transitions for the time-window match). Reads as a
+                      single action-by-action journal instead of three
+                      disconnected sections. */}
                   {visibleTimelineCount > 0 && (
                     <div className="space-y-1">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
@@ -492,7 +554,13 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                       </h5>
                       <div className="divide-y">
                         {[...timelineEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(e => (
-                          <EventRow key={e.id} event={e} deliveryMap={deliveryMap} />
+                          <EventRow
+                            key={e.id}
+                            event={e}
+                            deliveryMap={deliveryMap}
+                            attachedDocs={docsByEvent.get(e.id)}
+                            onPreviewDoc={openPreview}
+                          />
                         ))}
                       </div>
                     </div>
@@ -517,15 +585,18 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                     </div>
                   )}
 
-                  {/* Documents — previewable + downloadable */}
-                  {group.documents.length > 0 && (
+                  {/* Documents that weren't tied to a specific transition
+                      (ad-hoc uploads via the main Documents panel while in
+                      this stage). Most docs attach to a transition above
+                      and never land here. */}
+                  {unattachedDocs.length > 0 && (
                     <div className="space-y-2">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
                         <FileText className="h-3 w-3" />
-                        Documents ({group.documents.length})
+                        Autres documents ({unattachedDocs.length})
                       </h5>
                       <div className="grid gap-1">
-                        {[...group.documents].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(d => (
+                        {[...unattachedDocs].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(d => (
                           <DocumentCard key={d.id} doc={d} onPreview={openPreview} />
                         ))}
                       </div>
