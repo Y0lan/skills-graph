@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
-import { sendCandidateDeclined, sendTransitionEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
+import { sendCandidateDeclined, sendTransitionEmail, cancelScheduledEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
 import { previewizeEmailHtml } from '../lib/brand.js'
 import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
 import { loadEffectiveRatings, rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
@@ -1006,6 +1006,11 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
       const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
       const userSlug = user.slug || 'unknown'
 
+      // Delay candidate-facing emails by REVERT_WINDOW_MS so the lead can
+      // undo the transition (and cancel the scheduled send) or force-send
+      // via POST /email/send-now. Resend holds the email on their side.
+      const scheduledAt = new Date(Date.now() + REVERT_WINDOW_MS).toISOString()
+
       try {
         const emailResult = await sendTransitionEmail({
           to: candidateInfo.email,
@@ -1018,6 +1023,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
           evaluationUrl: statut === 'skill_radar_envoye'
             ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
             : undefined,
+          scheduledAt,
         })
 
         emailSent = emailResult.sent
@@ -1032,11 +1038,25 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
               : undefined,
           })
 
+          const eventType = emailResult.scheduled ? 'email_scheduled' : 'email_sent'
+          const humanNote = emailResult.scheduled
+            ? `Email transition ${statut} programmé pour ${candidateInfo.email} (envoi dans 10 min)`
+            : `Email transition ${statut} envoyé à ${candidateInfo.email}`
+
           getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
-            VALUES (?, 'email_sent', ?, ?, ?)`).run(
+            VALUES (?, ?, ?, ?, ?)`).run(
             candidatureId,
-            `Email transition ${statut} envoyé à ${candidateInfo.email}`,
-            JSON.stringify({ subject: template?.subject, body: customBody || template?.body, messageId: emailResult.messageId, recipient: 'candidate', to: candidateInfo.email }),
+            eventType,
+            humanNote,
+            JSON.stringify({
+              subject: template?.subject,
+              body: customBody || template?.body,
+              messageId: emailResult.messageId,
+              recipient: 'candidate',
+              to: candidateInfo.email,
+              statut,
+              scheduledAt: emailResult.scheduled ? scheduledAt : undefined,
+            }),
             userSlug
           )
         }
@@ -1978,7 +1998,50 @@ protectedRouter.delete('/candidatures/:id', mutationRateLimit, (req, res) => {
 // trail keeps the full forward+back history.
 const REVERT_WINDOW_MS = 10 * 60 * 1000
 const TERMINAL_STATUTS = new Set(['embauche', 'refuse'])
-protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req, res) => {
+
+type PendingScheduledEmail = {
+  id: number
+  messageId: string | null
+  candidateEmail: string | null
+  statut: string | null
+}
+
+/** Return scheduled emails that were queued *after* a given candidature_event
+ *  id and haven't been superseded by an email_sent / email_cancelled /
+ *  email_failed event. Used by undo + send-now to find what Resend is
+ *  currently holding for this candidature. */
+function findPendingScheduledEmails(candidatureId: string, afterEventId: number): PendingScheduledEmail[] {
+  const rows = getDb().prepare(`
+    SELECT id, email_snapshot
+    FROM candidature_events
+    WHERE candidature_id = ?
+      AND type = 'email_scheduled'
+      AND id > ?
+    ORDER BY id DESC
+  `).all(candidatureId, afterEventId) as Array<{ id: number; email_snapshot: string | null }>
+
+  const out: PendingScheduledEmail[] = []
+  for (const row of rows) {
+    // Superseded if any later event targets this messageId.
+    const snap = row.email_snapshot ? JSON.parse(row.email_snapshot) as { messageId?: string; to?: string; statut?: string } : {}
+    const messageId = snap.messageId ?? null
+    if (messageId) {
+      const superseded = getDb().prepare(`
+        SELECT 1 FROM candidature_events
+        WHERE candidature_id = ?
+          AND type IN ('email_sent', 'email_cancelled', 'email_failed')
+          AND id > ?
+          AND json_extract(email_snapshot, '$.messageId') = ?
+        LIMIT 1
+      `).get(candidatureId, row.id, messageId)
+      if (superseded) continue
+    }
+    out.push({ id: row.id, messageId, candidateEmail: snap.to ?? null, statut: snap.statut ?? null })
+  }
+  return out
+}
+
+protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async (req, res) => {
   const lastEvent = getDb().prepare(`
     SELECT id, statut_from, statut_to, created_by, created_at
     FROM candidature_events
@@ -2012,11 +2075,16 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req,
     return
   }
 
-  // Block revert OUT of terminal statuses — too many side effects
-  // (embauche triggers onboarding, refuse sent a finality email).
-  if (TERMINAL_STATUTS.has(lastEvent.statut_to)) {
+  // Find pending scheduled emails attached to this transition. If a terminal
+  // status was reached but the email is still holding at Resend, we CAN undo —
+  // that's the whole point of the 10-min delay.
+  const pendingEmails = findPendingScheduledEmails(String(req.params.id), lastEvent.id)
+
+  // Block revert OUT of terminal statuses ONLY when the side-effect email has
+  // already gone out (no pending scheduled email to cancel).
+  if (TERMINAL_STATUTS.has(lastEvent.statut_to) && pendingEmails.length === 0) {
     res.status(422).json({
-      error: `Impossible d’annuler une transition vers "${lastEvent.statut_to}" (effets de bord engagés). Créez un nouveau changement de statut explicite.`,
+      error: `Impossible d’annuler une transition vers "${lastEvent.statut_to}" (email déjà envoyé). Créez un nouveau changement de statut explicite.`,
       statut_to: lastEvent.statut_to,
     })
     return
@@ -2036,6 +2104,20 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req,
     return
   }
 
+  // Cancel Resend-scheduled emails FIRST — if cancellation fails we must not
+  // revert the status, or we'd leave a ghost email scheduled to hit a
+  // candidate whose status has been walked back.
+  for (const pending of pendingEmails) {
+    if (!pending.messageId) continue
+    const ok = await cancelScheduledEmail(pending.messageId)
+    if (!ok) {
+      res.status(502).json({
+        error: `Impossible d’annuler l’email programmé (${pending.messageId}). Réessayez dans un instant.`,
+      })
+      return
+    }
+  }
+
   try {
     getDb().transaction(() => {
       const result = getDb().prepare(
@@ -2047,6 +2129,20 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req,
         INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, lastEvent.statut_from, `Annulation de la transition ${lastEvent.statut_from} → ${current.statut}`, user.slug || 'unknown')
+
+      // Record cancellation for every scheduled email we aborted.
+      for (const pending of pendingEmails) {
+        if (!pending.messageId) continue
+        getDb().prepare(`
+          INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+          VALUES (?, 'email_cancelled', ?, ?, ?)
+        `).run(
+          req.params.id,
+          `Email programmé annulé (${pending.statut ?? 'inconnu'} → ${pending.candidateEmail ?? ''})`,
+          JSON.stringify({ messageId: pending.messageId, to: pending.candidateEmail, statut: pending.statut, cancelledBy: 'revert-status' }),
+          user.slug || 'unknown'
+        )
+      }
     })()
   } catch (err) {
     if ((err as Error).message === 'REVERT_CONFLICT') {
@@ -2057,6 +2153,114 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, (req,
   }
 
   res.json({ ok: true, statut: lastEvent.statut_from })
+})
+
+// Send a scheduled candidate email immediately instead of waiting for the
+// 10-minute undo window. Cancels the Resend-side schedule, re-sends with no
+// scheduledAt, and records email_sent.
+protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, async (req, res) => {
+  const candidatureId = String(req.params.id)
+  const user = getUser(req)
+  const userSlug = user.slug || 'unknown'
+
+  const lastStatusEvent = getDb().prepare(`
+    SELECT id FROM candidature_events
+    WHERE candidature_id = ? AND type = 'status_change'
+    ORDER BY created_at DESC LIMIT 1
+  `).get(candidatureId) as { id: number } | undefined
+  if (!lastStatusEvent) {
+    res.status(404).json({ error: 'Aucun changement de statut récent' })
+    return
+  }
+
+  const pending = findPendingScheduledEmails(candidatureId, lastStatusEvent.id - 1)
+  if (pending.length === 0) {
+    res.status(404).json({ error: 'Aucun email programmé à envoyer' })
+    return
+  }
+
+  // Use the most recent pending email (findPendingScheduledEmails returns DESC).
+  const target = pending[0]
+  if (!target.messageId) {
+    res.status(500).json({ error: 'Email programmé sans messageId — impossible de re-émettre' })
+    return
+  }
+
+  // Pull the original snapshot for subject/body so we re-send the exact copy.
+  const snapshotRow = getDb().prepare(`
+    SELECT email_snapshot FROM candidature_events WHERE id = ?
+  `).get(target.id) as { email_snapshot: string | null } | undefined
+  const snapshot = snapshotRow?.email_snapshot ? JSON.parse(snapshotRow.email_snapshot) as { subject?: string; body?: string; statut?: string; to?: string } : {}
+
+  // Look up candidate name + poste titre to rebuild the render.
+  const info = getDb().prepare(`
+    SELECT cand.name, cand.email, cand.id as candidate_id, p.titre AS poste_titre, c.statut
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(candidatureId) as { name: string; email: string | null; candidate_id: string; poste_titre: string; statut: string } | undefined
+  if (!info?.email) {
+    res.status(404).json({ error: 'Candidature introuvable ou sans email' })
+    return
+  }
+
+  // Cancel Resend's schedule first. If that fails we don't duplicate-send.
+  const cancelled = await cancelScheduledEmail(target.messageId)
+  if (!cancelled) {
+    res.status(502).json({ error: 'Impossible d’annuler la programmation actuelle — réessayez.' })
+    return
+  }
+
+  const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
+  const statut = snapshot.statut ?? info.statut
+
+  const result = await sendTransitionEmail({
+    to: info.email,
+    candidateName: info.name,
+    role: info.poste_titre,
+    statut,
+    customBody: snapshot.body,
+    evaluationUrl: statut === 'skill_radar_envoye'
+      ? `${baseUrl}/evaluate/${info.candidate_id}`
+      : undefined,
+  })
+
+  if (!result.sent) {
+    // Record cancellation so the UI stops showing "pending". The recruiter can
+    // trigger a fresh transition to retry.
+    getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+      VALUES (?, 'email_failed', ?, ?, ?)
+    `).run(
+      candidatureId,
+      `Envoi immédiat échoué après annulation du schedule (${target.messageId})`,
+      JSON.stringify({ messageId: target.messageId, to: info.email, statut, phase: 'send-now' }),
+      userSlug
+    )
+    res.status(502).json({ error: 'Envoi immédiat échoué. Réessayez ou créez une nouvelle transition.' })
+    return
+  }
+
+  getDb().prepare(`
+    INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+    VALUES (?, 'email_sent', ?, ?, ?)
+  `).run(
+    candidatureId,
+    `Email transition ${statut} envoyé immédiatement à ${info.email} (bypass du délai)`,
+    JSON.stringify({
+      subject: snapshot.subject,
+      body: snapshot.body,
+      messageId: result.messageId,
+      recipient: 'candidate',
+      to: info.email,
+      statut,
+      cancelledScheduleId: target.messageId,
+    }),
+    userSlug
+  )
+
+  res.json({ ok: true, messageId: result.messageId })
 })
 
 // Compatibility breakdown — lazy endpoint per (candidature, metric).

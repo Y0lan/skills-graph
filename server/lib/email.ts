@@ -521,7 +521,10 @@ export async function sendTransitionEmail(opts: {
   customBody?: string
   includeReasonInEmail?: boolean
   evaluationUrl?: string
-}): Promise<{ messageId?: string; sent: boolean }> {
+  /** ISO-8601 timestamp. If provided, Resend holds the email until then,
+   *  and we can cancel via resend.emails.cancel(id) before it fires. */
+  scheduledAt?: string
+}): Promise<{ messageId?: string; sent: boolean; scheduled?: boolean }> {
   if (!process.env.RESEND_API_KEY) {
     console.warn('[EMAIL] RESEND_API_KEY not set — skipping email')
     return { sent: false }
@@ -541,6 +544,7 @@ export async function sendTransitionEmail(opts: {
       subject,
       html,
       attachments: maybeLogoAttachment(html),
+      ...(opts.scheduledAt ? { scheduledAt: opts.scheduledAt } : {}),
     })
 
     if (error) {
@@ -548,11 +552,37 @@ export async function sendTransitionEmail(opts: {
       return { sent: false }
     }
 
+    if (opts.scheduledAt) {
+      console.log(`[EMAIL] Transition email (${opts.statut}) scheduled for ${opts.scheduledAt} (id: ${data?.id})`)
+      return { messageId: data?.id, sent: true, scheduled: true }
+    }
     console.log(`[EMAIL] Transition email (${opts.statut}) sent (id: ${data?.id})`)
     return { messageId: data?.id, sent: true }
   } catch {
     console.error(`[EMAIL] Failed to send transition email (${opts.statut})`)
     return { sent: false }
+  }
+}
+
+/** Cancel a scheduled email that Resend has accepted but not yet sent.
+ *  Returns true if Resend confirmed cancellation, false otherwise.
+ *  No-op when RESEND_API_KEY is unset (for dev/test). */
+export async function cancelScheduledEmail(messageId: string): Promise<boolean> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[EMAIL] RESEND_API_KEY not set — cancelScheduledEmail is a no-op')
+    return true
+  }
+  try {
+    const { error } = await resend.emails.cancel(messageId)
+    if (error) {
+      console.error(`[EMAIL] Failed to cancel scheduled email ${messageId}: ${error.message}`)
+      return false
+    }
+    console.log(`[EMAIL] Cancelled scheduled email ${messageId}`)
+    return true
+  } catch (err) {
+    console.error(`[EMAIL] Exception cancelling scheduled email ${messageId}: ${(err as Error).message}`)
+    return false
   }
 }
 

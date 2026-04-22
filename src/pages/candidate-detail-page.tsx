@@ -147,6 +147,7 @@ export default function CandidateDetailPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [reextracting, setReextracting] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
+  const [sendingNow, setSendingNow] = useState<string | null>(null)
 
   // Gmail-style AI edit + HTML preview shared across transition dialog paths.
   const [aiInstructionOpen, setAiInstructionOpen] = useState(false)
@@ -251,10 +252,12 @@ export default function CandidateDetailPage() {
     },
   })
 
-  const handleRevertStatus = useCallback(async (candidatureId: string, emailAlreadySent: boolean) => {
-    const msg = emailAlreadySent
+  const handleRevertStatus = useCallback(async (candidatureId: string, emailState: 'sent' | 'scheduled' | 'none') => {
+    const msg = emailState === 'sent'
       ? "⚠️ L'email a DÉJÀ été envoyé au candidat.\n\nAnnuler la transition ne rappellera pas l'email — le candidat l'a déjà reçu.\n\nContinuer quand même ? (utile uniquement pour corriger l'état interne)"
-      : "Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n'est envoyé automatiquement."
+      : emailState === 'scheduled'
+        ? "Annuler la dernière transition ? L'email programmé sera annulé avant envoi, et la candidature reviendra au statut précédent."
+        : "Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n'est envoyé automatiquement."
     if (!confirm(msg)) return
     setRevertingStatus(candidatureId)
     try {
@@ -290,6 +293,37 @@ export default function CandidateDetailPage() {
       setRevertingStatus(null)
     }
   }, [setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
+
+  const handleSendNow = useCallback(async (candidatureId: string) => {
+    if (!confirm("Envoyer l'email maintenant, sans attendre la fin des 10 minutes ? Cette action est irréversible — le candidat recevra l'email immédiatement.")) return
+    setSendingNow(candidatureId)
+    try {
+      const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/email/send-now`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      // Refresh events so the timeline swaps email_scheduled → email_sent.
+      const detail = await fetch(`/api/recruitment/candidatures/${candidatureId}`, { credentials: 'include' }).then(r => r.json())
+      if (detail?.events) setEvents(detail.events)
+      setCandidatureDataMap(prev => ({
+        ...prev,
+        [candidatureId]: {
+          events: detail?.events ?? prev[candidatureId]?.events ?? [],
+          allowedTransitions: prev[candidatureId]?.allowedTransitions ?? null,
+          documents: detail?.documents ?? prev[candidatureId]?.documents ?? [],
+        },
+      }))
+      toast.success('Email envoyé')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erreur')
+    } finally {
+      setSendingNow(null)
+    }
+  }, [setEvents, setCandidatureDataMap])
 
   // Wrap openTransitionDialog to inject candidate name & role & currentStatut
   const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => {
@@ -730,37 +764,67 @@ export default function CandidateDetailPage() {
                           </Button>
                         )}
 
-                        {/* Revert last transition (within 10 min, non-terminal) */}
+                        {/* Revert last transition (within 10 min). Terminal
+                            statuses (refuse/embauche) can also be reverted when
+                            the candidate email is still scheduled — cancelling
+                            it at Resend before it fires is the whole point of
+                            the 10-min delay. */}
                         {(() => {
                           const lastStatusChange = cEvents.filter(e => e.type === 'status_change' && e.statutTo).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
                           if (!lastStatusChange) return null
                           const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
                           if (ageMs > 10 * 60 * 1000) return null
-                          if (lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse') return null
-                          // An email_sent event is inserted right after the status_change in the
-                          // same request handler — detect it by (a) timestamp ≥ status_change and
-                          // (b) no intervening status_change.
-                          const lastTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
-                          const emailAlreadySent = cEvents.some(e =>
-                            e.type === 'email_sent' &&
-                            new Date(e.createdAt + 'Z').getTime() >= lastTs - 1000
-                          )
+                          const lastStatusTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
+                          // Inspect only email events AFTER the last status change. Most-recent wins.
+                          const postStatusEmailEvents = cEvents
+                            .filter(e =>
+                              (e.type === 'email_scheduled' || e.type === 'email_sent' || e.type === 'email_cancelled' || e.type === 'email_failed') &&
+                              new Date(e.createdAt + 'Z').getTime() >= lastStatusTs - 1000
+                            )
+                            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                          const latestEmailEvent = postStatusEmailEvents[0]
+                          const emailState: 'sent' | 'scheduled' | 'none' =
+                            latestEmailEvent?.type === 'email_sent' ? 'sent'
+                            : latestEmailEvent?.type === 'email_scheduled' ? 'scheduled'
+                            : 'none'
+                          const isTerminal = lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse'
+                          // Terminal statuses are only revertable when the email is still scheduled
+                          // (we can yank it from Resend). If already sent → block.
+                          if (isTerminal && emailState !== 'scheduled') return null
+                          const minutesLeft = Math.max(1, Math.round((10 * 60 * 1000 - ageMs) / 60000))
+                          const busyId = revertingStatus === c.id || sendingNow === c.id
                           return (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className={`justify-start gap-2 mt-2 ${emailAlreadySent ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
-                              disabled={changingStatus || revertingStatus === c.id}
-                              onClick={() => handleRevertStatus(c.id, emailAlreadySent)}
-                              title={emailAlreadySent ? "L'email a déjà été envoyé — le candidat l'a reçu" : undefined}
-                            >
-                              <RotateCcw className="h-3 w-3" />
-                              {revertingStatus === c.id ? 'Annulation…' : 'Annuler la dernière transition'}
-                              {emailAlreadySent && <span className="text-[10px] font-medium">(email envoyé)</span>}
-                              <span className="text-[10px] text-muted-foreground/60 ml-1">
-                                ({Math.max(1, Math.round((10 * 60 * 1000 - ageMs) / 60000))}min restantes)
-                              </span>
-                            </Button>
+                            <div className="flex flex-col gap-1 mt-2">
+                              {emailState === 'scheduled' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="justify-start gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                                  disabled={busyId}
+                                  onClick={() => handleSendNow(c.id)}
+                                  title="Envoyer l'email maintenant sans attendre la fin des 10 minutes"
+                                >
+                                  <Mail className="h-3 w-3" />
+                                  {sendingNow === c.id ? 'Envoi…' : 'Envoyer l\u2019email maintenant'}
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className={`justify-start gap-2 ${emailState === 'sent' ? 'text-amber-600 dark:text-amber-400' : emailState === 'scheduled' ? 'text-primary' : 'text-muted-foreground'}`}
+                                disabled={busyId}
+                                onClick={() => handleRevertStatus(c.id, emailState)}
+                                title={emailState === 'sent' ? "L'email a déjà été envoyé — le candidat l'a reçu" : emailState === 'scheduled' ? 'L\u2019email sera annulé avant envoi' : undefined}
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                                {revertingStatus === c.id ? 'Annulation…' : 'Annuler la dernière transition'}
+                                {emailState === 'sent' && <span className="text-[10px] font-medium">(email envoyé)</span>}
+                                {emailState === 'scheduled' && <span className="text-[10px] font-medium">(email programmé)</span>}
+                                <span className="text-[10px] text-muted-foreground/60 ml-1">
+                                  ({minutesLeft}min restantes)
+                                </span>
+                              </Button>
+                            </div>
                           )
                         })()}
                       </div>
