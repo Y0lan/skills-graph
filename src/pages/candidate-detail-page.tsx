@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
+import { formatPhone } from '@/lib/utils'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
@@ -611,7 +612,7 @@ export default function CandidateDetailPage() {
                 )}
                 {candidate.telephone && (
                   <span className="flex items-center gap-1 min-w-0">
-                    <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.telephone}</span>
+                    <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{formatPhone(candidate.telephone)}</span>
                   </span>
                 )}
                 {candidate.pays && (

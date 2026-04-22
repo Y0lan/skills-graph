@@ -565,12 +565,21 @@ export async function sendTransitionEmail(opts: {
 }
 
 /** Cancel a scheduled email that Resend has accepted but not yet sent.
- *  Returns true if Resend confirmed cancellation, false otherwise.
- *  No-op when RESEND_API_KEY is unset (for dev/test). */
+ *  Returns true on success, false on failure.
+ *
+ *  Fail-closed in production: if RESEND_API_KEY is unset we return false
+ *  (NOT true). Otherwise a misconfigured prod redeploy would mark local
+ *  cancellations as successful while Resend keeps sending the queued mail.
+ *  In test (NODE_ENV=test or VITEST=true), we no-op true so unit tests can
+ *  exercise the happy path without mocking the Resend client at every call. */
 export async function cancelScheduledEmail(messageId: string): Promise<boolean> {
   if (!process.env.RESEND_API_KEY) {
-    console.warn('[EMAIL] RESEND_API_KEY not set — cancelScheduledEmail is a no-op')
-    return true
+    const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true'
+    if (isTest) {
+      return true
+    }
+    console.error('[EMAIL] RESEND_API_KEY not set — cannot cancel scheduled email (failing closed)')
+    return false
   }
   try {
     const { error } = await resend.emails.cancel(messageId)

@@ -26,7 +26,7 @@ interface EmailEntry {
   toAddress: string
 }
 
-function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string; to?: string | string[]; scheduledAt?: string } {
+function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string; to?: string | string[]; scheduledAt?: string; cancelledScheduleId?: string } {
   if (!snapshot) return {}
   try {
     return JSON.parse(snapshot)
@@ -89,14 +89,21 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
     }
   }
 
-  // Index every messageId that has a later 'email_sent' or 'email_cancelled'
-  // event — used to suppress superseded 'email_scheduled' rows so we don't
-  // double-list (a scheduled-then-sent email shows once, with lifecycle=sent).
+  // Index every messageId that has a later email_sent / email_cancelled
+  // event. Two ways an email_sent can supersede a scheduled row:
+  //   (a) same messageId — natural fire after the 10-min hold.
+  //   (b) the email_sent's snapshot lists the scheduled messageId in
+  //       cancelledScheduleId — the send-now path, which uses a fresh
+  //       messageId for the immediate send and points back to the original.
+  // Without (b), the original schedule keeps showing as "Programmé" forever
+  // after the recruiter clicks "Envoyer maintenant".
   const supersededIds = new Map<string, 'sent' | 'cancelled'>()
   for (const e of sorted) {
     if (e.type !== 'email_sent' && e.type !== 'email_cancelled') continue
     const snap = parseSnapshot(e.emailSnapshot)
-    if (snap.messageId) supersededIds.set(snap.messageId, e.type === 'email_sent' ? 'sent' : 'cancelled')
+    const lifecycle = e.type === 'email_sent' ? 'sent' : 'cancelled'
+    if (snap.messageId) supersededIds.set(snap.messageId, lifecycle)
+    if (snap.cancelledScheduleId) supersededIds.set(snap.cancelledScheduleId, lifecycle)
   }
 
   const entries: EmailEntry[] = []
@@ -123,13 +130,24 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
       e.type === 'email_sent' ? 'sent'
       : e.type === 'email_cancelled' ? 'cancelled'
       : 'scheduled'
-    // For scheduled rows: if Resend's send-window has elapsed (or webhook
-    // already confirmed delivery), Resend has sent the email — flip to sent.
-    if (lifecycle === 'scheduled') {
-      const scheduledMs = snap.scheduledAt ? new Date(snap.scheduledAt).getTime() : 0
-      const fired = scheduledMs > 0 && Date.now() >= scheduledMs
-      const webhookConfirmed = messageId && (statusMap.get(messageId)?.has('email_delivered') || statusMap.get(messageId)?.has('email_clicked'))
-      if (fired || webhookConfirmed) lifecycle = 'sent'
+    // For scheduled rows: webhook confirmation wins (email_delivered /
+    // email_clicked). Otherwise fall back to "scheduledAt has elapsed →
+    // assume sent". The Rebondi badge below still surfaces email_failed
+    // separately, but this short-circuit ensures a Resend-side rejection
+    // shows as Rebondi rather than the time-based "sent" optimism.
+    if (lifecycle === 'scheduled' && messageId) {
+      const statuses = statusMap.get(messageId)
+      if (statuses?.has('email_failed')) {
+        // Stay in scheduled lifecycle so the delivery-state badge
+        // hierarchy below picks up Rebondi from statuses, signalling the
+        // failure rather than a misleading "Programmé".
+        lifecycle = 'sent'
+      } else if (statuses?.has('email_delivered') || statuses?.has('email_clicked')) {
+        lifecycle = 'sent'
+      } else {
+        const scheduledMs = snap.scheduledAt ? new Date(snap.scheduledAt).getTime() : 0
+        if (scheduledMs > 0 && Date.now() >= scheduledMs) lifecycle = 'sent'
+      }
     }
     entries.push({
       event: e,

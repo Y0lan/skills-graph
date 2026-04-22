@@ -1028,37 +1028,68 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
 
         emailSent = emailResult.sent
         if (emailResult.sent) {
-          // Get template info for the snapshot
-          const template = getEmailTemplate(statut, {
-            candidateName: candidateInfo.name,
-            role: candidateInfo.poste_titre,
-            notes: notes?.trim() || undefined,
-            evaluationUrl: statut === 'skill_radar_envoye'
-              ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
-              : undefined,
-          })
+          // Race guard for the scheduled-email path. The await above can take
+          // hundreds of ms (Resend round-trip). During that window, /revert-
+          // status can run, see the just-committed status_change event, find
+          // no email_scheduled row yet (we haven't inserted it), and walk the
+          // candidature back. If we then blindly INSERT email_scheduled, a
+          // ghost email fires at +10 min for a candidate whose status was
+          // reverted. Re-check and cancel if so. Race with revert is now
+          // microsecond-window only (between our SELECT and INSERT) — and
+          // even if it slips through, the schedule is still cancellable.
+          let aborted = false
+          if (emailResult.scheduled && emailResult.messageId) {
+            const cur = getDb().prepare('SELECT statut FROM candidatures WHERE id = ?').get(candidatureId) as { statut: string } | undefined
+            if (!cur || cur.statut !== statut) {
+              aborted = true
+              const cancelled = await cancelScheduledEmail(emailResult.messageId)
+              getDb().prepare(`
+                INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+                VALUES (?, ?, ?, ?, ?)
+              `).run(
+                candidatureId,
+                cancelled ? 'email_cancelled' : 'email_failed',
+                `Race revert détectée — programmation ${emailResult.messageId} ${cancelled ? 'annulée' : 'orpheline (cancel échoué)'}`,
+                JSON.stringify({ messageId: emailResult.messageId, to: candidateInfo.email, statut, cancelledBy: 'race-guard' }),
+                userSlug
+              )
+              emailSent = false
+            }
+          }
 
-          const eventType = emailResult.scheduled ? 'email_scheduled' : 'email_sent'
-          const humanNote = emailResult.scheduled
-            ? `Email transition ${statut} programmé pour ${candidateInfo.email} (envoi dans 10 min)`
-            : `Email transition ${statut} envoyé à ${candidateInfo.email}`
+          if (!aborted) {
+            // Get template info for the snapshot
+            const template = getEmailTemplate(statut, {
+              candidateName: candidateInfo.name,
+              role: candidateInfo.poste_titre,
+              notes: notes?.trim() || undefined,
+              evaluationUrl: statut === 'skill_radar_envoye'
+                ? `${baseUrl}/evaluate/${candidateInfo.candidate_id}`
+                : undefined,
+            })
 
-          getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
-            VALUES (?, ?, ?, ?, ?)`).run(
-            candidatureId,
-            eventType,
-            humanNote,
-            JSON.stringify({
-              subject: template?.subject,
-              body: customBody || template?.body,
-              messageId: emailResult.messageId,
-              recipient: 'candidate',
-              to: candidateInfo.email,
-              statut,
-              scheduledAt: emailResult.scheduled ? scheduledAt : undefined,
-            }),
-            userSlug
-          )
+            const eventType = emailResult.scheduled ? 'email_scheduled' : 'email_sent'
+            const humanNote = emailResult.scheduled
+              ? `Email transition ${statut} programmé pour ${candidateInfo.email} (envoi dans 10 min)`
+              : `Email transition ${statut} envoyé à ${candidateInfo.email}`
+
+            getDb().prepare(`INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+              VALUES (?, ?, ?, ?, ?)`).run(
+              candidatureId,
+              eventType,
+              humanNote,
+              JSON.stringify({
+                subject: template?.subject,
+                body: customBody || template?.body,
+                messageId: emailResult.messageId,
+                recipient: 'candidate',
+                to: candidateInfo.email,
+                statut,
+                scheduledAt: emailResult.scheduled ? scheduledAt : undefined,
+              }),
+              userSlug
+            )
+          }
         }
       } catch {
         console.error(`[EMAIL] Failed to send ${statut} email`)
@@ -2022,7 +2053,10 @@ function findPendingScheduledEmails(candidatureId: string, afterEventId: number)
 
   const out: PendingScheduledEmail[] = []
   for (const row of rows) {
-    // Superseded if any later event targets this messageId.
+    // Superseded if any later event either (a) carries the same messageId
+    // (natural fire / direct cancel), or (b) is an email_sent that records
+    // this messageId as cancelledScheduleId (the send-now path uses a fresh
+    // messageId for the immediate send and points back to the original).
     const snap = row.email_snapshot ? JSON.parse(row.email_snapshot) as { messageId?: string; to?: string; statut?: string } : {}
     const messageId = snap.messageId ?? null
     if (messageId) {
@@ -2031,9 +2065,12 @@ function findPendingScheduledEmails(candidatureId: string, afterEventId: number)
         WHERE candidature_id = ?
           AND type IN ('email_sent', 'email_cancelled', 'email_failed')
           AND id > ?
-          AND json_extract(email_snapshot, '$.messageId') = ?
+          AND (
+            json_extract(email_snapshot, '$.messageId') = ?
+            OR json_extract(email_snapshot, '$.cancelledScheduleId') = ?
+          )
         LIMIT 1
-      `).get(candidatureId, row.id, messageId)
+      `).get(candidatureId, row.id, messageId, messageId)
       if (superseded) continue
     }
     out.push({ id: row.id, messageId, candidateEmail: snap.to ?? null, statut: snap.statut ?? null })
@@ -2242,6 +2279,11 @@ protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, asyn
     return
   }
 
+  // Single email_sent row with cancelledScheduleId pointing at the original
+  // messageId. The supersede checks (findPendingScheduledEmails, banner,
+  // candidate-emails-card) match BOTH on direct messageId equality AND on
+  // cancelledScheduleId, so the original scheduled row is correctly hidden
+  // without an extra "Annulé" row cluttering the email list.
   getDb().prepare(`
     INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
     VALUES (?, 'email_sent', ?, ?, ?)
@@ -2967,7 +3009,7 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
         const event = getDb().prepare(`
           SELECT ce.candidature_id, ce.email_snapshot
           FROM candidature_events ce
-          WHERE ce.type = 'email_sent'
+          WHERE ce.type IN ('email_sent', 'email_scheduled')
           AND json_extract(ce.email_snapshot, '$.messageId') = ?
         `).get(emailId) as { candidature_id: string; email_snapshot: string } | undefined
 
@@ -3004,7 +3046,7 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
         const event = getDb().prepare(`
           SELECT ce.candidature_id
           FROM candidature_events ce
-          WHERE ce.type = 'email_sent'
+          WHERE ce.type IN ('email_sent', 'email_scheduled')
           AND json_extract(ce.email_snapshot, '$.messageId') = ?
         `).get(emailId) as { candidature_id: string } | undefined
 
@@ -3078,7 +3120,7 @@ function recordDeliverabilityEvent(
     const found = getDb().prepare(`
       SELECT ce.candidature_id
       FROM candidature_events ce
-      WHERE ce.type = 'email_sent'
+      WHERE ce.type IN ('email_sent', 'email_scheduled')
       AND json_extract(ce.email_snapshot, '$.messageId') = ?
     `).get(emailId) as { candidature_id: string } | undefined
 

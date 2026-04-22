@@ -11,7 +11,7 @@ interface Props {
   onCancel: () => void
 }
 
-function parseSnapshot(s: string | null): { messageId?: string; scheduledAt?: string; statut?: string; to?: string } {
+function parseSnapshot(s: string | null): { messageId?: string; scheduledAt?: string; statut?: string; to?: string; cancelledScheduleId?: string } {
   if (!s) return {}
   try { return JSON.parse(s) } catch { return {} }
 }
@@ -39,11 +39,12 @@ export default function ScheduledEmailBanner({ events, disabled, onSendNow, onCa
       if (e.type !== 'email_scheduled') continue
       const snap = parseSnapshot(e.emailSnapshot)
       if (!snap.messageId || !snap.scheduledAt) continue
-      const superseded = events.some(o =>
-        (o.type === 'email_sent' || o.type === 'email_cancelled' || o.type === 'email_failed') &&
-        parseSnapshot(o.emailSnapshot).messageId === snap.messageId &&
-        o.id > e.id
-      )
+      const superseded = events.some(o => {
+        if (o.type !== 'email_sent' && o.type !== 'email_cancelled' && o.type !== 'email_failed') return false
+        if (o.id <= e.id) return false
+        const oSnap = parseSnapshot(o.emailSnapshot)
+        return oSnap.messageId === snap.messageId || oSnap.cancelledScheduleId === snap.messageId
+      })
       if (superseded) continue
       const scheduledMs = new Date(snap.scheduledAt).getTime()
       if (now >= scheduledMs) continue

@@ -11,6 +11,7 @@ import InitialsBadge from '@/components/ui/initials-badge'
 import SkillPill from './skill-pill'
 import ExperienceTimeline, { type TimelineEntry } from './experience-timeline'
 import { formatCvDateRange } from '@/lib/constants'
+import { formatPhone } from '@/lib/utils'
 
 interface EducationEntry {
   degree: string | null
@@ -279,7 +280,7 @@ export default function CandidateProfileCard({
                       className="inline-flex items-center gap-1 hover:text-foreground"
                       aria-label="Téléphone"
                     >
-                      <Phone className="h-3.5 w-3.5 shrink-0" />{phone}
+                      <Phone className="h-3.5 w-3.5 shrink-0" />{formatPhone(phone)}
                     </a>
                     <FieldSourceTag field={profile.contact.phone} />
                   </span>

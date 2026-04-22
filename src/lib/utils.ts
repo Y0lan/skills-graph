@@ -40,3 +40,16 @@ export function humanFreshness(days: number): string {
   if (days <= 365) return `Mis à jour il y a ${Math.round(days / 30)} mois`
   return 'Mis à jour il y a plus d\'un an'
 }
+
+/** Split an international phone number into its country-code prefix and the
+ *  rest, joined by a narrow no-break space so "+687871234" reads
+ *  "+687 871234". Falls back to the raw input if no country code can be
+ *  detected (no leading '+'). The space is U+202F so the number can't wrap
+ *  in the middle of itself. */
+export function formatPhone(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed.startsWith('+')) return trimmed
+  const m = trimmed.match(/^\+(\d{1,3})\s*(.*)$/)
+  if (!m) return trimmed
+  return `+${m[1]}\u202F${m[2]}`
+}

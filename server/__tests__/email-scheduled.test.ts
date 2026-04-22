@@ -91,11 +91,32 @@ describe('cancelScheduledEmail', () => {
     expect(ok).toBe(false)
   })
 
-  it('is a safe no-op when RESEND_API_KEY is not set (dev/test fallback)', async () => {
+  it('is a safe no-op when RESEND_API_KEY is not set in test env', async () => {
+    // VITEST=true is auto-set by vitest, so the helper hits its test branch.
     delete process.env.RESEND_API_KEY
     const ok = await cancelScheduledEmail('msg_no_key')
     expect(ok).toBe(true)
     expect(cancelMock).not.toHaveBeenCalled()
+  })
+
+  it('FAILS CLOSED in non-test env when RESEND_API_KEY is not set', async () => {
+    // Simulate prod: clear the test env markers so the helper takes the
+    // production branch. A misconfigured prod redeploy must NOT silently
+    // claim cancellation success while Resend keeps sending.
+    delete process.env.RESEND_API_KEY
+    const prevNode = process.env.NODE_ENV
+    const prevVitest = process.env.VITEST
+    process.env.NODE_ENV = 'production'
+    delete process.env.VITEST
+    try {
+      const ok = await cancelScheduledEmail('msg_prod')
+      expect(ok).toBe(false)
+      expect(cancelMock).not.toHaveBeenCalled()
+    } finally {
+      if (prevNode !== undefined) process.env.NODE_ENV = prevNode
+      else delete process.env.NODE_ENV
+      if (prevVitest !== undefined) process.env.VITEST = prevVitest
+    }
   })
 })
 
