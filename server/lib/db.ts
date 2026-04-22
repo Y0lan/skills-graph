@@ -229,7 +229,7 @@ export function initDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
       type TEXT NOT NULL DEFAULT 'status_change'
-        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
+        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
       statut_from TEXT,
       statut_to TEXT,
       notes TEXT,
@@ -368,6 +368,44 @@ export function initDatabase(): void {
           candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
           type TEXT NOT NULL DEFAULT 'status_change'
             CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
+          statut_from TEXT,
+          statut_to TEXT,
+          notes TEXT,
+          content_md TEXT,
+          email_snapshot TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at)
+          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
+          FROM candidature_events;
+        DROP TABLE candidature_events;
+        ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      `)
+    })
+    migrate()
+    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+  }
+
+  // Idempotent migration: widen CHECK to add 'email_scheduled' and 'email_cancelled'.
+  // Without this, every INSERT for a delayed candidate-facing email throws a
+  // CHECK constraint violation, the catch silently swaps it to 'email_failed',
+  // and the ScheduledEmailBanner never sees a row to render — so the recruiter
+  // has no countdown / send-now / cancel UI for the 10-min delay.
+  const missingScheduledLifecycleTypes = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_scheduled'")
+  })()
+
+  if (missingScheduledLifecycleTypes) {
+    db.exec('DROP TABLE IF EXISTS candidature_events_new')
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE candidature_events_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+          type TEXT NOT NULL DEFAULT 'status_change'
+            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
           statut_from TEXT,
           statut_to TEXT,
           notes TEXT,

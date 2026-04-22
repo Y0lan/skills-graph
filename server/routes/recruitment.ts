@@ -1091,13 +1091,17 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
             )
           }
         }
-      } catch {
-        console.error(`[EMAIL] Failed to send ${statut} email`)
+      } catch (err) {
+        // Surface the real cause — the original `catch {}` swallowed schema
+        // CHECK violations, masking the email_scheduled migration miss as a
+        // generic "send failed" with no banner ever rendering.
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[EMAIL] Failed to send/record ${statut} email: ${msg}`)
         emailSent = false
         getDb().prepare(`
           INSERT INTO candidature_events (candidature_id, type, notes, created_by)
           VALUES (?, 'email_failed', ?, ?)
-        `).run(candidatureId, `Échec envoi email ${statut} à ${candidateInfo.email}`, userSlug)
+        `).run(candidatureId, `Échec envoi email ${statut} à ${candidateInfo.email} (${msg.slice(0, 200)})`, userSlug)
       }
 
     }
