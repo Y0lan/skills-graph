@@ -27,11 +27,29 @@ const ConfidentialitePage = lazy(() => import('@/pages/confidentialite'))
 // Vite fires this event when a dynamically-imported chunk fails to load —
 // the canonical signal of a stale-deploy chunk reference. Reload before the
 // error reaches React.
+//
+// The guard stores the LAST reload timestamp (not just a boolean). A second
+// stale-chunk hit within RELOAD_COOLDOWN_MS is treated as a genuine missing
+// chunk (don't reload again, would loop). After the cooldown, a fresh stale-
+// chunk hit triggers a fresh reload — this fixes the case where the user
+// stays in the SPA across two deploys and the first auto-reload's guard
+// would otherwise block the second.
+const STALE_CHUNK_RELOAD_KEY = 'stale-chunk-reload-attempted'
+const RELOAD_COOLDOWN_MS = 5_000
+
+function shouldAutoReload(): boolean {
+  const ts = Number(sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY) ?? '0')
+  return !ts || (Date.now() - ts) > RELOAD_COOLDOWN_MS
+}
+
+function markReload(): void {
+  sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, String(Date.now()))
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('vite:preloadError', () => {
-    const key = 'stale-chunk-reload-attempted'
-    if (!sessionStorage.getItem(key)) {
-      sessionStorage.setItem(key, '1')
+    if (shouldAutoReload()) {
+      markReload()
       window.location.reload()
     }
   })
@@ -102,9 +120,8 @@ function ErrorBoundaryWrapper({ children }: { children: ReactNode }) {
 
 // Stale chunk reference after a deploy: index.html is fresh but the in-memory
 // SPA still references chunk hashes from the previous build. The browser hits
-// 404 when lazy() tries to fetch them. Auto-reload once (guarded by sessionStorage
-// to prevent infinite refresh loops if the chunk is genuinely missing).
-const STALE_CHUNK_RELOAD_KEY = 'stale-chunk-reload-attempted'
+// 404 when lazy() tries to fetch them. Auto-reload, with a cooldown so a
+// genuinely missing chunk doesn't infinite-loop.
 function isStaleChunkError(error: Error): boolean {
   const msg = (error?.message ?? '').toLowerCase()
   return (
@@ -115,30 +132,30 @@ function isStaleChunkError(error: Error): boolean {
   )
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state: { error: Error | null } = { error: null }
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; reloadBlocked: boolean }> {
+  state: { error: Error | null; reloadBlocked: boolean } = { error: null, reloadBlocked: false }
 
   static getDerivedStateFromError(error: Error) {
-    return { error }
+    return { error, reloadBlocked: false }
   }
 
   componentDidCatch(error: Error) {
-    if (isStaleChunkError(error)) {
-      const alreadyReloaded = sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY)
-      if (!alreadyReloaded) {
-        sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, '1')
-        window.location.reload()
-      }
+    if (!isStaleChunkError(error)) return
+    if (shouldAutoReload()) {
+      markReload()
+      window.location.reload()
     } else {
-      // A successful navigation means the chunks are loading fine; clear the guard.
-      sessionStorage.removeItem(STALE_CHUNK_RELOAD_KEY)
+      // Cooldown active — second stale-chunk hit means the chunk is genuinely
+      // missing (CDN drift, partial deploy). Show a real error UI with a
+      // manual retry instead of an infinite "Mise à jour…" spinner.
+      this.setState({ reloadBlocked: true })
     }
   }
 
   render() {
     if (this.state.error) {
-      // While the auto-reload is in flight, render a neutral placeholder.
-      if (isStaleChunkError(this.state.error) && !sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY + '-failed')) {
+      // Auto-reload in flight — neutral placeholder until the page navigates.
+      if (isStaleChunkError(this.state.error) && !this.state.reloadBlocked) {
         return (
           <div className="flex min-h-screen items-center justify-center">
             <p className="text-sm text-muted-foreground">Mise à jour de l'application…</p>
