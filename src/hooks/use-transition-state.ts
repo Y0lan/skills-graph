@@ -12,6 +12,10 @@ export interface TransitionDialog {
   notesRequired: boolean
   candidateName: string
   role: string
+  /** Pre-built link the email body should embed for skill_radar_envoye etc.
+   *  Without this the template preview falls back to "(#)" — the recipient
+   *  then receives a broken email link. */
+  evaluationUrl?: string
 }
 
 export interface UseTransitionStateReturn {
@@ -42,7 +46,7 @@ export interface UseTransitionStateReturn {
   transitionHasEmailTemplate: boolean
   transitionEmailLoading: boolean
   transitionFileError: string | null
-  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string, currentStatut?: string) => void
+  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string, currentStatut?: string, evaluationUrl?: string) => void
   closeTransitionDialog: () => void
   confirmTransition: () => Promise<void>
 }
@@ -80,7 +84,7 @@ export function useTransitionState(
   // Fetch email template when dialog opens
   useEffect(() => {
     if (!transitionDialog) return
-    const { targetStatut, candidateName, role } = transitionDialog
+    const { targetStatut, candidateName, role, evaluationUrl } = transitionDialog
 
     // No email for skill_radar_complete
     if (targetStatut === 'skill_radar_complete') {
@@ -89,7 +93,9 @@ export function useTransitionState(
     }
 
     setTransitionEmailLoading(true)
-    fetch(`/api/recruitment/email-template/${targetStatut}?candidateName=${encodeURIComponent(candidateName)}&role=${encodeURIComponent(role)}`, {
+    const params = new URLSearchParams({ candidateName, role })
+    if (evaluationUrl) params.set('evaluationUrl', evaluationUrl)
+    fetch(`/api/recruitment/email-template/${targetStatut}?${params.toString()}`, {
       credentials: 'include',
     })
       .then(r => r.ok ? r.json() : null)
@@ -118,9 +124,10 @@ export function useTransitionState(
     candidateName = '',
     role = '',
     currentStatut = '',
+    evaluationUrl?: string,
   ) => {
     const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
-    setTransitionDialog({ candidatureId, currentStatut, targetStatut, isSkip, skipped, notesRequired, candidateName, role })
+    setTransitionDialog({ candidatureId, currentStatut, targetStatut, isSkip, skipped, notesRequired, candidateName, role, evaluationUrl })
     setTransitionNotes('')
     setTransitionSkipReason('')
     setTransitionFile(null)

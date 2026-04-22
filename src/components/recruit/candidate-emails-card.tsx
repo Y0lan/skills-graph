@@ -17,13 +17,16 @@ interface EmailEntry {
   statuses: Set<string>
   statusTo: string | null
   recipient: EmailRecipient
+  /** Lifecycle: 'scheduled' = queued at Resend, awaiting send. 'cancelled' =
+   *  scheduled but undone before fire. 'sent' = actually sent. */
+  lifecycle: 'sent' | 'scheduled' | 'cancelled'
   /** Destination address(es) for display — extracted from the snapshot's
    *  optional `to` field, else parsed from the event notes. Empty string
    *  when nothing can be recovered (very old rows). */
   toAddress: string
 }
 
-function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string; to?: string | string[] } {
+function parseSnapshot(snapshot: string | null): { subject?: string; body?: string; messageId?: string; recipient?: string; to?: string | string[]; scheduledAt?: string } {
   if (!snapshot) return {}
   try {
     return JSON.parse(snapshot)
@@ -86,19 +89,47 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
     }
   }
 
+  // Index every messageId that has a later 'email_sent' or 'email_cancelled'
+  // event — used to suppress superseded 'email_scheduled' rows so we don't
+  // double-list (a scheduled-then-sent email shows once, with lifecycle=sent).
+  const supersededIds = new Map<string, 'sent' | 'cancelled'>()
+  for (const e of sorted) {
+    if (e.type !== 'email_sent' && e.type !== 'email_cancelled') continue
+    const snap = parseSnapshot(e.emailSnapshot)
+    if (snap.messageId) supersededIds.set(snap.messageId, e.type === 'email_sent' ? 'sent' : 'cancelled')
+  }
+
   const entries: EmailEntry[] = []
   for (let i = 0; i < sorted.length; i++) {
     const e = sorted[i]
-    if (e.type !== 'email_sent') continue
+    if (e.type !== 'email_sent' && e.type !== 'email_scheduled' && e.type !== 'email_cancelled') continue
     const snap = parseSnapshot(e.emailSnapshot)
     const messageId = snap.messageId ?? null
-    // Find the most recent status_change at or before this email_sent.
+    // Drop the scheduled row when a later sent/cancelled row already covers
+    // the same messageId — otherwise the list shows two entries per email.
+    if (e.type === 'email_scheduled' && messageId && supersededIds.has(messageId)) continue
+    // Drop cancelled-as-its-own-row when there's a scheduled row we'll keep
+    // anyway? No — actually we want cancelled to REPLACE scheduled. Keep
+    // cancelled, drop scheduled. (Done above.)
+    // Find the most recent status_change at or before this email event.
     let statusTo: string | null = null
     for (let j = i; j >= 0; j--) {
       if (sorted[j].type === 'status_change' && sorted[j].statutTo) {
         statusTo = sorted[j].statutTo
         break
       }
+    }
+    let lifecycle: 'sent' | 'scheduled' | 'cancelled' =
+      e.type === 'email_sent' ? 'sent'
+      : e.type === 'email_cancelled' ? 'cancelled'
+      : 'scheduled'
+    // For scheduled rows: if Resend's send-window has elapsed (or webhook
+    // already confirmed delivery), Resend has sent the email — flip to sent.
+    if (lifecycle === 'scheduled') {
+      const scheduledMs = snap.scheduledAt ? new Date(snap.scheduledAt).getTime() : 0
+      const fired = scheduledMs > 0 && Date.now() >= scheduledMs
+      const webhookConfirmed = messageId && (statusMap.get(messageId)?.has('email_delivered') || statusMap.get(messageId)?.has('email_clicked'))
+      if (fired || webhookConfirmed) lifecycle = 'sent'
     }
     entries.push({
       event: e,
@@ -108,6 +139,7 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
       statuses: messageId ? (statusMap.get(messageId) ?? new Set()) : new Set(),
       statusTo,
       recipient: inferRecipient(snap, e.notes),
+      lifecycle,
       toAddress: extractToAddress(snap, e.notes),
     })
   }
@@ -239,10 +271,14 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                   ) : null}
                 </span>
                 <span className="flex items-center gap-1 shrink-0">
-                  {/* Badge hierarchy (weakest → strongest): Envoyé < Livré < Lu.
-                      Bad-path badges (Retardé / Spam / Rebondi) are always shown
-                      when present, regardless of the happy-path state. */}
-                  {entry.statuses.has('email_failed') ? (
+                  {/* Badge hierarchy. Lifecycle badges (Programmé / Annulé)
+                      take priority over delivery state — those rows haven't
+                      hit Resend's send pipeline yet (or never will). */}
+                  {entry.lifecycle === 'cancelled' ? (
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} bg-muted text-muted-foreground line-through`} title="Email programmé mais annulé avant l'envoi">Annulé</Badge>
+                  ) : entry.lifecycle === 'scheduled' ? (
+                    <Badge variant="secondary" className={`${BADGE_SIZES.xs} bg-amber-500/15 text-amber-700 dark:text-amber-400`} title="Email programmé chez Resend, en attente de la fin du délai de 10 min">Programmé</Badge>
+                  ) : entry.statuses.has('email_failed') ? (
                     <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.bounced}`}>Rebondi</Badge>
                   ) : entry.statuses.has('email_clicked') ? (
                     <Badge variant="secondary" className={`${BADGE_SIZES.xs} ${BADGE_STYLES.read}`} title="Le candidat a cliqué un lien dans l'email — ouverture confirmée">Lu</Badge>

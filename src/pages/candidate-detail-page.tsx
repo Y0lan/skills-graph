@@ -15,6 +15,7 @@ import ExtractionStatusBanner from '@/components/recruit/extraction-status-banne
 import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
 import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
 import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
+import ScheduledEmailBanner from '@/components/recruit/scheduled-email-banner'
 import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
 import AboroProfileSection from '@/components/recruit/aboro-profile-section'
 import { Button } from '@/components/ui/button'
@@ -326,7 +327,12 @@ export default function CandidateDetailPage() {
   }, [setEvents, setCandidatureDataMap])
 
   // Wrap openTransitionDialog to inject candidate name & role & currentStatut
+  // and the evaluationUrl for transitions that link the candidate to the
+  // skill-radar form (otherwise the email body shows "[Commencer](#)").
   const handleOpenTransition = useCallback((candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], currentStatut?: string) => {
+    const evaluationUrl = targetStatut === 'skill_radar_envoye' && candidate?.id
+      ? `${window.location.origin}/evaluate/${candidate.id}`
+      : undefined
     openTransitionDialog(
       candidatureId,
       targetStatut,
@@ -335,6 +341,7 @@ export default function CandidateDetailPage() {
       candidate?.name ?? '',
       candidate?.role ?? '',
       currentStatut,
+      evaluationUrl,
     )
   }, [openTransitionDialog, candidate])
 
@@ -567,16 +574,18 @@ export default function CandidateDetailPage() {
         */}
         {(() => {
           // Status badges + Rouvrir button. When the AI profile card already
-          // owns the hero, this row collapses to badges only — and we suppress
-          // it entirely when there are no badges to show, so it doesn't render
-          // an orphan flex spacer between two cards.
+          // owns the hero, drop the empty flex spacer so the badges don't
+          // float in mid-air — render them as a tight right-aligned row
+          // tucked under the card above instead.
           const awaitingRadar = isPending && candidatures.some(c => c.statut === 'skill_radar_envoye')
           const hasBadge = awaitingRadar || !!candidate.submittedAt
           const hasReopen = !!candidate.submittedAt
           const hasAny = hasBadge || hasReopen
           if (candidate.aiProfile && !hasAny) return null
           return (
-        <div className="flex items-start gap-4 flex-wrap">
+        <div className={candidate.aiProfile
+          ? 'flex justify-end items-center gap-2 flex-wrap -mt-3'
+          : 'flex items-start gap-4 flex-wrap'}>
           {!candidate.aiProfile ? (
             <div className="flex-1 min-w-0">
               <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
@@ -622,13 +631,7 @@ export default function CandidateDetailPage() {
                 )}
               </div>
             </div>
-          ) : (
-            /* When aiProfile exists, the hero carries name + contact + location.
-               Poste titles are already shown per-candidature in the stepper
-               cards below, so this row just leaves the status badges
-               right-aligned (not a floating "POSTES :" orphan). */
-            <div className="flex-1" />
-          )}
+          ) : null /* aiProfile owns the hero — see wrapper className above */}
 
           {/* Status badges — keep only genuinely actionable signals. Dropped
               the canal + "CV uploadé" chips: the per-candidature card below
@@ -700,6 +703,16 @@ export default function CandidateDetailPage() {
                     {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
                   </span>
                 </div>
+
+                {/* Scheduled-email banner — shows whenever a candidate-facing
+                    email is queued at Resend but hasn't fired yet. Lets the
+                    recruiter fast-track or undo before the 10-min window. */}
+                <ScheduledEmailBanner
+                  events={cEvents}
+                  disabled={changingStatus || revertingStatus === c.id || sendingNow === c.id}
+                  onSendNow={() => handleSendNow(c.id)}
+                  onCancel={() => handleRevertStatus(c.id, 'scheduled')}
+                />
 
                 {/* Soft skill alerts */}
                 {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
