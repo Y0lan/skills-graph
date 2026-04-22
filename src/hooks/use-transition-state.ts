@@ -167,9 +167,43 @@ export function useTransitionState(
     setChangingStatus(true)
     setTransitionFileError(null)
     try {
-      // Upload file if present (for aboro or any transition with attachment).
-      // Runs on every Confirm — including the retry-after-status-already-applied
-      // path, which is the whole point of this retry mechanic.
+      // PATCH status FIRST, THEN upload. This ordering matters for the
+      // per-stage history view: if we upload before the status_change row is
+      // committed, the document's created_at falls within the PREVIOUS stage
+      // and the timeline shows it under the wrong stage forever (codex P1).
+      // Retry path: transitionStatusApplied=true means an earlier attempt
+      // already applied the status — skip the PATCH and go straight to the
+      // upload retry (state machine rejects same-statut transitions anyway).
+      if (!transitionStatusApplied) {
+        const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            statut: targetStatut,
+            currentStatut: currentStatut || undefined,
+            notes: transitionNotes.trim() || undefined,
+            skipReason: isSkip ? transitionSkipReason.trim() : undefined,
+            sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
+            skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
+              ? transitionSkipEmailReason.trim() || undefined
+              : undefined,
+            includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
+            customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
+            aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
+          }),
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          throw new Error(err.error || 'Erreur')
+        }
+        setTransitionStatusApplied(true)
+      }
+
+      // Upload file AFTER the status PATCH so the doc lands in the right
+      // stage bucket. Runs on every Confirm — the retry path uses this
+      // alone after skipping the PATCH above.
       let fileUploadFailed = false
       let uploadErrorMsg: string | null = null
       if (transitionFile) {
@@ -201,37 +235,6 @@ export function useTransitionState(
           fileUploadFailed = true
           uploadErrorMsg = err instanceof Error ? err.message : null
         }
-      }
-
-      // Skip the PATCH if a previous attempt already changed the status —
-      // the server would 409 (stale currentStatut) AND the state machine
-      // would reject a same-statut transition. The user is just retrying
-      // the upload here; the status change is already done.
-      if (!transitionStatusApplied) {
-        const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            statut: targetStatut,
-            currentStatut: currentStatut || undefined,
-            notes: transitionNotes.trim() || undefined,
-            skipReason: isSkip ? transitionSkipReason.trim() : undefined,
-            sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
-            skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
-              ? transitionSkipEmailReason.trim() || undefined
-              : undefined,
-            includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
-            customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
-            aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
-          }),
-        })
-
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.error || 'Erreur')
-        }
-        setTransitionStatusApplied(true)
       }
 
       setCandidatures(prev => prev.map(c =>

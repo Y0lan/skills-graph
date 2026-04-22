@@ -1416,6 +1416,7 @@ export default function CandidateDetailPage() {
                   {candidatures.map(c => {
                     const cData = candidatureDataMap?.[c.id]
                     const cEvents = cData?.events ?? events
+                    const cDocs = cData?.documents ?? documents
                     return (
                       <div key={c.id}>
                         {candidatures.length > 1 && (
@@ -1423,7 +1424,7 @@ export default function CandidateDetailPage() {
                             {c.posteTitre}
                           </p>
                         )}
-                        <CandidateHistoryByStage events={cEvents} currentStatut={c.statut} />
+                        <CandidateHistoryByStage events={cEvents} documents={cDocs} currentStatut={c.statut} />
                       </div>
                     )
                   })}

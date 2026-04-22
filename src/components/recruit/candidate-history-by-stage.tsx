@@ -3,11 +3,13 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
-import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2 } from 'lucide-react'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
-import type { CandidatureEvent } from '@/hooks/use-candidate-data'
+import type { CandidatureEvent, CandidatureDocument } from '@/hooks/use-candidate-data'
 
 /** Pipeline column order for grouping */
 const STAGE_ORDER = [
@@ -29,46 +31,78 @@ const MAX_NOTE_CHARS = 600
 interface StageGroup {
   statut: string
   events: CandidatureEvent[]
+  documents: CandidatureDocument[]
   latestDate: string | null
 }
 
-function groupEventsByStage(events: CandidatureEvent[]): StageGroup[] {
+function isPdf(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.pdf')
+}
+
+function effectiveName(doc: CandidatureDocument): string {
+  return doc.display_filename || doc.filename
+}
+
+function groupEventsByStage(
+  events: CandidatureEvent[],
+  documents: CandidatureDocument[],
+): StageGroup[] {
   // Walk events oldest-first so we can track the candidature's active statut
   // at the time of each event. Without this, notes/documents (which don't
   // carry a statutTo of their own) all fall into the 'postule' bucket — so
   // a note added during the Présélectionné stage would hide under Postulé
-  // forever. The correct stage for a non-status event is whatever statut
-  // was active at that moment.
+  // forever. Documents are attached using the same timeline so the user sees
+  // "which docs were uploaded during which stage".
   const sortedAsc = [...events].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  const stageMap = new Map<string, CandidatureEvent[]>()
+  const eventsByStage = new Map<string, CandidatureEvent[]>()
+  const docsByStage = new Map<string, CandidatureDocument[]>()
+  const stageTransitions: Array<{ at: string; to: string }> = [{ at: '0000', to: 'postule' }]
+
   let activeStatut = 'postule'
   for (const e of sortedAsc) {
     if (e.type === 'status_change' && e.statutTo) {
       activeStatut = e.statutTo
-      if (!stageMap.has(activeStatut)) stageMap.set(activeStatut, [])
-      stageMap.get(activeStatut)!.push(e)
-    } else {
-      if (!stageMap.has(activeStatut)) stageMap.set(activeStatut, [])
-      stageMap.get(activeStatut)!.push(e)
+      stageTransitions.push({ at: e.createdAt, to: activeStatut })
     }
+    if (!eventsByStage.has(activeStatut)) eventsByStage.set(activeStatut, [])
+    eventsByStage.get(activeStatut)!.push(e)
   }
 
-  // Sort in pipeline order, with unknown stages at end
-  const latestDate = (evts: CandidatureEvent[]) =>
-    evts.length === 0 ? null : evts.reduce((acc, e) => e.createdAt > acc ? e.createdAt : acc, evts[0].createdAt)
+  // Bucket each document into the stage that was active when it was uploaded.
+  // Documents table has no direct stage reference, so we replay the transition
+  // timeline: the active stage at `doc.created_at` is the last transition
+  // whose `at` is <= doc.created_at.
+  for (const doc of documents) {
+    if (doc.deleted_at) continue
+    let stage = 'postule'
+    for (const t of stageTransitions) {
+      if (t.at <= doc.created_at) stage = t.to
+      else break
+    }
+    if (!docsByStage.has(stage)) docsByStage.set(stage, [])
+    docsByStage.get(stage)!.push(doc)
+  }
+
+  const latestDate = (evts: CandidatureEvent[], docs: CandidatureDocument[]) => {
+    const all = [...evts.map(e => e.createdAt), ...docs.map(d => d.created_at)]
+    if (all.length === 0) return null
+    return all.reduce((a, b) => a > b ? a : b)
+  }
+
+  const allStageKeys = new Set<string>([...eventsByStage.keys(), ...docsByStage.keys()])
   const groups: StageGroup[] = []
   for (const statut of STAGE_ORDER) {
-    const evts = stageMap.get(statut)
-    if (evts && evts.length > 0) {
-      groups.push({ statut, events: evts, latestDate: latestDate(evts) })
-    }
+    if (!allStageKeys.has(statut)) continue
+    const evts = eventsByStage.get(statut) ?? []
+    const docs = docsByStage.get(statut) ?? []
+    groups.push({ statut, events: evts, documents: docs, latestDate: latestDate(evts, docs) })
+    allStageKeys.delete(statut)
   }
-
-  // Add any stages not in STAGE_ORDER
-  for (const [statut, evts] of stageMap) {
-    if (!STAGE_ORDER.includes(statut as (typeof STAGE_ORDER)[number]) && evts.length > 0) {
-      groups.push({ statut, events: evts, latestDate: latestDate(evts) })
-    }
+  // Any stages not in STAGE_ORDER land at the end in insertion order.
+  for (const statut of allStageKeys) {
+    const evts = eventsByStage.get(statut) ?? []
+    const docs = docsByStage.get(statut) ?? []
+    groups.push({ statut, events: evts, documents: docs, latestDate: latestDate(evts, docs) })
   }
 
   return groups
@@ -82,28 +116,27 @@ function eventIcon(event: CandidatureEvent) {
   return <Clock className="h-3 w-3" />
 }
 
-function computeSummary(events: CandidatureEvent[]): string {
-  const totalEvents = events.length
-  const emailCount = events.filter(e => e.emailSnapshot).length
-  const docCount = events.filter(e => e.type === 'document').length
+function computeSummary(events: CandidatureEvent[], documents: CandidatureDocument[]): string {
+  if (events.length === 0 && documents.length === 0) return ''
 
-  if (events.length === 0) return ''
+  const emailCount = events.filter(e => e.type === 'email_sent').length
+  const activeDocCount = documents.filter(d => !d.deleted_at).length
 
-  // API returns events ORDER BY created_at ASC — sort locally to find the
-  // actual newest one (was reading events[0] = oldest, hence "dernière
-  // activité" stuck on the initial Postulé forever).
-  const newest = [...events].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-  const now = Date.now()
-  const diff = now - new Date(newest.createdAt).getTime()
+  // "Dernière activité" must consider BOTH the event stream and the
+  // document uploads (docs are first-class history content now). Picking
+  // the event-max alone undercounted recent work — codex design P2.
+  const allDates = [
+    ...events.map(e => e.createdAt),
+    ...documents.filter(d => !d.deleted_at).map(d => d.created_at),
+  ]
+  const newestDate = allDates.reduce((a, b) => a > b ? a : b)
+  const diff = Date.now() - new Date(newestDate).getTime()
   const days = Math.floor(diff / 86_400_000)
   const lastActivity = days === 0 ? 'aujourd\'hui' : days === 1 ? 'hier' : `il y a ${days} jours`
 
-  const parts: string[] = [
-    `${totalEvents} evenement${totalEvents > 1 ? 's' : ''}`,
-    `Derniere activite ${lastActivity}`,
-  ]
-  if (emailCount > 0) parts.push(`${emailCount} email${emailCount > 1 ? 's' : ''} envoye${emailCount > 1 ? 's' : ''}`)
-  if (docCount > 0) parts.push(`${docCount} document${docCount > 1 ? 's' : ''}`)
+  const parts: string[] = [`Dernière activité ${lastActivity}`]
+  if (emailCount > 0) parts.push(`${emailCount} email${emailCount > 1 ? 's' : ''} envoyé${emailCount > 1 ? 's' : ''}`)
+  if (activeDocCount > 0) parts.push(`${activeDocCount} document${activeDocCount > 1 ? 's' : ''}`)
   return parts.join(' — ')
 }
 
@@ -257,6 +290,17 @@ function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap
     return null
   }
 
+  // Document UPLOAD events are redundant with the DocumentCard rendered
+  // below. But delete / replace / restore / rename events (notes starting
+  // with "Supprimé:" / "Remplacé:" / "Restauré:" / "Renommé:") are audit
+  // content the DocumentCard can't show (the deleted doc is gone from
+  // the active list). Keep those, drop the upload-notification rows.
+  if (isDocument) {
+    const notes = event.notes ?? ''
+    const isUploadNote = notes.startsWith('Document uploadé:')
+    if (isUploadNote) return null
+  }
+
   const absoluteTimestamp = event.createdAt
     ? new Date(event.createdAt.includes('T') ? event.createdAt : event.createdAt.replace(' ', 'T') + 'Z').toLocaleString('fr-FR', {
         day: '2-digit', month: '2-digit', year: 'numeric',
@@ -286,12 +330,6 @@ function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap
         )}
         {isEmailSent && <EmailDeliveryBadges messageId={messageId} deliveryMap={deliveryMap} />}
         {event.notes && <span className="text-foreground">{event.notes}</span>}
-        {isDocument && (
-          <span className="text-muted-foreground flex items-center gap-1">
-            <FileText className="h-3 w-3" />
-            Document uploade
-          </span>
-        )}
       </div>
 
       {/* Markdown content */}
@@ -303,13 +341,68 @@ function EventRow({ event, deliveryMap }: { event: CandidatureEvent; deliveryMap
   )
 }
 
+/** Human label for the internal document type. Keeps the audit value
+ *  compact while the UI reads like prose ("CV", "Lettre", "Autre" vs.
+ *  "CV"/"LETTRE"/"OTHER"). */
+const DOC_TYPE_LABEL: Record<string, string> = {
+  cv: 'CV',
+  lettre: 'Lettre de motivation',
+  aboro: 'Âboro',
+  entretien: 'Entretien',
+  proposition: 'Proposition',
+  administratif: 'Administratif',
+  other: 'Autre',
+}
+
+function DocumentCard({ doc, onPreview }: { doc: CandidatureDocument; onPreview: (d: CandidatureDocument) => void }) {
+  const name = effectiveName(doc)
+  const typeLabel = DOC_TYPE_LABEL[doc.type] ?? doc.type
+  return (
+    <div className="flex items-center gap-2 px-1.5 py-1.5 text-xs rounded-sm hover:bg-muted/40 transition-colors">
+      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate" title={name !== doc.filename ? `Original : ${doc.filename}` : undefined}>{name}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {typeLabel}
+          <span className="mx-1">·</span>
+          {formatDateTime(doc.created_at)}
+        </p>
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0">
+        {isPdf(doc.filename) && (
+          <Button
+            size="sm" variant="ghost" className="h-7 w-7 p-0"
+            title="Voir le PDF" aria-label={`Voir ${name}`}
+            onClick={() => onPreview(doc)}
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button
+          size="sm" variant="ghost" className="h-7 w-7 p-0"
+          title="Télécharger" aria-label={`Télécharger ${name}`}
+          onClick={() => window.open(`/api/recruitment/documents/${doc.id}/download`, '_blank')}
+        >
+          <Download className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export interface CandidateHistoryByStageProps {
   events: CandidatureEvent[]
+  documents?: CandidatureDocument[]
   currentStatut: string
 }
 
-export default function CandidateHistoryByStage({ events, currentStatut }: CandidateHistoryByStageProps) {
-  if (events.length === 0) {
+export default function CandidateHistoryByStage({ events, documents = [], currentStatut }: CandidateHistoryByStageProps) {
+  const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  // Reset loading when a new doc opens so the spinner is consistent.
+  const openPreview = (d: CandidatureDocument) => { setPreviewLoading(true); setPreviewDoc(d) }
+
+  if (events.length === 0 && documents.length === 0) {
     return (
       <div className="text-center py-8 text-sm text-muted-foreground">
         Aucun historique pour cette candidature.
@@ -317,8 +410,8 @@ export default function CandidateHistoryByStage({ events, currentStatut }: Candi
     )
   }
 
-  const groups = groupEventsByStage(events)
-  const summary = computeSummary(events)
+  const groups = groupEventsByStage(events, documents)
+  const summary = computeSummary(events, documents)
   const deliveryMap = buildDeliveryStatusMap(events)
 
   // Default open: current stage + previous stage
@@ -341,33 +434,136 @@ export default function CandidateHistoryByStage({ events, currentStatut }: Candi
       )}
 
       <Accordion defaultValue={defaultOpen}>
-        {groups.map((group, index) => (
-          <AccordionItem key={group.statut} value={index}>
-            <AccordionTrigger className="px-2 hover:no-underline">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[group.statut] ?? ''}`}>
-                  {STATUT_LABELS[group.statut] ?? group.statut}
-                </Badge>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {group.events.length} evt
-                </span>
-                {group.latestDate && (
-                  <span className="text-[10px] text-muted-foreground">
-                    {formatDateShort(group.latestDate)}
-                  </span>
-                )}
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-2">
-              <div className="divide-y">
-                {group.events.map(e => (
-                  <EventRow key={e.id} event={e} deliveryMap={deliveryMap} />
-                ))}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
+        {groups.map((group, index) => {
+          // Split events into transitions/emails (timeline) vs notes
+          // (contentMd or typed note events, rendered as a quiet section).
+          // visibleTimelineCount must match what EventRow actually renders —
+          // it drops deliverability signals AND document-upload notes,
+          // both of which would otherwise inflate the count pill.
+          const timelineEvents = group.events.filter(e => !(e.type === 'note' && e.contentMd))
+          const isDeliverability = (t: string) => t === 'email_open' || t === 'email_failed' || t === 'email_clicked' || t === 'email_delivered' || t === 'email_complained' || t === 'email_delay'
+          const isRedundantUpload = (e: CandidatureEvent) => e.type === 'document' && (e.notes ?? '').startsWith('Document uploadé:')
+          const noteEvents = group.events.filter(e => e.type === 'note' && e.contentMd)
+          const visibleTimelineCount = timelineEvents.filter(e =>
+            !isDeliverability(e.type) && !isRedundantUpload(e)
+          ).length
+          const isCurrent = group.statut === currentStatut
+          // Build a scannable count line, e.g. "2 transitions · 1 note · 3 documents".
+          // Readable text beats three ambiguous icon+number pills (codex
+          // design P1: "compact but ambiguous and visually fussy").
+          const countParts: string[] = []
+          if (visibleTimelineCount > 0) countParts.push(`${visibleTimelineCount} transition${visibleTimelineCount > 1 ? 's' : ''}`)
+          if (noteEvents.length > 0) countParts.push(`${noteEvents.length} note${noteEvents.length > 1 ? 's' : ''}`)
+          if (group.documents.length > 0) countParts.push(`${group.documents.length} document${group.documents.length > 1 ? 's' : ''}`)
+          return (
+            <AccordionItem key={group.statut} value={index} className={isCurrent ? 'border-l-2 border-l-primary pl-1 -ml-[2px]' : undefined}>
+              <AccordionTrigger className="px-2 hover:no-underline">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[group.statut] ?? ''}`}>
+                    {STATUT_LABELS[group.statut] ?? group.statut}
+                  </Badge>
+                  {isCurrent && (
+                    <Badge variant="outline" className="text-[9px] py-0 px-1 border-primary/50 text-primary shrink-0">
+                      Actuel
+                    </Badge>
+                  )}
+                  {countParts.length > 0 && (
+                    <span className="text-[11px] text-muted-foreground truncate">
+                      {countParts.join(' · ')}
+                    </span>
+                  )}
+                  {group.latestDate && (
+                    <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
+                      {formatDateShort(group.latestDate)}
+                    </span>
+                  )}
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-2">
+                <div className="space-y-4">
+                  {/* Transitions + emails — labeled like the other sections so
+                      the stage content reads as three consistent blocks
+                      rather than "leftovers followed by notes and docs". */}
+                  {visibleTimelineCount > 0 && (
+                    <div className="space-y-1">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Transitions &amp; emails ({visibleTimelineCount})
+                      </h5>
+                      <div className="divide-y">
+                        {[...timelineEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(e => (
+                          <EventRow key={e.id} event={e} deliveryMap={deliveryMap} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes — markdown-rendered, one block per note event */}
+                  {noteEvents.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                        <MessageSquare className="h-3 w-3" />
+                        Notes ({noteEvents.length})
+                      </h5>
+                      {[...noteEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(e => (
+                        <div key={e.id} className="rounded-md border bg-muted/20 p-2.5">
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
+                            <span>{formatDateTime(e.createdAt)}</span>
+                            {e.createdBy && <span>· {e.createdBy}</span>}
+                          </div>
+                          <NoteContent content={e.contentMd ?? ''} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Documents — previewable + downloadable */}
+                  {group.documents.length > 0 && (
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        Documents ({group.documents.length})
+                      </h5>
+                      <div className="grid gap-1">
+                        {[...group.documents].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(d => (
+                          <DocumentCard key={d.id} doc={d} onPreview={openPreview} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          )
+        })}
       </Accordion>
+
+      {/* Shared preview dialog — opens for PDF documents via Eye button */}
+      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) setPreviewDoc(null) }}>
+        <DialogContent className="w-[95vw] sm:max-w-5xl h-[85vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-4 py-3 border-b">
+            <DialogTitle className="truncate text-sm">
+              {previewDoc ? effectiveName(previewDoc) : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {previewDoc && (
+            <div className="relative flex-1">
+              {previewLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-xs text-muted-foreground">Chargement du PDF…</span>
+                </div>
+              )}
+              <iframe
+                src={`/api/recruitment/documents/${previewDoc.id}/preview`}
+                title={`Aperçu de ${effectiveName(previewDoc)}`}
+                className="flex-1 w-full h-full border-0"
+                onLoad={() => setPreviewLoading(false)}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
