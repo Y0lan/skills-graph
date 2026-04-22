@@ -223,7 +223,7 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
   // Apprécié distinction is meaningless — suppress the badge.
   const isFallback = data.formula === 'category-average'
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 min-w-0">
       {data.items.map((item, i) => {
         const label = item.skillLabel ?? item.categoryLabel ?? '?'
         const fulfillment = item.fulfillmentPct
@@ -231,19 +231,22 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
         const barColor = fulfillment >= 100
           ? 'bg-emerald-500'
           : fulfillment >= 60 ? 'bg-amber-500' : 'bg-rose-500'
+        const badge = !isFallback && item.weight === 2
+          ? <Badge variant="outline" className="text-[9px] py-0 px-1 border-primary/40 bg-primary/10 text-primary shrink-0">Requis</Badge>
+          : !isFallback && item.weight === 1
+            ? <Badge variant="outline" className="text-[9px] py-0 px-1 text-muted-foreground shrink-0">Apprécié</Badge>
+            : null
         return (
-          <div key={`${label}-${i}`} className="space-y-1">
-            <div className="flex items-center justify-between text-xs gap-2">
-              <span className="truncate font-medium">
-                {label}
-                {!isFallback && item.weight === 2 && (
-                  <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1 border-primary/40 bg-primary/10 text-primary">Requis</Badge>
-                )}
-                {!isFallback && item.weight === 1 && (
-                  <Badge variant="outline" className="ml-1.5 text-[9px] py-0 px-1 text-muted-foreground">Apprécié</Badge>
-                )}
+          <div key={`${label}-${i}`} className="space-y-1 min-w-0">
+            <div className="flex items-center justify-between text-xs gap-2 min-w-0">
+              {/* Label + badge group — min-w-0 lets the flex actually
+                  shrink the truncation span. Badge stays visible
+                  (shrink-0) while the label ellipsises. */}
+              <span className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="truncate font-medium min-w-0">{label}</span>
+                {badge}
               </span>
-              <span className="tabular-nums text-muted-foreground">
+              <span className="tabular-nums text-muted-foreground shrink-0">
                 {item.candidateLevel}/{item.targetLevel} · {Math.round(fulfillment)}%
               </span>
             </div>
