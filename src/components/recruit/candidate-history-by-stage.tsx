@@ -33,31 +33,41 @@ interface StageGroup {
 }
 
 function groupEventsByStage(events: CandidatureEvent[]): StageGroup[] {
+  // Walk events oldest-first so we can track the candidature's active statut
+  // at the time of each event. Without this, notes/documents (which don't
+  // carry a statutTo of their own) all fall into the 'postule' bucket — so
+  // a note added during the Présélectionné stage would hide under Postulé
+  // forever. The correct stage for a non-status event is whatever statut
+  // was active at that moment.
+  const sortedAsc = [...events].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const stageMap = new Map<string, CandidatureEvent[]>()
-
-  for (const e of events) {
-    const stage = e.statutTo ?? 'postule'
-    if (!stageMap.has(stage)) stageMap.set(stage, [])
-    stageMap.get(stage)!.push(e)
+  let activeStatut = 'postule'
+  for (const e of sortedAsc) {
+    if (e.type === 'status_change' && e.statutTo) {
+      activeStatut = e.statutTo
+      if (!stageMap.has(activeStatut)) stageMap.set(activeStatut, [])
+      stageMap.get(activeStatut)!.push(e)
+    } else {
+      if (!stageMap.has(activeStatut)) stageMap.set(activeStatut, [])
+      stageMap.get(activeStatut)!.push(e)
+    }
   }
 
   // Sort in pipeline order, with unknown stages at end
+  const latestDate = (evts: CandidatureEvent[]) =>
+    evts.length === 0 ? null : evts.reduce((acc, e) => e.createdAt > acc ? e.createdAt : acc, evts[0].createdAt)
   const groups: StageGroup[] = []
   for (const statut of STAGE_ORDER) {
     const evts = stageMap.get(statut)
     if (evts && evts.length > 0) {
-      groups.push({
-        statut,
-        events: evts,
-        latestDate: evts[0]?.createdAt ?? null,
-      })
+      groups.push({ statut, events: evts, latestDate: latestDate(evts) })
     }
   }
 
   // Add any stages not in STAGE_ORDER
   for (const [statut, evts] of stageMap) {
     if (!STAGE_ORDER.includes(statut as (typeof STAGE_ORDER)[number]) && evts.length > 0) {
-      groups.push({ statut, events: evts, latestDate: evts[0]?.createdAt ?? null })
+      groups.push({ statut, events: evts, latestDate: latestDate(evts) })
     }
   }
 
@@ -79,7 +89,10 @@ function computeSummary(events: CandidatureEvent[]): string {
 
   if (events.length === 0) return ''
 
-  const newest = events[0]
+  // API returns events ORDER BY created_at ASC — sort locally to find the
+  // actual newest one (was reading events[0] = oldest, hence "dernière
+  // activité" stuck on the initial Postulé forever).
+  const newest = [...events].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
   const now = Date.now()
   const diff = now - new Date(newest.createdAt).getTime()
   const days = Math.floor(diff / 86_400_000)

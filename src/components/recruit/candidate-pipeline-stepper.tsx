@@ -84,10 +84,14 @@ function computeSteps(candidature: CandidatureInfo, events: CandidatureEvent[]):
 
 function getLastEvent(events: CandidatureEvent[]): string | null {
   if (events.length === 0) return null
-  const last = events[0] // events are sorted newest-first from API
-  const label = last.statutTo ? STATUT_LABELS[last.statutTo] ?? last.statutTo : last.type
-  const date = formatDateShort(last.createdAt)
-  const actor = last.createdBy ? ` par ${last.createdBy}` : ''
+  // The detail API returns events ORDER BY created_at ASC (oldest-first).
+  // The old comment here claimed newest-first and used events[0] — which
+  // froze "Dernier evenement" on the initial Postulé event forever. Sort
+  // locally and pick the newest.
+  const newest = [...events].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  const label = newest.statutTo ? STATUT_LABELS[newest.statutTo] ?? newest.statutTo : newest.type
+  const date = formatDateShort(newest.createdAt)
+  const actor = newest.createdBy ? ` par ${newest.createdBy}` : ''
   return `${date} — ${label}${actor}`
 }
 
