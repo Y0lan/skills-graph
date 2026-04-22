@@ -505,7 +505,7 @@ export default function CandidateProfileCard({
                 {sidebarRow('Ville', profile.location.city)}
                 {sidebarRow('Pays', profile.location.country)}
                 {sidebarRow('Télétravail', profile.location.remotePreference)}
-                {sidebarRow('Mobile', profile.location.willingToRelocate, v => (v ? 'Oui' : 'Non'))}
+                {sidebarRow('Prêt à déménager', profile.location.willingToRelocate, v => (v ? 'Oui' : 'Non'))}
                 {sidebarRow('Permis', profile.location.drivingLicense)}
               </SidebarCard>
             ) : null}

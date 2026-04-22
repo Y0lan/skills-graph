@@ -98,7 +98,16 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
   // Without (b), the original schedule keeps showing as "Programmé" forever
   // after the recruiter clicks "Envoyer maintenant".
   const supersededIds = new Map<string, 'sent' | 'cancelled'>()
+  // Side-table: for every email_scheduled row, remember the subject/body by
+  // messageId. The cancellation event doesn't carry that data, so the
+  // candidate-emails-card would render "Email → {to}" with no subject —
+  // fall back to the scheduled snapshot below when building entries.
+  const scheduledSnapshots = new Map<string, { subject?: string; body?: string }>()
   for (const e of sorted) {
+    if (e.type === 'email_scheduled') {
+      const snap = parseSnapshot(e.emailSnapshot)
+      if (snap.messageId) scheduledSnapshots.set(snap.messageId, { subject: snap.subject, body: snap.body })
+    }
     if (e.type !== 'email_sent' && e.type !== 'email_cancelled') continue
     const snap = parseSnapshot(e.emailSnapshot)
     const lifecycle = e.type === 'email_sent' ? 'sent' : 'cancelled'
@@ -149,11 +158,15 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
         if (scheduledMs > 0 && Date.now() >= scheduledMs) lifecycle = 'sent'
       }
     }
+    // Carry subject/body forward from the original email_scheduled row
+    // when the current event (cancelled / send-now) doesn't have them.
+    // Without this, cancelled rows render "Email → {to}" with no subject.
+    const fallback = messageId ? scheduledSnapshots.get(messageId) : undefined
     entries.push({
       event: e,
       messageId,
-      subject: snap.subject ?? null,
-      body: snap.body ?? null,
+      subject: snap.subject ?? fallback?.subject ?? null,
+      body: snap.body ?? fallback?.body ?? null,
       statuses: messageId ? (statusMap.get(messageId) ?? new Set()) : new Set(),
       statusTo,
       recipient: inferRecipient(snap, e.notes),

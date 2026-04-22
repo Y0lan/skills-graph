@@ -2070,6 +2070,8 @@ type PendingScheduledEmail = {
   messageId: string | null
   candidateEmail: string | null
   statut: string | null
+  subject: string | null
+  body: string | null
 }
 
 /** Return scheduled emails that were queued *after* a given candidature_event
@@ -2092,7 +2094,7 @@ function findPendingScheduledEmails(candidatureId: string, afterEventId: number)
     // (natural fire / direct cancel), or (b) is an email_sent that records
     // this messageId as cancelledScheduleId (the send-now path uses a fresh
     // messageId for the immediate send and points back to the original).
-    const snap = row.email_snapshot ? JSON.parse(row.email_snapshot) as { messageId?: string; to?: string; statut?: string } : {}
+    const snap = row.email_snapshot ? JSON.parse(row.email_snapshot) as { messageId?: string; to?: string; statut?: string; subject?: string; body?: string } : {}
     const messageId = snap.messageId ?? null
     if (messageId) {
       const superseded = getDb().prepare(`
@@ -2108,7 +2110,14 @@ function findPendingScheduledEmails(candidatureId: string, afterEventId: number)
       `).get(candidatureId, row.id, messageId, messageId)
       if (superseded) continue
     }
-    out.push({ id: row.id, messageId, candidateEmail: snap.to ?? null, statut: snap.statut ?? null })
+    out.push({
+      id: row.id,
+      messageId,
+      candidateEmail: snap.to ?? null,
+      statut: snap.statut ?? null,
+      subject: snap.subject ?? null,
+      body: snap.body ?? null,
+    })
   }
   return out
 }
@@ -2202,7 +2211,10 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async
         VALUES (?, 'status_change', ?, ?, ?, ?)
       `).run(req.params.id, current.statut, lastEvent.statut_from, `Annulation de la transition ${lastEvent.statut_from} → ${current.statut}`, user.slug || 'unknown')
 
-      // Record cancellation for every scheduled email we aborted.
+      // Record cancellation for every scheduled email we aborted. Subject
+      // + body are carried forward so the emails-card can still render the
+      // row with its headline ("Votre candidature a été retenue — ..."),
+      // and the preview still shows what would have gone out.
       for (const pending of pendingEmails) {
         if (!pending.messageId) continue
         getDb().prepare(`
@@ -2211,7 +2223,14 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async
         `).run(
           req.params.id,
           `Email programmé annulé (${pending.statut ?? 'inconnu'} → ${pending.candidateEmail ?? ''})`,
-          JSON.stringify({ messageId: pending.messageId, to: pending.candidateEmail, statut: pending.statut, cancelledBy: 'revert-status' }),
+          JSON.stringify({
+            messageId: pending.messageId,
+            to: pending.candidateEmail,
+            statut: pending.statut,
+            subject: pending.subject,
+            body: pending.body,
+            cancelledBy: 'revert-status',
+          }),
           user.slug || 'unknown'
         )
       }
