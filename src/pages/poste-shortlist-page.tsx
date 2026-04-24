@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronRight, Send, BarChart3, Loader2 } from 'lucide-react'
 
@@ -160,8 +161,9 @@ export default function PosteShortlistPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Label htmlFor="shortlist-sort" className="text-sm text-muted-foreground">Trier par</Label>
             <Select value={sortBy} onValueChange={(v) => setSortBy((v ?? 'global') as SortKey)}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="shortlist-sort" className="w-40" aria-label="Critère de tri"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="global">Global</SelectItem>
                 <SelectItem value="poste">Poste</SelectItem>
