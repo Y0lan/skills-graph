@@ -93,6 +93,15 @@ interface DashboardStats {
   statusBreakdown: Record<string, number>
 }
 
+const SORT_KEYS = ['fit_desc', 'fit_asc', 'date_desc', 'date_asc'] as const
+type SortKey = (typeof SORT_KEYS)[number]
+const SORT_LABELS: Record<SortKey, string> = {
+  fit_desc: 'Score poste (élevé → faible)',
+  fit_asc: 'Score poste (faible → élevé)',
+  date_desc: 'Plus récent',
+  date_asc: 'Plus ancien',
+}
+
 
 const EXPERIENCE_LABELS: Record<string, string> = {
   all: 'Toute expérience',
@@ -168,6 +177,10 @@ export default function RecruitPipelinePage() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() =>
     (localStorage.getItem('pipeline-view') as 'list' | 'kanban') ?? 'list'
   )
+  const [sortBy, setSortBy] = useState<SortKey>(() => {
+    const v = localStorage.getItem('pipeline-sort') as SortKey | null
+    return v && SORT_KEYS.includes(v) ? v : 'fit_desc'
+  })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [downloadingZip, setDownloadingZip] = useState(false)
   const [scrollTrigger, setScrollTrigger] = useState(0)
@@ -382,6 +395,21 @@ export default function RecruitPipelinePage() {
       if (!isStuck && !docsIncomplete && !hasAlerts) return false
     }
     return true
+  })
+
+  // Sort after filtering. Ties break on created_at DESC so the chosen sort
+  // still places newer applications above older ones inside equal-score
+  // groups — matches the server's default tiebreak.
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'fit_desc' || sortBy === 'fit_asc') {
+      const aFit = a.tauxPoste ?? -Infinity
+      const bFit = b.tauxPoste ?? -Infinity
+      const delta = sortBy === 'fit_desc' ? bFit - aFit : aFit - bFit
+      if (delta !== 0) return delta
+    }
+    const aTs = new Date(a.createdAt + (a.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
+    const bTs = new Date(b.createdAt + (b.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
+    return sortBy === 'date_asc' ? aTs - bTs : bTs - aTs
   })
 
   const activeChipCount = (chipStuck ? 1 : 0) + (chipDocsMissing ? 1 : 0) + (chipNeedsAction ? 1 : 0)
@@ -642,7 +670,25 @@ export default function RecruitPipelinePage() {
             </Button>
           )}
 
-          <div className="inline-flex rounded-md border border-border ml-auto">
+          <Select
+            value={sortBy}
+            onValueChange={(v) => {
+              const next = v as SortKey
+              setSortBy(next)
+              localStorage.setItem('pipeline-sort', next)
+            }}
+          >
+            <SelectTrigger className="w-[230px] h-9 ml-auto" aria-label="Trier les candidatures">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_KEYS.map(k => (
+                <SelectItem key={k} value={k}>{SORT_LABELS[k]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="inline-flex rounded-md border border-border">
             <Button
               variant={viewMode === 'list' ? 'default' : 'ghost'}
               size="sm"
@@ -712,7 +758,7 @@ export default function RecruitPipelinePage() {
           </Card>
         ) : viewMode === 'kanban' ? (
           <KanbanBoard
-            candidatures={filtered.map(c => ({
+            candidatures={sorted.map(c => ({
               id: c.id,
               candidateId: c.candidateId,
               candidateName: c.candidateName,
@@ -725,7 +771,7 @@ export default function RecruitPipelinePage() {
           />
         ) : (
           <div className="space-y-2">
-            {filtered.map(c => (
+            {sorted.map(c => (
               <div key={c.id} className="flex items-center gap-2">
                 <div
                   className="shrink-0"
