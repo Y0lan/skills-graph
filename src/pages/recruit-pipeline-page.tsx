@@ -679,7 +679,10 @@ export default function RecruitPipelinePage() {
             }}
           >
             <SelectTrigger className="w-[230px] h-9 ml-auto" aria-label="Trier les candidatures">
-              <SelectValue />
+              {/* Base-ui's <Value> shows the raw value by default — pass
+                  children that resolve the label from state, matching the
+                  pattern of the other Selects on this page. */}
+              <SelectValue>{SORT_LABELS[sortBy]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {SORT_KEYS.map(k => (
