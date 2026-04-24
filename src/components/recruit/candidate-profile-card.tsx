@@ -126,12 +126,78 @@ export interface CandidateProfileCardProps {
  * No lock button, no info tooltip, no history dialog — per recruiter
  * feedback: "if the AI says so, trust it."
  */
+/** The server returns `ai_profile` as raw JSON without schema validation, so
+ *  partial extractions or legacy rows can be missing whole sub-sections like
+ *  `currentRole`. The card used to blindly read `profile.currentRole.role.value`
+ *  and crash the whole detail page. Hydrate the shape once here so downstream
+ *  code can assume every nested field exists. */
+function emptyField<T>(): ProfileField<T> {
+  return {
+    value: null,
+    runId: null,
+    sourceDoc: null,
+    confidence: null,
+    humanLockedAt: null,
+    humanLockedBy: null,
+  }
+}
+
+function hydrateProfile(raw: AiProfile): AiProfile {
+  const r = raw as unknown as Partial<AiProfile>
+  return {
+    identity: { fullName: r.identity?.fullName ?? emptyField<string>() },
+    contact: {
+      email: r.contact?.email ?? emptyField<string>(),
+      phone: r.contact?.phone ?? emptyField<string>(),
+      linkedinUrl: r.contact?.linkedinUrl ?? emptyField<string>(),
+      githubUrl: r.contact?.githubUrl ?? emptyField<string>(),
+      portfolioUrl: r.contact?.portfolioUrl ?? emptyField<string>(),
+      otherLinks: r.contact?.otherLinks ?? emptyField<string[]>(),
+    },
+    location: {
+      city: r.location?.city ?? emptyField<string>(),
+      country: r.location?.country ?? emptyField<string>(),
+      willingToRelocate: r.location?.willingToRelocate ?? emptyField<boolean>(),
+      remotePreference: r.location?.remotePreference ?? emptyField<string>(),
+      drivingLicense: r.location?.drivingLicense ?? emptyField<string>(),
+    },
+    education: r.education ?? [],
+    experience: r.experience ?? [],
+    currentRole: {
+      company: r.currentRole?.company ?? emptyField<string>(),
+      role: r.currentRole?.role ?? emptyField<string>(),
+      isCurrentlyEmployed: r.currentRole?.isCurrentlyEmployed ?? emptyField<boolean>(),
+      startedAt: r.currentRole?.startedAt ?? emptyField<string>(),
+    },
+    totalExperienceYears: r.totalExperienceYears ?? emptyField<number>(),
+    languages: r.languages ?? [],
+    certifications: r.certifications ?? [],
+    publications: r.publications ?? [],
+    openSource: {
+      githubUsername: r.openSource?.githubUsername ?? emptyField<string>(),
+      notableProjects: r.openSource?.notableProjects ?? [],
+    },
+    availability: {
+      noticePeriodDays: r.availability?.noticePeriodDays ?? emptyField<number>(),
+      earliestStart: r.availability?.earliestStart ?? emptyField<string>(),
+    },
+    softSignals: {
+      summaryFr: r.softSignals?.summaryFr ?? emptyField<string>(),
+      motivations: r.softSignals?.motivations ?? emptyField<string[]>(),
+      interests: r.softSignals?.interests ?? emptyField<string[]>(),
+      valuesMentioned: r.softSignals?.valuesMentioned ?? emptyField<string[]>(),
+    },
+    additionalFacts: r.additionalFacts ?? [],
+    _schemaVersion: r._schemaVersion,
+  }
+}
+
 export default function CandidateProfileCard({
-  profile,
+  profile: rawProfile,
   photoUrl,
   topSkills = [],
 }: CandidateProfileCardProps) {
-  if (!profile) {
+  if (!rawProfile) {
     return (
       <Card>
         <CardHeader>
@@ -145,6 +211,8 @@ export default function CandidateProfileCard({
       </Card>
     )
   }
+
+  const profile = hydrateProfile(rawProfile)
 
   /** Label: value + source tag row, compact form for sidebar cards. */
   const sidebarRow = (

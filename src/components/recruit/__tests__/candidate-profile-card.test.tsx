@@ -163,4 +163,17 @@ describe('<CandidateProfileCard>', () => {
     render(<CandidateProfileCard candidateId="c1" profile={profile} />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Candidat')
   })
+
+  it('does not crash when the stored profile is partial (missing whole sub-sections)', () => {
+    // Regression for the detail page crash "Cannot read properties of
+    // undefined (reading 'role')": ai_profile stored without a currentRole
+    // object (older schema or partial extraction) used to throw here and
+    // blank out the entire candidate page.
+    const partial = {
+      identity: { fullName: pf<string>('Jean Dupont') },
+      // currentRole, location, contact, etc. all missing on purpose
+    } as unknown as AiProfile
+    render(<CandidateProfileCard candidateId="c1" profile={partial} />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Jean Dupont')
+  })
 })
