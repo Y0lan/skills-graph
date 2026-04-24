@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import AppHeader from '@/components/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -23,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X } from 'lucide-react'
+import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
@@ -151,6 +150,43 @@ function CompatibilityBar({ value, label }: { value: number | null; label: strin
       </div>
       <span className="text-xs font-medium w-8 text-right">{value}%</span>
     </div>
+  )
+}
+
+/** À traiter row — large click target that shows the count, pulses when
+ *  non-zero (subtle), and toggles the matching quick-chip filter. Tone
+ *  drives the number color so recruiters pick up priority peripherally. */
+function TriageRow({
+  icon, label, count, tone, active, onClick,
+}: {
+  icon: string; label: string; count: number
+  tone: 'urgent' | 'warn' | 'accent' | 'muted'
+  active: boolean
+  onClick: () => void
+}) {
+  const numColor =
+    count === 0 ? 'text-muted-foreground/50'
+    : tone === 'urgent' ? 'text-rose-500'
+    : tone === 'warn' ? 'text-amber-500'
+    : tone === 'accent' ? 'text-chart-2'
+    : 'text-foreground'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group w-full flex items-center gap-3 py-2.5 px-1 text-left transition-colors hover:bg-muted/40 ${active ? 'bg-muted/60' : ''}`}
+      aria-pressed={active}
+    >
+      <span className="text-base leading-none">{icon}</span>
+      <span className="flex-1 text-sm text-foreground/90 group-hover:text-foreground">
+        {label}
+        {active && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-primary font-semibold">· filtre actif</span>}
+      </span>
+      <span className={`text-2xl font-bold tabular-nums leading-none ${numColor}`} style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
+        {count}
+      </span>
+      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground" />
+    </button>
   )
 }
 
@@ -433,169 +469,356 @@ export default function RecruitPipelinePage() {
 
   const activeChipCount = (chipStuck ? 1 : 0) + (chipDocsMissing ? 1 : 0) + (chipNeedsAction ? 1 : 0)
 
+  // Triage counts — computed across ALL candidatures (not just filtered) so
+  // the "À traiter" panel still tells the truth when the user narrows the
+  // view. This answers the recruiter's first morning question in one glance.
+  const triageCounts = (() => {
+    let stuck = 0, docsMissing = 0, needsAction = 0
+    const now = Date.now()
+    for (const c of candidatures) {
+      const enteredAt = c.enteredStatusAt ?? c.createdAt
+      const days = (now - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      const isStuck = days >= 7 && c.statut !== 'embauche' && c.statut !== 'refuse'
+      const docsIncomplete = c.docsSlotCount < 2
+      const hasAlerts = (c.softSkillAlerts?.length ?? 0) > 0
+      if (isStuck) stuck++
+      if (docsIncomplete && c.statut !== 'embauche' && c.statut !== 'refuse') docsMissing++
+      if ((isStuck || docsIncomplete || hasAlerts) && c.statut !== 'embauche' && c.statut !== 'refuse') needsAction++
+    }
+    return { stuck, docsMissing, needsAction }
+  })()
+
   return (
     <div className="min-h-screen">
       <AppHeader />
       <main className="container mx-auto max-w-6xl px-4 pt-16 pb-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        {/* ── Masthead ─────────────────────────────────────────────
+            Editorial header: eyebrow label, compact H1, actions right.
+            Actions collapse to icon-only to free up horizontal weight
+            for the title block. */}
+        <div className="flex items-end justify-between mb-8 pb-4 border-b">
           <div>
-            <h1 className="text-2xl font-bold">Recrutement SINAPSE</h1>
-            <p className="text-sm text-muted-foreground">Campagne Avril 2026 — 7 postes</p>
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-1">
+              Campagne · Avril 2026 · {postes.length} postes
+            </p>
+            <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
+              Recrutement
+            </h1>
+            {stats && (
+              <p className="text-sm text-muted-foreground mt-1 tabular-nums">
+                <span className="text-foreground font-medium">{stats.totalCandidatures}</span> candidatures ·{' '}
+                <span className="text-foreground font-medium">{stats.totalActive}</span> en cours ·{' '}
+                <span className="text-foreground font-medium">{stats.statusBreakdown?.embauche ?? 0}</span> embauché(s)
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={openWeightsDialog}>
-              <Settings className="h-4 w-4 mr-1" />
-              Ponderation
-            </Button>
-            <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer">
-              <Button variant="outline" size="sm">
-                <FileText className="h-4 w-4 mr-1" />
-                Exporter PDF
-              </Button>
-            </a>
-            <Link to="/recruit">
-              <Button variant="outline" size="sm">
-                <Users className="h-4 w-4 mr-1" />
-                Candidats
-              </Button>
-            </Link>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Button variant="ghost" size="sm" onClick={openWeightsDialog} className="h-9 w-9 p-0">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                )}
+              />
+              <TooltipContent>Pondération du score</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer" className="inline-flex">
+                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                      <FileText className="h-4 w-4" />
+                    </Button>
+                  </a>
+                )}
+              />
+              <TooltipContent>Exporter PDF</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Link to="/recruit" className="inline-flex">
+                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                      <Users className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                )}
+              />
+              <TooltipContent>Tous les candidats</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
-        {/* Stats overview */}
+        {/* ── Dashboard band: Pipeline health + À traiter ─────────
+            Asymmetric 5:3 grid. Left = pipeline flow at a glance via
+            per-stage mini-bars. Right = actionable triage buttons that
+            pre-apply the right filters so recruiters go from "what
+            matters today" to the candidate list in one click. */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <Card>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-2xl font-bold">{stats.totalCandidatures}</p>
-                <p className="text-xs text-muted-foreground">Candidatures totales</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-2xl font-bold">{stats.totalActive}</p>
-                <p className="text-xs text-muted-foreground">En cours</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-2xl font-bold">{stats.statusBreakdown?.entretien_1 ?? 0}</p>
-                <p className="text-xs text-muted-foreground">En entretien</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 px-4">
-                <p className="text-2xl font-bold">{stats.statusBreakdown?.embauche ?? 0}</p>
-                <p className="text-xs text-muted-foreground">Embauchés</p>
-              </CardContent>
-            </Card>
+          <div className="grid grid-cols-1 md:grid-cols-[5fr_3fr] gap-0 md:gap-6 mb-10">
+            {/* Pipeline overview */}
+            <div className="pb-6 md:pb-0 md:border-r md:pr-6 border-b md:border-b-0 mb-6 md:mb-0">
+              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">Pipeline</p>
+              <div className="flex items-baseline gap-6 mb-5">
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-5xl font-bold tabular-nums leading-none" style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
+                      {stats.totalActive}
+                    </span>
+                    <span className="text-sm text-muted-foreground">actives</span>
+                  </div>
+                </div>
+                <div className="h-8 w-px bg-border" />
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold tabular-nums leading-none text-foreground/80">
+                      {(stats.statusBreakdown?.entretien_1 ?? 0) + (stats.statusBreakdown?.entretien_2 ?? 0)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">entretiens</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-bold tabular-nums leading-none text-emerald-500">
+                      {stats.statusBreakdown?.embauche ?? 0}
+                    </span>
+                    <span className="text-xs text-muted-foreground">embauches</span>
+                  </div>
+                </div>
+              </div>
+              {/* Per-stage mini-bar — shows flow distribution across the
+                  9 pipeline statuts. Click a segment to filter. */}
+              <div className="space-y-1.5">
+                <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
+                  {(() => {
+                    const stages = [
+                      { k: 'postule', color: 'bg-muted-foreground/40' },
+                      { k: 'preselectionne', color: 'bg-primary/60' },
+                      { k: 'skill_radar_envoye', color: 'bg-primary/70' },
+                      { k: 'skill_radar_complete', color: 'bg-primary/80' },
+                      { k: 'entretien_1', color: 'bg-primary' },
+                      { k: 'aboro', color: 'bg-chart-2' },
+                      { k: 'entretien_2', color: 'bg-chart-2' },
+                      { k: 'proposition', color: 'bg-chart-3' },
+                      { k: 'embauche', color: 'bg-emerald-500' },
+                    ]
+                    const total = stats.totalActive + (stats.statusBreakdown?.embauche ?? 0) || 1
+                    return stages.map(s => {
+                      const n = stats.statusBreakdown?.[s.k] ?? 0
+                      if (n === 0) return null
+                      const pct = (n / total) * 100
+                      return (
+                        <Tooltip key={s.k}>
+                          <TooltipTrigger
+                            render={(
+                              <button
+                                type="button"
+                                onClick={() => { setFilterStatut(s.k); setScrollTrigger(n => n + 1) }}
+                                className={`${s.color} hover:brightness-110 transition-[filter]`}
+                                style={{ width: `${pct}%` }}
+                                aria-label={`${STATUT_LABELS[s.k] ?? s.k}: ${n}`}
+                              />
+                            )}
+                          />
+                          <TooltipContent className="text-xs">{STATUT_LABELS[s.k] ?? s.k} : {n}</TooltipContent>
+                        </Tooltip>
+                      )
+                    })
+                  })()}
+                </div>
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+                  {['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition'].map(k => {
+                    const n = stats.statusBreakdown?.[k] ?? 0
+                    if (n === 0) return null
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => { setFilterStatut(k); setScrollTrigger(n => n + 1) }}
+                        className="hover:text-foreground transition-colors"
+                      >
+                        {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* À traiter — action triage panel. Clickable rows that
+                toggle the matching quick-chip AND scroll to the list. */}
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">À traiter</p>
+              <div className="divide-y divide-border">
+                <TriageRow
+                  icon="🚨"
+                  label="Action requise"
+                  count={triageCounts.needsAction}
+                  tone={triageCounts.needsAction > 0 ? 'urgent' : 'muted'}
+                  active={chipNeedsAction}
+                  onClick={() => { setChipNeedsAction(v => !v); setScrollTrigger(n => n + 1) }}
+                />
+                <TriageRow
+                  icon="⏱"
+                  label="Bloquées > 7j"
+                  count={triageCounts.stuck}
+                  tone={triageCounts.stuck > 0 ? 'warn' : 'muted'}
+                  active={chipStuck}
+                  onClick={() => { setChipStuck(v => !v); setScrollTrigger(n => n + 1) }}
+                />
+                <TriageRow
+                  icon="📂"
+                  label="Dossier incomplet"
+                  count={triageCounts.docsMissing}
+                  tone={triageCounts.docsMissing > 0 ? 'accent' : 'muted'}
+                  active={chipDocsMissing}
+                  onClick={() => { setChipDocsMissing(v => !v); setScrollTrigger(n => n + 1) }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Postes by pole */}
-        <div className="space-y-4 mb-8">
-          {['legacy', 'java_modernisation', 'fonctionnel'].map(pole => {
-            const polePostes = postesByPole.get(pole) ?? []
-            if (polePostes.length === 0) return null
-            return (
-              <Card key={pole}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Building2 className="h-4 w-4" />
-                    <Badge variant="secondary" className={POLE_COLORS[pole]}>
+        {/* ── Postes — editorial numeric-prefix list ────────────
+            Chapter-marked rows grouped under pôle eyebrows. Flat
+            layout (no nested cards) so the scanning eye reads down
+            the numeric column, then laterally to counts. Secondary
+            actions (compare / shortlist / edit) live in an inline
+            icon strip that reveals on hover — keeps the row calm by
+            default. */}
+        <section className="mb-10">
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">Postes</p>
+            <p className="text-[11px] text-muted-foreground tabular-nums">
+              {postes.length} postes · {postes.reduce((s, p) => s + p.candidateCount, 0)} candidats
+            </p>
+          </div>
+          {(() => {
+            let idx = 0
+            return ['legacy', 'java_modernisation', 'fonctionnel'].map(pole => {
+              const polePostes = postesByPole.get(pole) ?? []
+              if (polePostes.length === 0) return null
+              const poleTotal = polePostes.reduce((s, p) => s + p.candidateCount, 0)
+              const poleActive = polePostes.reduce((s, p) => s + p.activeCount, 0)
+              return (
+                <div key={pole} className="mb-5 last:mb-0">
+                  <div className="flex items-baseline gap-3 py-2 border-t">
+                    <Badge variant="secondary" className={`${POLE_COLORS[pole]} text-[10px] tracking-wide uppercase font-semibold px-2 py-0.5`}>
                       {POLE_LABELS[pole]}
                     </Badge>
-                    <Link
-                      to="/recruit"
-                      className="text-muted-foreground text-sm font-normal hover:text-foreground hover:underline"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {polePostes.reduce((s, p) => s + p.candidateCount, 0)} candidat(s)
-                    </Link>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-2">
-                    {polePostes.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setFilterPole(pole)
-                          setFilterPoste(p.id)
-                          setFilterStatut('all')
-                          setScrollTrigger(n => n + 1)
-                        }}
-                        className="w-full flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left"
-                      >
-                        <div>
-                          <span className="font-medium text-sm">{p.titre}</span>
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {p.headcount} poste{p.headcountFlexible ? ' (flex.)' : ''} · {p.experienceMin} ans d'exp. req.
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Tooltip>
-                            <TooltipTrigger className="cursor-help">
-                              <Badge variant="outline" className="text-xs">
-                                {p.candidateCount} candidat{p.candidateCount !== 1 ? 's' : ''}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[260px] text-xs">
-                              Nombre total de candidatures pour ce poste
-                            </TooltipContent>
-                          </Tooltip>
-                          {p.activeCount > 0 && (
-                            <Tooltip>
-                              <TooltipTrigger className="cursor-help">
-                                <Badge className="text-xs bg-primary">
-                                  {p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[260px] text-xs">
-                                Candidatures en cours de traitement (hors refusés et embauchés)
-                              </TooltipContent>
-                            </Tooltip>
-                          )}
-                          <a
-                            href={`/recruit/reports/comparison/${p.id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-muted-foreground hover:text-foreground"
-                            title="Comparer les candidats"
-                          >
-                            <BarChart3 className="h-4 w-4" />
-                          </a>
-                          <Link
-                            to={`/recruit/postes/${p.id}/shortlist`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-muted-foreground hover:text-foreground"
-                            title="Shortlist + contact"
-                          >
-                            <Trophy className="h-4 w-4" />
-                          </Link>
-                          {p.id !== 'candidature-libre' ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setEditingPoste(p) }}
-                              className={`text-muted-foreground hover:text-foreground ${p.description ? 'text-primary' : ''}`}
-                              title={p.description ? 'Modifier la fiche de poste' : 'Ajouter une fiche de poste'}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          ) : null}
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      </button>
-                    ))}
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {poleTotal} candidat{poleTotal !== 1 ? 's' : ''} · {poleActive} actif{poleActive !== 1 ? 's' : ''}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+                  <div>
+                    {polePostes.map(p => {
+                      idx++
+                      const isSelected = filterPoste === p.id
+                      return (
+                        <div
+                          key={p.id}
+                          className={`group relative flex items-center gap-3 py-3 border-t border-border/60 transition-colors hover:bg-muted/40 ${isSelected ? 'bg-muted/60' : ''}`}
+                        >
+                          {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFilterPole(pole)
+                              setFilterPoste(p.id)
+                              setFilterStatut('all')
+                              setScrollTrigger(n => n + 1)
+                            }}
+                            className="flex-1 flex items-baseline gap-4 text-left min-w-0"
+                          >
+                            <span className="text-[11px] font-mono tabular-nums text-muted-foreground/60 w-6 shrink-0 pl-2">
+                              {String(idx).padStart(2, '0')}
+                            </span>
+                            <div className="flex-1 min-w-0 flex items-baseline gap-3 flex-wrap">
+                              <span className="font-medium text-sm text-foreground truncate">{p.titre}</span>
+                              <span className="text-[11px] text-muted-foreground tabular-nums">
+                                {p.headcount} poste{p.headcountFlexible ? ' (flex.)' : ''} · {p.experienceMin} ans
+                              </span>
+                            </div>
+                          </button>
+                          <div className="flex items-center gap-3 shrink-0 pr-2">
+                            <div className="text-right tabular-nums">
+                              <span className="text-sm font-semibold text-foreground">{p.candidateCount}</span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {p.activeCount > 0 && <> · <span className="text-primary font-medium">{p.activeCount} actif{p.activeCount !== 1 ? 's' : ''}</span></>}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 transition-opacity">
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(
+                                    <a
+                                      href={`/recruit/reports/comparison/${p.id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                                    >
+                                      <BarChart3 className="h-3.5 w-3.5" />
+                                    </a>
+                                  )}
+                                />
+                                <TooltipContent className="text-xs">Comparer les candidats</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(
+                                    <Link
+                                      to={`/recruit/postes/${p.id}/shortlist`}
+                                      className="inline-flex h-7 w-7 items-center justify-center rounded hover:bg-accent text-muted-foreground hover:text-foreground"
+                                    >
+                                      <Trophy className="h-3.5 w-3.5" />
+                                    </Link>
+                                  )}
+                                />
+                                <TooltipContent className="text-xs">Shortlist + contact</TooltipContent>
+                              </Tooltip>
+                              {p.id !== 'candidature-libre' && (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={(
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setEditingPoste(p) }}
+                                        className={`inline-flex h-7 w-7 items-center justify-center rounded hover:bg-accent ${p.description ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  />
+                                  <TooltipContent className="text-xs">
+                                    {p.description ? 'Modifier la fiche de poste' : 'Ajouter une fiche de poste'}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })
+          })()}
+        </section>
 
+        {/* ── Candidatures — working area ─────────────────────── */}
+        <section>
+          <div className="flex items-baseline justify-between mb-3">
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+              Candidatures
+            </p>
+            <Link to="/recruit" className="text-[11px] text-muted-foreground hover:text-foreground tabular-nums">
+              <span className="text-foreground font-medium">{filtered.length}</span>
+              {filtered.length !== candidatures.length ? ` / ${candidatures.length}` : ''} résultat{filtered.length !== 1 ? 's' : ''}
+            </Link>
+          </div>
         {/* Filters — redesigned: single toolbar row (search + primary filters +
             advanced popover + sort + view + count) with active pills + quick
             chips on a second row that only appears when something is in use. */}
@@ -757,46 +980,20 @@ export default function RecruitPipelinePage() {
               Kanban
             </Button>
           </div>
-
-          <Link to="/recruit" className="text-sm text-muted-foreground hover:text-foreground hover:underline tabular-nums">
-            {filtered.length} candidature{filtered.length !== 1 ? 's' : ''}
-          </Link>
         </div>
 
-        {/* Row 2: quick chips (always) + active filter pills (conditional) +
-            Réinitialiser button aligned right when anything is active. */}
+        {/* Row 2: active filter pills + Réinitialiser — only appears when
+            something is in use. Quick chips moved up to the "À traiter"
+            panel (they're triage, not display filters). */}
+        {hasAnyActive && (
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          {/* Quick-action chips (smart combos). */}
-          <Button
-            variant={chipStuck ? 'default' : 'outline'}
-            size="sm"
-            className="h-7 text-[11px] px-2.5 gap-1"
-            onClick={() => setChipStuck(!chipStuck)}
-            title="Candidatures en attente depuis plus de 7 jours"
-          >
-            ⏱ Bloquées &gt; 7j
-          </Button>
-          <Button
-            variant={chipDocsMissing ? 'default' : 'outline'}
-            size="sm"
-            className="h-7 text-[11px] px-2.5 gap-1"
-            onClick={() => setChipDocsMissing(!chipDocsMissing)}
-            title="Dossier incomplet (CV/Lettre/ABORO)"
-          >
-            📂 Dossier incomplet
-          </Button>
-          <Button
-            variant={chipNeedsAction ? 'default' : 'outline'}
-            size="sm"
-            className="h-7 text-[11px] px-2.5 gap-1"
-            onClick={() => setChipNeedsAction(!chipNeedsAction)}
-            title="Bloqué OU dossier incomplet OU alerte soft skill"
-          >
-            🚨 Action requise
-          </Button>
-
-          {/* Active-filter pills — removable one at a time. */}
-          {activePillCount > 0 && <div className="h-5 w-px bg-border mx-1" />}
+          {activeChipCount > 0 && (
+            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold mr-1">Triage actif</span>
+          )}
+          {chipStuck && <FilterPill label="⏱ Bloquées > 7j" onRemove={() => setChipStuck(false)} />}
+          {chipDocsMissing && <FilterPill label="📂 Dossier incomplet" onRemove={() => setChipDocsMissing(false)} />}
+          {chipNeedsAction && <FilterPill label="🚨 Action requise" onRemove={() => setChipNeedsAction(false)} />}
+          {activePillCount > 0 && activeChipCount > 0 && <div className="h-5 w-px bg-border mx-1" />}
           {filterPole !== 'all' && (
             <FilterPill
               label={`Pôle : ${POLE_LABELS[filterPole] ?? filterPole}`}
@@ -834,30 +1031,27 @@ export default function RecruitPipelinePage() {
             />
           )}
 
-          {hasAnyActive && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-7 text-[11px] px-2"
-              onClick={resetAll}
-            >
-              Réinitialiser
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-7 text-[11px] px-2"
+            onClick={resetAll}
+          >
+            Réinitialiser
+          </Button>
         </div>
+        )}
         </>
         })()}
 
         {/* Candidatures — list or kanban */}
         <div ref={candidaturesRef} className="scroll-mt-16" />
         {filtered.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              <Users className="h-8 w-8 mx-auto mb-3 opacity-50" />
-              <p>Aucune candidature pour ces filtres.</p>
-              <p className="text-xs mt-1">Les candidatures arrivent via sinapse.nc ou peuvent être créées manuellement.</p>
-            </CardContent>
-          </Card>
+          <div className="border-t border-b py-16 text-center text-muted-foreground">
+            <Users className="h-8 w-8 mx-auto mb-3 opacity-40" />
+            <p className="text-sm">Aucune candidature pour ces filtres.</p>
+            <p className="text-xs mt-1 text-muted-foreground/70">Les candidatures arrivent via sinapse.nc ou peuvent être créées manuellement.</p>
+          </div>
         ) : viewMode === 'kanban' ? (
           <KanbanBoard
             candidatures={sorted.map(c => ({
@@ -872,26 +1066,29 @@ export default function RecruitPipelinePage() {
             onDelete={(candidatureId, candidateName, posteTitre) => setDeleteTarget({ candidatureId, name: candidateName, posteTitre })}
           />
         ) : (
-          <div className="space-y-2">
-            {sorted.map(c => (
-              <div key={c.id} className="flex items-center gap-2">
-                <div
-                  className="shrink-0"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
-                >
-                  <Checkbox
-                    checked={selectedIds.has(c.id)}
-                    onCheckedChange={() => toggleSelection(c.id)}
-                  />
-                </div>
-                <Link
-                  to={`/recruit/${c.candidateId}`}
-                  className="block flex-1 min-w-0"
-                >
-                <Card className={`hover:bg-muted/30 transition-colors ${selectedIds.has(c.id) ? 'ring-1 ring-primary/50' : ''}`}>
-                  <CardContent className="py-3 px-4">
+          // Editorial list: hairline-separated rows. Selection state is a
+          // left teal accent (not a ring) so it's visible but doesn't
+          // balloon the row height.
+          <div className="border-t">
+            {sorted.map(c => {
+              const isSel = selectedIds.has(c.id)
+              return (
+                <div key={c.id} className="relative flex items-start gap-3 border-b group hover:bg-muted/30 transition-colors">
+                  {isSel && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
+                  <div
+                    className="pt-4 pl-3 shrink-0"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                  >
+                    <Checkbox
+                      checked={isSel}
+                      onCheckedChange={() => toggleSelection(c.id)}
+                    />
+                  </div>
+                  <Link
+                    to={`/recruit/${c.candidateId}`}
+                    className="block flex-1 min-w-0 py-3 pr-3"
+                  >
                     <div className="flex items-start gap-4">
-                      {/* Name + meta + preview */}
                       <div className="flex-1 min-w-0">
                         <PipelineCandidatureRow
                           candidateName={c.candidateName}
@@ -909,22 +1106,23 @@ export default function RecruitPipelinePage() {
                         />
                       </div>
 
-                      {/* Compatibility scores */}
+                      {/* Compatibility — three stacked mini-bars kept tabular
+                          for vertical scan comparison between candidates. */}
                       <div className="hidden sm:flex flex-col gap-1 w-44 pt-1">
                         <CompatibilityBar value={c.tauxPoste} label="Poste" />
                         <CompatibilityBar value={c.tauxEquipe} label="Équipe" />
                         <CompatibilityBar value={c.tauxGlobal} label="Global" />
                       </div>
 
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/60 group-hover:text-muted-foreground shrink-0 mt-1 transition-colors" />
                     </div>
-                  </CardContent>
-                </Card>
-                </Link>
-              </div>
-            ))}
+                  </Link>
+                </div>
+              )
+            })}
           </div>
         )}
+        </section>
 
         {/* Floating action bar for batch selection */}
         {selectedIds.size > 0 && viewMode === 'list' && (
