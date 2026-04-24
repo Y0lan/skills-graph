@@ -157,6 +157,30 @@ describe('Phase 10: shortlist + outreach', () => {
       expect(res.body.failed).toContainEqual(expect.objectContaining({ candidatureId: c2 }))
     })
 
+    it('skill_radar_envoye outreach includes each candidate eval link in the sent email (preview/send parity)', async () => {
+      const db = getDb()
+      const posteId = (db.prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
+      const c1 = seedCandidature(posteId, { global: 90, email: 'eval-test@example.com', name: 'Testy' })
+
+      const app = await buildApp()
+      const res = await supertest(app).post(`/api/recruitment/postes/${posteId}/outreach`).send({
+        candidatureIds: [c1],
+        statut: 'skill_radar_envoye',
+      })
+      expect(res.status).toBe(200)
+      expect(res.body.sent).toContain(c1)
+
+      // The Resend mock captured the outgoing email. The HTML body MUST
+      // contain /evaluate/<candidateId> — previously this endpoint sent
+      // the email with an empty href="" because it didn't pass
+      // evaluationUrl to sendTransitionEmail. Codex pass-2 finding #5.
+      expect(sendMock).toHaveBeenCalled()
+      const call = sendMock.mock.calls[0]
+      const payload = call[0] as { html?: string } | undefined
+      const html = payload?.html ?? ''
+      expect(html).toMatch(/\/evaluate\//)
+    })
+
     it('400 when batch exceeds 20', async () => {
       const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
       const app = await buildApp()
