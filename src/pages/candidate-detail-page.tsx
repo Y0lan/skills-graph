@@ -9,7 +9,6 @@ import ExtractionStatusBanner from '@/components/recruit/extraction-status-banne
 import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
 import CandidateIdentityStrip from '@/components/recruit/candidate-identity-strip'
 import CandidatureSwitcher from '@/components/recruit/candidature-switcher'
-import CandidateActionRail from '@/components/recruit/candidate-action-rail'
 import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -142,6 +141,17 @@ export default function CandidateDetailPage() {
   const [reextracting, setReextracting] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
   const [sendingNow, setSendingNow] = useState<string | null>(null)
+  const [profileExpanded, setProfileExpanded] = useState<boolean>(() =>
+    typeof window !== 'undefined' && localStorage.getItem('candidate-profile-expanded') === 'true'
+  )
+
+  // Persist profile-expanded state so the recruiter's choice survives
+  // tab reloads. The localStorage key is shared with any other component
+  // that might show a profile toggle.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('candidate-profile-expanded', String(profileExpanded))
+  }, [profileExpanded])
 
   // Currently selected candidature id (for multi-candidature candidates).
   // Synced to URL query ?c=<id> via useSearchParams so deep-links work
@@ -597,7 +607,7 @@ export default function CandidateDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <div className="mx-auto max-w-6xl px-4 pt-16 pb-8">
+      <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
         {/* ── BACK + NAVIGATION ── */}
         <div className="flex items-center justify-between mb-4">
           <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -639,16 +649,22 @@ export default function CandidateDetailPage() {
           candidate={candidate}
           candidatures={candidatures}
           topSkills={topSkills}
-          onToggleProfile={() => {
-            // Expand the "Profil IA détaillé" disclosure inside the
-            // workspace and scroll to it.
-            localStorage.setItem('candidate-profile-expanded', 'true')
-            setTimeout(() => {
-              const el = document.querySelector('[data-section="profile-disclosure"]')
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }, 60)
-          }}
+          onToggleProfile={candidate.aiProfile ? () => setProfileExpanded(v => !v) : undefined}
         />
+
+        {/* Full LinkedIn-style profile card — lives RIGHT UNDER the
+            identity strip as a disclosure so it's easy to find but
+            doesn't clutter the scan. No more duplicate "profile at top
+            AND at bottom" anti-pattern. */}
+        {candidate.aiProfile && profileExpanded && (
+          <div className="mb-6">
+            <CandidateProfileCard
+              candidateId={candidate.id}
+              profile={candidate.aiProfile as unknown as AiProfile}
+              topSkills={topSkills}
+            />
+          </div>
+        )}
 
         {/* CV extraction status banner — inline under the identity strip,
             only when the extraction is in a non-trivial state. */}
@@ -714,92 +730,39 @@ export default function CandidateDetailPage() {
         )}
 
         {selectedCandidature && !selectedIsHydrating && (
-          <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
-            <div className="min-w-0">
-              <CandidatureWorkspace
-                /* Key by candidature id so switching remounts the whole
-                   workspace subtree. Keeps CandidateNotesSection and any
-                   other component that caches per-candidature state in
-                   useState(() => initial) from leaking state across
-                   candidature switches. Cheap — mount cost is small, and
-                   the SSE hook already tears down + re-opens when id
-                   changes. */
-                key={selectedCandidature.id}
-                candidature={selectedCandidature}
-                candidate={candidate}
-                events={selectedEvents}
-                setEvents={setEvents}
-                documents={selectedDocuments}
-                setDocuments={setDocuments}
-                setCandidatureDataMap={setCandidatureDataMap}
-                notes={notes}
-                setNotes={setNotes}
-                aboroProfile={aboroProfile}
-                setAboroProfile={setAboroProfile}
-                candidateRadar={candidateRadar}
-                teamRadar={teamRadar}
-                gapAnalysis={gapAnalysis}
-                bonusSkills={bonusSkills}
-                multiPosteCompatibility={multiPosteCompatibility}
-                analyzing={analyzing}
-                onGenerateAnalysis={generateAnalysis}
-                sendingNow={sendingNow}
-                revertingStatus={revertingStatus}
-                changingStatus={changingStatus}
-                onSendNow={handleSendNow}
-                onRevertScheduled={(cid) => handleRevertStatus(cid, 'scheduled')}
-                profileDisclosure={candidate.aiProfile ? (
-                  <div data-section="profile-disclosure">
-                    <CandidateProfileCard
-                      candidateId={candidate.id}
-                      profile={candidate.aiProfile as unknown as AiProfile}
-                      topSkills={topSkills}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic" data-section="profile-disclosure">
-                    Aucune extraction CV détaillée encore disponible.
-                  </p>
-                )}
-              />
-            </div>
-            <div>
-              <CandidateActionRail
-                candidature={selectedCandidature}
-                events={selectedEvents}
-                allowedTransitions={selectedTransitions}
-                candidate={{
-                  id: candidate.id,
-                  submittedAt: candidate.submittedAt,
-                  expiresAt: candidate.expiresAt,
-                }}
-                showCopyLink={
-                  !candidate.submittedAt
-                  && new Date(candidate.expiresAt) >= new Date()
-                  && (selectedCandidature.statut === 'postule'
-                      || selectedCandidature.statut === 'preselectionne'
-                      || selectedCandidature.statut === 'skill_radar_envoye')
-                }
-                busyId={revertingStatus ?? sendingNow}
-                changingStatus={changingStatus}
-                onOpenTransition={handleOpenTransition}
-                onRevert={handleRevertStatus}
-                onSendNow={handleSendNow}
-                onReopen={async (candidateId) => {
-                  const res = await fetch(`/api/evaluate/${candidateId}/reopen`, {
-                    method: 'POST',
-                    credentials: 'include',
-                  })
-                  if (res.ok) {
-                    toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
-                    window.location.reload()
-                  } else {
-                    toast.error('Erreur lors de la reouverture')
-                  }
-                }}
-              />
-            </div>
-          </div>
+          <CandidatureWorkspace
+            /* Key by candidature id so switching remounts the whole
+               workspace subtree. Keeps CandidateNotesSection and any
+               other component that caches per-candidature state in
+               useState(() => initial) from leaking state across
+               candidature switches. Cheap — mount cost is small. */
+            key={selectedCandidature.id}
+            candidature={selectedCandidature}
+            candidate={candidate}
+            events={selectedEvents}
+            setEvents={setEvents}
+            documents={selectedDocuments}
+            setDocuments={setDocuments}
+            setCandidatureDataMap={setCandidatureDataMap}
+            notes={notes}
+            setNotes={setNotes}
+            aboroProfile={aboroProfile}
+            setAboroProfile={setAboroProfile}
+            allowedTransitions={selectedTransitions}
+            candidateRadar={candidateRadar}
+            teamRadar={teamRadar}
+            gapAnalysis={gapAnalysis}
+            bonusSkills={bonusSkills}
+            multiPosteCompatibility={multiPosteCompatibility}
+            analyzing={analyzing}
+            onGenerateAnalysis={generateAnalysis}
+            sendingNow={sendingNow}
+            revertingStatus={revertingStatus}
+            changingStatus={changingStatus}
+            onOpenTransition={handleOpenTransition}
+            onRevert={handleRevertStatus}
+            onSendNow={handleSendNow}
+          />
         )}
 
         {/* ── TRANSITION DIALOG ──
