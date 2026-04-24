@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { Loader2, AlertTriangle, AlertCircle, RotateCcw } from 'lucide-react'
+import { Loader2, AlertTriangle, AlertCircle, RotateCcw, Upload } from 'lucide-react'
 import { formatDateTime } from '@/lib/constants'
 
 export type ExtractionStatus = 'idle' | 'running' | 'succeeded' | 'partial' | 'failed'
@@ -13,6 +13,10 @@ export interface ExtractionStatusBannerProps {
   onRetry?: () => void
   onRefresh?: () => void
   retrying?: boolean
+  /** False when the original CV bytes are no longer stored — the recruiter
+   *  must re-upload instead of retrying. When omitted, defaults to true
+   *  (preserves existing caller behavior). */
+  canRetry?: boolean
 }
 
 /**
@@ -31,6 +35,7 @@ export default function ExtractionStatusBanner({
   onRetry,
   onRefresh,
   retrying,
+  canRetry = true,
 }: ExtractionStatusBannerProps) {
   const pollRef = useRef<number | null>(null)
 
@@ -63,7 +68,11 @@ export default function ExtractionStatusBanner({
   const title = isPartial ? 'Extraction partielle' : 'Extraction échouée'
   const subtitle = isPartial
     ? 'Certaines compétences ou candidatures n’ont pas pu être analysées. Vous pouvez relancer.'
-    : 'L’analyse du CV a échoué avant de produire des suggestions utilisables.'
+    : canRetry
+      ? 'L’analyse du CV a échoué avant de produire des suggestions utilisables.'
+      : 'Le CV original n’a pas pu être conservé. Merci de le re-uploader pour relancer l’extraction.'
+
+  const showRetry = onRetry && canRetry
 
   return (
     <div className={`rounded-md border px-4 py-3 text-sm ${tone}`}>
@@ -82,7 +91,7 @@ export default function ExtractionStatusBanner({
             {lastExtractionAt ? ` · ${formatDateTime(lastExtractionAt)}` : ''}
           </div>
         </div>
-        {onRetry ? (
+        {showRetry ? (
           <Button
             variant="outline"
             size="sm"
@@ -93,6 +102,11 @@ export default function ExtractionStatusBanner({
             <RotateCcw className={`h-3.5 w-3.5 ${retrying ? 'animate-spin' : ''}`} />
             Relancer
           </Button>
+        ) : status === 'failed' && !canRetry ? (
+          <div className="shrink-0 flex items-center gap-1.5 text-xs opacity-75">
+            <Upload className="h-3.5 w-3.5" />
+            Re-uploader le CV
+          </div>
         ) : null}
       </div>
     </div>

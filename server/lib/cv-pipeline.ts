@@ -5,13 +5,13 @@ import { getSkillCategories } from './catalog.js'
 import { rescoreCandidature } from './scoring-helpers.js'
 import type { ExtractionStatus } from './types.js'
 import { putAsset } from './asset-storage.js'
-import { extractPhotoFromCvPdf } from './cv-photo-extraction.js'
 import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs.js'
 import { pruneExtractionRuns } from './extraction-retention.js'
 import { extractCandidateProfile } from './cv-profile-extraction.js'
 import { persistMergedProfile } from './profile-merge.js'
 import { getDocumentForDownload } from './document-service.js'
 import { runMultipass } from './cv-multipass.js'
+import { isProfileDegraded, buildExtractionError } from './cv-pipeline-helpers.js'
 
 export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
 
@@ -65,12 +65,12 @@ export async function processCvForCandidate(
   }
 
   try {
-    // 1. Extract text
-    const cvText = await extractCvText(cvBuffer)
-
-    // 2. Store raw PDF bytes so Phase 8 re-extract can reuse them without
-    //    requiring a fresh upload. Dedupes by sha256 — re-running extraction
-    //    on the same CV doesn't duplicate the blob.
+    // 1. Store raw PDF bytes FIRST — before any LLM call that could hang or
+    //    crash. This guarantees the Relancer button on a later `failed` row
+    //    has bytes to replay (codex challenge rev 1 finding #3: Marcel died
+    //    before raw_pdf was stored under the old ordering, so his retry
+    //    would have instantly failed with "no CV stored"). Dedupes by
+    //    sha256 so re-running extraction doesn't duplicate the blob.
     putAsset({
       candidateId,
       kind: 'raw_pdf',
@@ -78,47 +78,9 @@ export async function processCvForCandidate(
       mime: 'application/pdf',
     })
 
-    // 2b. Best-effort photo extraction. Sits between raw_pdf storage and
-    //     text extraction so a silent failure here doesn't block skills.
-    //     Respects the humanLockedAt guard in profile-merge: if a recruiter
-    //     uploaded a photo manually, we won't overwrite it.
-    try {
-      const photo = await extractPhotoFromCvPdf(cvBuffer)
-      if (photo) {
-        const photoAsset = putAsset({
-          candidateId,
-          kind: 'photo',
-          buffer: photo.buffer,
-          mime: photo.mime,
-        })
-        const existing = getDb()
-          .prepare('SELECT ai_profile FROM candidates WHERE id = ?')
-          .get(candidateId) as { ai_profile: string | null } | undefined
-        let current: Record<string, unknown> = {}
-        try {
-          current = existing?.ai_profile ? JSON.parse(existing.ai_profile) : {}
-        } catch { current = {} }
-        const identity = (current.identity ?? {}) as Record<string, unknown>
-        const existingPhoto = identity.photoAssetId as { value?: string | null; humanLockedAt?: string | null } | undefined
-        if (!existingPhoto?.humanLockedAt) {
-          const newIdentity = {
-            fullName: identity.fullName ?? { value: null, runId: null, sourceDoc: null, confidence: null, humanLockedAt: null, humanLockedBy: null },
-            photoAssetId: {
-              value: photoAsset.id,
-              runId: null,
-              sourceDoc: 'cv',
-              confidence: 0.9,
-              humanLockedAt: null,
-              humanLockedBy: null,
-            },
-          }
-          const merged = { ...current, identity: newIdentity }
-          getDb().prepare('UPDATE candidates SET ai_profile = ? WHERE id = ?').run(JSON.stringify(merged), candidateId)
-        }
-      }
-    } catch (err) {
-      console.warn('[cv-pipeline] photo extraction failed (non-fatal):', err instanceof Error ? err.message : err)
-    }
+    // 2. Extract text (can throw on corrupted PDFs — raw_pdf is already
+    //    safe above, so the catch-block retry path still works).
+    const cvText = await extractCvText(cvBuffer)
 
     // 3. Store CV text as a deduped asset + remember its id for the run record.
     const cvAsset = putAsset({
@@ -224,6 +186,8 @@ export async function processCvForCandidate(
     //     all candidatures. Best-effort — if lettre text extraction fails
     //     or no lettre exists, profile extraction proceeds with CV only.
     let profileFailed = false
+    let profileDegraded = false
+    let profileThrewMsg: string | null = null
     const lettreFetch = await fetchLatestLettreText(candidateId)
     const profileRunId = startRun({
       candidateId,
@@ -236,13 +200,18 @@ export async function processCvForCandidate(
     try {
       const profileResult = await extractCandidateProfile(cvText, lettreFetch.text)
       if (profileResult) {
-        persistMergedProfile(candidateId, profileResult.profile, profileRunId)
+        const merged = persistMergedProfile(candidateId, profileResult.profile, profileRunId)
+        // Degraded = parsed OK but effectively empty. This is a *signal-level*
+        // failure the scoring step can't see — surfaces via status=partial so
+        // the recruiter gets a Relancer button instead of a silent succeed.
+        profileDegraded = isProfileDegraded(merged)
         finishRun({
           runId: profileRunId,
-          status: 'success',
+          status: profileDegraded ? 'partial' : 'success',
           payload: profileResult.profile,
           inputTokens: profileResult.inputTokens,
           outputTokens: profileResult.outputTokens,
+          error: profileDegraded ? 'profile extraction returned near-empty result' : undefined,
         })
       } else {
         profileFailed = true
@@ -250,9 +219,9 @@ export async function processCvForCandidate(
       }
     } catch (err) {
       profileFailed = true
-      const msg = err instanceof Error ? err.message : String(err)
+      profileThrewMsg = err instanceof Error ? err.message : String(err)
       console.error(`[cv-pipeline] profile extraction failed for ${candidateId}:`, err)
-      finishRun({ runId: profileRunId, status: 'failed', error: msg })
+      finishRun({ runId: profileRunId, status: 'failed', error: profileThrewMsg })
     }
 
     // 6b. For each candidature with a fiche de poste, run a role-aware
@@ -271,16 +240,24 @@ export async function processCvForCandidate(
     //    role_aware + manual ratings, writes compat scores to DB).
     const scoring = scoreAllCandidatures(candidateId)
 
-    // 8. Determine status
-    const extractionHadFailures = result.failedCategories.length > 0 || roleAwareFailures.length > 0 || profileFailed
+    // 8. Determine status — extraction is partial if anything failed OR if
+    //    the profile came back effectively empty (degraded signal).
+    const extractionHadFailures =
+      result.failedCategories.length > 0 ||
+      roleAwareFailures.length > 0 ||
+      profileFailed ||
+      profileDegraded
     const scoringHadFailures = scoring.failedCandidatures.length > 0
     const status: ExtractionStatus =
       extractionHadFailures || scoringHadFailures ? 'partial' : 'succeeded'
-    const error = scoringHadFailures
-      ? `Scoring échoué pour ${scoring.failedCandidatures.length} candidature(s)`
-      : extractionHadFailures
-        ? `Extraction partielle : ${result.failedCategories.length} catégorie(s) ont échoué`
-        : null
+    const error = buildExtractionError({
+      profileFailed,
+      profileDegraded,
+      profileThrewMsg,
+      failedCategories: result.failedCategories.length,
+      roleAwareFailures: roleAwareFailures.length,
+      failedCandidatures: scoring.failedCandidatures.length,
+    })
 
     // 9. Close the run record with the full payload + retention sweep
     const runStatus: ExtractionRunStatus = status === 'succeeded' ? 'success' : 'partial'
@@ -305,6 +282,7 @@ export async function processCvForCandidate(
     db.prepare(
       `UPDATE candidates
          SET extraction_status = ?,
+             lock_acquired_at = NULL,
              extraction_attempts = extraction_attempts + 1,
              last_extraction_at = datetime('now'),
              last_extraction_error = ?
@@ -388,7 +366,8 @@ async function fetchLatestLettreText(candidateId: string): Promise<{ text: strin
 function acquireExtractionLock(candidateId: string): boolean {
   const result = getDb().prepare(
     `UPDATE candidates
-       SET extraction_status = 'running'
+       SET extraction_status = 'running',
+           lock_acquired_at = datetime('now')
      WHERE id = ?
        AND extraction_status <> 'running'`,
   ).run(candidateId)
@@ -399,6 +378,7 @@ function markFailed(candidateId: string, error: string): void {
   getDb().prepare(
     `UPDATE candidates
        SET extraction_status = 'failed',
+           lock_acquired_at = NULL,
            extraction_attempts = extraction_attempts + 1,
            last_extraction_at = datetime('now'),
            last_extraction_error = ?

@@ -9,6 +9,7 @@ import { generateCandidateAnalysis } from '../lib/candidate-analysis.js'
 import { sendCandidateInvite } from '../lib/email.js'
 import { processCvForCandidate } from '../lib/cv-pipeline.js'
 import { setProfileFieldLock } from '../lib/profile-merge.js'
+import { getLatestAsset } from '../lib/asset-storage.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import fs from 'fs'
 
@@ -231,7 +232,14 @@ candidatesRouter.get('/:id', (req, res) => {
     res.status(404).json({ error: 'Candidat introuvable' })
     return
   }
-  res.json(formatCandidate(candidate))
+  // `canRetryExtraction` is true iff the recruiter's Relancer button will
+  // actually succeed — extraction is in a retry-eligible state AND a raw
+  // PDF is stored to replay. Used by the UI to swap the retry button for
+  // a re-upload prompt when the original bytes are lost (e.g., process
+  // died before putAsset raw_pdf managed to commit).
+  const retryEligible = ['failed', 'partial'].includes(candidate.extraction_status ?? '')
+  const canRetryExtraction = retryEligible && getLatestAsset(candidate.id, 'raw_pdf') !== null
+  res.json({ ...formatCandidate(candidate), canRetryExtraction })
 })
 
 // Lock / unlock a single profile field (Phase 4).
@@ -317,22 +325,6 @@ candidatesRouter.delete('/:id', (req, res) => {
   }
 })
 
-/** Resolve the photo asset URL from ai_profile.identity.photoAssetId.
- *  Returns null when no photo has been extracted — the frontend falls
- *  back to InitialsBadge. */
-function derivePhotoUrl(rawAiProfile: string | null): string | null {
-  if (!rawAiProfile) return null
-  try {
-    const profile = JSON.parse(rawAiProfile) as {
-      identity?: { photoAssetId?: { value?: string | null } }
-    }
-    const id = profile?.identity?.photoAssetId?.value
-    return typeof id === 'string' && id.length > 0 ? `/api/recruitment/assets/${id}` : null
-  } catch {
-    return null
-  }
-}
-
 function formatCandidate(row: CandidateRow) {
   return {
     id: row.id,
@@ -352,7 +344,6 @@ function formatCandidate(row: CandidateRow) {
     aiReasoning: safeJsonParse<Record<string, string>>(row.ai_reasoning, {}),
     aiQuestions: safeJsonParse<Record<string, string>>(row.ai_questions, {}),
     aiProfile: row.ai_profile ? safeJsonParse<Record<string, unknown>>(row.ai_profile, {}) : null,
-    photoUrl: derivePhotoUrl(row.ai_profile),
     extractionStatus: row.extraction_status,
     extractionAttempts: row.extraction_attempts,
     lastExtractionAt: row.last_extraction_at,

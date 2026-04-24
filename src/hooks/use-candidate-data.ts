@@ -28,7 +28,10 @@ export interface CandidateDetail {
   promptVersion?: number
   aiProfile?: Record<string, unknown> | null
   aiSuggestions?: Record<string, number> | null
-  photoUrl?: string | null
+  /** True iff extraction is in a retry-eligible state AND a raw PDF is
+   *  stored for replay. When false for a `failed` row, the UI shows a
+   *  re-upload prompt instead of a Relancer button. */
+  canRetryExtraction?: boolean
 }
 
 export interface TeamAggregate {

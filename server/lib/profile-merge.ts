@@ -2,6 +2,40 @@ import { getDb } from './db.js'
 import { emptyProfile, type AiProfile, type ProfileField } from './profile-schema.js'
 
 /**
+ * Hydrate a possibly-partial stored `ai_profile` against the full schema.
+ * Legacy rows written by older extraction passes can contain only an
+ * `identity` block with nothing else populated (real example: stuck
+ * candidates with only `{identity: {photoAssetId: …}}`). Merging directly
+ * from such a row crashes because `mergeFieldGroup` dereferences
+ * `existing.contact.email` on `existing.contact === undefined`. Filling
+ * missing sub-objects from `emptyProfile()` keeps the merge contract
+ * simple without changing semantics — empty ProfileFields merge as "no
+ * value", same as if the sub-object had been there with every field null.
+ */
+function hydrateAiProfile(raw: Partial<AiProfile> | null): AiProfile {
+  const empty = emptyProfile()
+  if (!raw) return empty
+  return {
+    ...empty,
+    ...raw,
+    identity: { ...empty.identity, ...(raw.identity ?? {}) },
+    contact: { ...empty.contact, ...(raw.contact ?? {}) },
+    location: { ...empty.location, ...(raw.location ?? {}) },
+    currentRole: { ...empty.currentRole, ...(raw.currentRole ?? {}) },
+    availability: { ...empty.availability, ...(raw.availability ?? {}) },
+    softSignals: { ...empty.softSignals, ...(raw.softSignals ?? {}) },
+    openSource: { ...empty.openSource, ...(raw.openSource ?? {}) },
+    totalExperienceYears: raw.totalExperienceYears ?? empty.totalExperienceYears,
+    education: raw.education ?? empty.education,
+    experience: raw.experience ?? empty.experience,
+    languages: raw.languages ?? empty.languages,
+    certifications: raw.certifications ?? empty.certifications,
+    publications: raw.publications ?? empty.publications,
+    additionalFacts: raw.additionalFacts ?? empty.additionalFacts,
+  }
+}
+
+/**
  * Merge a newly-extracted profile into the candidate's stored profile.
  *
  * Semantics (per eng-review decisions, v4 plan):
@@ -119,12 +153,31 @@ export function persistMergedProfile(candidateId: string, incoming: AiProfile, r
   // lock/unlock writes going through setProfileFieldLock below.
   const tx = db.transaction((): AiProfile => {
     const row = db.prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(candidateId) as { ai_profile: string | null } | undefined
-    const existing: AiProfile | null = row?.ai_profile ? (JSON.parse(row.ai_profile) as AiProfile) : null
-    const merged = mergeProfiles(existing, incoming, { runId })
+    const existing: AiProfile | null = row?.ai_profile
+      ? stripLegacyPhotoAssetId(hydrateAiProfile(JSON.parse(row.ai_profile) as Partial<AiProfile>))
+      : null
+    const merged = mergeProfiles(existing, stripLegacyPhotoAssetId(hydrateAiProfile(incoming)), { runId })
     db.prepare('UPDATE candidates SET ai_profile = ? WHERE id = ?').run(JSON.stringify(merged), candidateId)
     return merged
   })
   return tx()
+}
+
+/**
+ * Strip the legacy `identity.photoAssetId` key. The auto photo extractor
+ * is gone (CLAUDE.md CV Intelligence rule #3 — GDPR + non-functional in
+ * practice) but older ai_profile rows still carry the key. Lazy cleanup
+ * on the next merge write is cheaper than a boot-time scan over every
+ * profile (codex challenge rev 1 finding #9). Idempotent.
+ */
+function stripLegacyPhotoAssetId(profile: AiProfile): AiProfile {
+  const identity = profile.identity as Record<string, unknown> | undefined
+  if (identity && 'photoAssetId' in identity) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { photoAssetId, ...rest } = identity
+    return { ...profile, identity: rest as AiProfile['identity'] }
+  }
+  return profile
 }
 
 /**

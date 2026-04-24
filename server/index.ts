@@ -15,6 +15,7 @@ import { evaluateRouter } from './routes/evaluate.js'
 import { rolesRouter } from './routes/roles.js'
 import { recruitmentRouter } from './routes/recruitment.js'
 import { initDatabase, getDb } from './lib/db.js'
+import { startWatchdog, stopWatchdog } from './lib/extraction-watchdog.js'
 import { createAuth } from './lib/auth.js'
 import { requireAuth } from './middleware/require-auth.js'
 
@@ -194,10 +195,12 @@ if (fs.existsSync(distPath)) {
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`)
+  startWatchdog()
 })
 
 function shutdown() {
   console.log('[SERVER] Shutting down gracefully...')
+  stopWatchdog()
   server.close(() => {
     getDb().close()
     console.log('[SERVER] Closed.')

@@ -194,4 +194,39 @@ describe('profile-merge', () => {
       expect(f.humanLockedAt).toBeNull()
     })
   })
+
+  describe('lazy cleanup of legacy identity.photoAssetId', () => {
+    it('persistMergedProfile strips photoAssetId from both incoming and stored row', () => {
+      const candidateId = crypto.randomUUID()
+      getDb().prepare(
+        'INSERT INTO candidates (id, name, role, email, created_by, expires_at, ai_profile) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(
+        candidateId,
+        'Legacy Cand',
+        'dev-backend',
+        `${candidateId}@example.com`,
+        'test-lead',
+        new Date(Date.now() + 365 * 86400000).toISOString(),
+        // Stored row still has the old photoAssetId key the auto-extractor left behind
+        JSON.stringify({
+          identity: {
+            fullName: { value: null, runId: null, sourceDoc: null, confidence: null, humanLockedAt: null, humanLockedBy: null },
+            photoAssetId: { value: 'legacy-asset', runId: 'old-run', sourceDoc: 'cv', confidence: 0.9, humanLockedAt: null, humanLockedBy: null },
+          },
+        }),
+      )
+
+      // Incoming profile from a normal new extraction. persistMergedProfile
+      // should write a clean row with NO photoAssetId key at all.
+      const incoming = emptyProfile()
+      incoming.identity.fullName = { value: 'Alice Martin', runId: 'new-run', sourceDoc: 'cv', confidence: 0.95, humanLockedAt: null, humanLockedBy: null }
+
+      persistMergedProfile(candidateId, incoming, 'new-run')
+
+      const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(candidateId) as { ai_profile: string }
+      const parsed = JSON.parse(row.ai_profile)
+      expect(parsed.identity.fullName.value).toBe('Alice Martin')
+      expect('photoAssetId' in parsed.identity).toBe(false)
+    })
+  })
 })

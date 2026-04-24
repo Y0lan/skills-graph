@@ -4,6 +4,7 @@ import path from 'path'
 import { seedCatalog } from './seed-catalog.js'
 import { safeJsonParse } from './types.js'
 import { buildCanonicalFilename, formatDisplayName, uppercaseStem, buildTypePrefixedFilename } from './file-naming.js'
+import { startupSweep } from './extraction-watchdog.js'
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
 export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
@@ -809,6 +810,11 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_at TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_error TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidates ADD COLUMN prompt_version INTEGER DEFAULT 1') } catch { /* already exists */ }
+  // Set at lock-acquisition, cleared at success/failure. Drives the watchdog's
+  // stale-lock detection so a hung pipeline (network stall, Anthropic retry
+  // storm) eventually gets reset without requiring a pod restart. Also used
+  // by the boot-time sweep when the process was killed mid-pipeline.
+  try { db.exec('ALTER TABLE candidates ADD COLUMN lock_acquired_at TEXT') } catch { /* already exists */ }
 
   // CV Intelligence v1, Phase 1 — auditability foundation.
   //
@@ -1258,6 +1264,29 @@ export function initDatabase(): void {
     } catch (err) {
       console.error('Failed to migrate ratings.json:', err)
     }
+  }
+
+  // Reset orphan extraction locks from the previous process. By definition
+  // no pipeline is running at boot, so every `extraction_status='running'`
+  // row is stale. Same for `cv_extraction_runs.status='running'`. See
+  // extraction-watchdog.ts for the full rationale. Circular-import safe
+  // because startupSweep() calls getDb() lazily (at invocation time).
+  try {
+    startupSweep()
+  } catch (err) {
+    console.error('[db] startup extraction sweep failed (non-fatal):', err)
+  }
+
+  // Lazy cleanup of legacy photo rows. Auto photo extraction was removed
+  // per CLAUDE.md CV Intelligence rule #3 (GDPR + non-functional in practice
+  // — grabbed any first image in the PDF, not a face). Drop the accumulated
+  // photo asset rows; the CHECK constraint stays permissive (rebuilding it
+  // once was painful enough, rebuilding it again to tighten isn't worth it).
+  try {
+    const dropped = db.prepare("DELETE FROM candidate_assets WHERE kind = 'photo'").run().changes
+    if (dropped > 0) console.log(`[db] dropped ${dropped} legacy photo asset(s)`)
+  } catch (err) {
+    console.warn('[db] photo asset cleanup skipped:', err instanceof Error ? err.message : err)
   }
 
   console.log('Database initialized at', DB_PATH)

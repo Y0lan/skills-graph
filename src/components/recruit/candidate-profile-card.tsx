@@ -109,8 +109,6 @@ export interface AiProfile {
 export interface CandidateProfileCardProps {
   candidateId: string
   profile: AiProfile | null
-  /** Optional pre-resolved photo URL. Falls back to initials when null/missing. */
-  photoUrl?: string | null
   /** Pre-ranked top skills from caller (role-aware if present, else baseline). Capped at 5. */
   topSkills?: Array<{ skillId: string; skillLabel: string; rating: number }>
 }
@@ -194,7 +192,6 @@ function hydrateProfile(raw: AiProfile): AiProfile {
 
 export default function CandidateProfileCard({
   profile: rawProfile,
-  photoUrl,
   topSkills = [],
 }: CandidateProfileCardProps) {
   if (!rawProfile) {
@@ -295,7 +292,7 @@ export default function CandidateProfileCard({
       <CardContent className="p-5 sm:p-6 space-y-5">
         {/* ── HERO ── */}
         <div className="flex flex-col sm:flex-row sm:items-start gap-4 pb-5 border-b">
-          <InitialsBadge name={name} photoUrl={photoUrl} size="lg" />
+          <InitialsBadge name={name} size="lg" />
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <h1 className="text-2xl font-bold leading-tight break-words inline-flex items-center gap-1.5 flex-wrap">
