@@ -40,7 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye, Copy } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
 import { formatPhone } from '@/lib/utils'
 import { useCandidateData } from '@/hooks/use-candidate-data'
@@ -678,6 +678,56 @@ export default function CandidateDetailPage() {
                       <span className="text-xs text-muted-foreground">
                         {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
                       </span>
+                      {/* Copy the Skill Radar evaluation link directly —
+                          no email required. Useful when the recruiter
+                          wants to hand the link over in person / chat /
+                          SMS, or when the original email bounced. Gated
+                          on BOTH the candidate-level submitted flag AND
+                          the candidature statut: once the candidature
+                          auto-advances past skill_radar_envoye, the link
+                          is no longer useful even if submitted_at hasn't
+                          propagated through SSE yet. */}
+                      {!submitted
+                        && new Date(candidate.expiresAt) >= new Date()
+                        && (c.statut === 'postule' || c.statut === 'preselectionne' || c.statut === 'skill_radar_envoye')
+                        && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const link = `${window.location.origin}/evaluate/${candidate.id}`
+                            // navigator.clipboard is undefined on http://
+                            // (non-secure origins). Use it when available,
+                            // fall back to a hidden textarea + execCommand
+                            // so recruiters on an internal http:// URL
+                            // aren't silently lied to by a success toast.
+                            try {
+                              if (navigator.clipboard?.writeText) {
+                                await navigator.clipboard.writeText(link)
+                              } else {
+                                const ta = document.createElement('textarea')
+                                ta.value = link
+                                ta.style.position = 'fixed'
+                                ta.style.opacity = '0'
+                                document.body.appendChild(ta)
+                                ta.focus()
+                                ta.select()
+                                const ok = document.execCommand('copy')
+                                document.body.removeChild(ta)
+                                if (!ok) throw new Error('execCommand failed')
+                              }
+                              toast.success('Lien du Skill Radar copié')
+                            } catch {
+                              toast.error(`Copie impossible — voici le lien : ${link}`, { duration: 15000 })
+                            }
+                          }}
+                          className="gap-1.5 h-7 ml-auto"
+                          title="Copier le lien d'évaluation Skill Radar (utile sans passer par un email)"
+                        >
+                          <Copy className="h-3 w-3" />
+                          Copier le lien Skill Radar
+                        </Button>
+                      )}
                       {submitted && (
                         <Button
                           variant="outline"
@@ -796,8 +846,21 @@ export default function CandidateDetailPage() {
                             it at Resend before it fires is the whole point of
                             the 10-min delay. */}
                         {(() => {
-                          const lastStatusChange = cEvents.filter(e => e.type === 'status_change' && e.statutTo).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+                          const statusChanges = cEvents
+                            .filter(e => e.type === 'status_change' && e.statutTo)
+                            .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || (b.id ?? 0) - (a.id ?? 0))
+                          const lastStatusChange = statusChanges[0]
                           if (!lastStatusChange) return null
+                          // Initial-entry sentinel: self-loop "postule → postule"
+                          // marks candidature creation. Treated as initial only
+                          // when it's the sole status_change event — matches the
+                          // server-side guard so we never render a button whose
+                          // click would 409.
+                          const isInitialSentinel =
+                            lastStatusChange.statutFrom != null
+                            && lastStatusChange.statutFrom === lastStatusChange.statutTo
+                            && statusChanges.length === 1
+                          if (isInitialSentinel) return null
                           const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
                           if (ageMs > 10 * 60 * 1000) return null
                           const lastStatusTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
@@ -1405,32 +1468,38 @@ export default function CandidateDetailPage() {
               </div>
             )}
 
-            {/* ── FULL HISTORY BY STAGE ── */}
-            {candidatures.length > 0 && (
-              <Card className="mt-6">
-                <CardHeader>
-                  <CardTitle className="text-base">Historique complet</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {candidatures.map(c => {
-                    const cData = candidatureDataMap?.[c.id]
-                    const cEvents = cData?.events ?? events
-                    const cDocs = cData?.documents ?? documents
-                    return (
-                      <div key={c.id}>
-                        {candidatures.length > 1 && (
-                          <p className="text-xs font-medium text-muted-foreground mb-2 mt-4 first:mt-0">
-                            {c.posteTitre}
-                          </p>
-                        )}
-                        <CandidateHistoryByStage events={cEvents} documents={cDocs} currentStatut={c.statut} />
-                      </div>
-                    )
-                  })}
-                </CardContent>
-              </Card>
-            )}
           </>
+        )}
+
+        {/* ── FULL HISTORY BY STAGE ──
+            Rendered outside the isPending gate so per-stage transition notes
+            and documents stay visible during the early stages (postulé /
+            présélectionné / skill_radar_envoyé), before the candidate has
+            submitted their evaluation — which is precisely when the recruiter
+            is adding them. */}
+        {candidatures.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="text-base">Historique complet</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {candidatures.map(c => {
+                const cData = candidatureDataMap?.[c.id]
+                const cEvents = cData?.events ?? events
+                const cDocs = cData?.documents ?? documents
+                return (
+                  <div key={c.id}>
+                    {candidatures.length > 1 && (
+                      <p className="text-xs font-medium text-muted-foreground mb-2 mt-4 first:mt-0">
+                        {c.posteTitre}
+                      </p>
+                    )}
+                    <CandidateHistoryByStage events={cEvents} documents={cDocs} currentStatut={c.statut} />
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
         )}
       </div>
     </div>

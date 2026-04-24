@@ -321,6 +321,18 @@ export default function RecruitPipelinePage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Refresh pipeline data when the tab regains focus. There's no global
+  // SSE stream for this page (only per-candidature streams), so when a
+  // candidate submits their Skill Radar elsewhere and the recruiter
+  // comes back to the pipeline tab, we refetch to pull in the auto-
+  // advanced status. Cheap, debounced implicitly by browser focus
+  // events, and avoids showing stale "Skill Radar envoyé" for hours.
+  useEffect(() => {
+    const onFocus = () => { fetchData() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchData])
+
   // Candidate-level actions (merged from old /recruit page).
   const copyCandidateLink = useCallback((id: string) => {
     const link = `${window.location.origin}/evaluate/${id}`

@@ -2122,11 +2122,15 @@ function findPendingScheduledEmails(candidatureId: string, afterEventId: number)
 }
 
 protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async (req, res) => {
+  // Tiebreak on id DESC — SQLite's default timestamp is second-resolution,
+  // so a self-loop sentinel plus an immediate real transition can land in
+  // the same second and swap order. id DESC gives us the deterministic
+  // latest row regardless.
   const lastEvent = getDb().prepare(`
     SELECT id, statut_from, statut_to, created_by, created_at
     FROM candidature_events
     WHERE candidature_id = ? AND type = 'status_change'
-    ORDER BY created_at DESC LIMIT 1
+    ORDER BY created_at DESC, id DESC LIMIT 1
   `).get(req.params.id) as { id: number; statut_from: string | null; statut_to: string; created_by: string; created_at: string } | undefined
 
   if (!lastEvent) {
@@ -2136,6 +2140,24 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async
   if (!lastEvent.statut_from) {
     res.status(409).json({ error: 'Premier événement — rien à annuler' })
     return
+  }
+  // Initial-pipeline-entry sentinel: intake-service writes a self-loop
+  // status_change ("postule → postule") the moment a candidature is born.
+  // Reverting it would no-op the UPDATE and leave a dangling event. Only
+  // treat the self-loop as initial-entry when it's ALSO the only
+  // status_change row for this candidature — otherwise a later legitimate
+  // same-statut event (extremely unlikely but theoretically possible)
+  // would be incorrectly blocked.
+  if (lastEvent.statut_from === lastEvent.statut_to) {
+    const count = (getDb().prepare(`
+      SELECT COUNT(*) as n
+      FROM candidature_events
+      WHERE candidature_id = ? AND type = 'status_change'
+    `).get(req.params.id) as { n: number }).n
+    if (count <= 1) {
+      res.status(409).json({ error: "Impossible d'annuler l'entrée dans le pipeline — c'est l'événement initial." })
+      return
+    }
   }
 
   const ageMs = Date.now() - new Date(lastEvent.created_at + 'Z').getTime()

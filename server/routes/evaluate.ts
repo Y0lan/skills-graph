@@ -6,6 +6,7 @@ import { validateRatings } from '../lib/validation.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import { rescoreCandidature } from '../lib/scoring-helpers.js'
 import { requireLead } from '../middleware/require-lead.js'
+import { recruitmentBus } from '../lib/event-bus.js'
 
 export const evaluateRouter = Router()
 
@@ -237,14 +238,36 @@ evaluateRouter.post('/:id/submit', (req, res) => {
   for (const cand of linkedCandidatures) {
     rescoreCandidature(cand.id)
 
-    // Auto-advance to skill_radar_complete if currently at skill_radar_envoye (atomic CAS)
-    const advanceResult = db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?')
-      .run('skill_radar_complete', cand.id, 'skill_radar_envoye')
-    if (advanceResult.changes > 0) {
-      db.prepare(`
-        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
-        VALUES (?, 'status_change', 'skill_radar_envoye', 'skill_radar_complete', 'Auto: évaluation soumise par le candidat', 'system')
-      `).run(cand.id)
+    // Auto-advance to skill_radar_complete if currently at skill_radar_envoye.
+    // CAS UPDATE + audit event insert are wrapped together so we can never
+    // land in a state where candidatures.statut advanced but the
+    // candidature_events trail is missing its status_change row — that would
+    // leave revert unable to roll back, and break the per-stage history. The
+    // SSE publish is moved OUT of the transaction (publishing is a side
+    // effect; if it threw, the tx would roll back and the status advance
+    // would be lost).
+    let advanced = false
+    db.transaction(() => {
+      const advanceResult = db.prepare('UPDATE candidatures SET statut = ?, updated_at = datetime(\'now\') WHERE id = ? AND statut = ?')
+        .run('skill_radar_complete', cand.id, 'skill_radar_envoye')
+      if (advanceResult.changes > 0) {
+        db.prepare(`
+          INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
+          VALUES (?, 'status_change', 'skill_radar_envoye', 'skill_radar_complete', 'Auto: évaluation soumise par le candidat', 'system')
+        `).run(cand.id)
+        advanced = true
+      }
+    })()
+    if (advanced) {
+      // Broadcast after the transaction commits so any open SSE stream
+      // (recruiter watching the candidate detail page or the pipeline)
+      // updates without a manual reload.
+      recruitmentBus.publish('status_changed', {
+        candidatureId: cand.id,
+        statutFrom: 'skill_radar_envoye',
+        statutTo: 'skill_radar_complete',
+        byUserSlug: 'system',
+      })
     }
   }
 
