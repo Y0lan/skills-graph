@@ -23,7 +23,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, Building2, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy } from 'lucide-react'
+import { Loader2, Users, Building2, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X } from 'lucide-react'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
@@ -150,6 +151,24 @@ function CompatibilityBar({ value, label }: { value: number | null; label: strin
       </div>
       <span className="text-xs font-medium w-8 text-right">{value}%</span>
     </div>
+  )
+}
+
+/** Small removable pill used in the active-filter summary. Shows the
+ *  "Field : value" label with an × button that clears that filter alone. */
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full border border-border bg-muted/40 text-[11px] text-foreground">
+      <span className="max-w-[160px] truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Retirer le filtre ${label}`}
+        className="inline-flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted transition-colors"
+      >
+        <X className="h-3 w-3 text-muted-foreground" />
+      </button>
+    </span>
   )
 }
 
@@ -577,11 +596,42 @@ export default function RecruitPipelinePage() {
           })}
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        {/* Filters — redesigned: single toolbar row (search + primary filters +
+            advanced popover + sort + view + count) with active pills + quick
+            chips on a second row that only appears when something is in use. */}
+        {(() => {
+          const advancedActiveCount =
+            (filterExperience !== 'all' ? 1 : 0) +
+            (filterNotice !== 'all' ? 1 : 0)
+          const activePillCount =
+            (filterPole !== 'all' ? 1 : 0) +
+            (filterPoste !== 'all' ? 1 : 0) +
+            (filterStatut !== 'all' ? 1 : 0) +
+            advancedActiveCount +
+            (filterSearch ? 1 : 0)
+          const hasAnyActive = activePillCount > 0 || activeChipCount > 0
+          const resetAll = () => {
+            setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all')
+            setFilterExperience('all'); setFilterNotice('all'); setFilterSearch('')
+            setChipStuck(false); setChipDocsMissing(false); setChipNeedsAction(false)
+          }
+          return <>
+        <div className="flex flex-wrap items-center gap-2 mb-2">
+          {/* Search with leading icon — primary affordance, grows to fill. */}
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              placeholder="Rechercher (nom, ville, poste…)"
+              className="pl-8 h-9"
+            />
+          </div>
+
+          {/* Primary filter dropdowns — the three most-used axes. */}
           <Select value={filterPole} onValueChange={(v) => { setFilterPole(v ?? 'all'); setFilterPoste('all') }}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Tous les pôles">
+            <SelectTrigger className="w-40 h-9">
+              <SelectValue>
                 {filterPole === 'all' ? 'Tous les pôles' : POLE_LABELS[filterPole] ?? filterPole}
               </SelectValue>
             </SelectTrigger>
@@ -594,8 +644,8 @@ export default function RecruitPipelinePage() {
           </Select>
 
           <Select value={filterPoste} onValueChange={(v) => setFilterPoste(v ?? 'all')}>
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="Tous les postes">
+            <SelectTrigger className="w-48 h-9">
+              <SelectValue>
                 {filterPoste === 'all' ? 'Tous les postes' : postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}
               </SelectValue>
             </SelectTrigger>
@@ -610,8 +660,8 @@ export default function RecruitPipelinePage() {
           </Select>
 
           <Select value={filterStatut} onValueChange={(v) => setFilterStatut(v ?? 'all')}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Tous les statuts">
+            <SelectTrigger className="w-40 h-9">
+              <SelectValue>
                 {filterStatut === 'all' ? 'Tous les statuts' : STATUT_LABELS[filterStatut] ?? filterStatut}
               </SelectValue>
             </SelectTrigger>
@@ -623,53 +673,51 @@ export default function RecruitPipelinePage() {
             </SelectContent>
           </Select>
 
-          <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Expérience">
-                {EXPERIENCE_LABELS[filterExperience] ?? filterExperience}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Advanced filters (rarely used: Expérience + Préavis) tucked away. */}
+          <Popover>
+            <PopoverTrigger render={<Button variant="outline" size="sm" className="h-9 gap-1.5" />}>
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Filtres
+              {advancedActiveCount > 0 && (
+                <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums">
+                  {advancedActiveCount}
+                </Badge>
+              )}
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3 space-y-3">
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Expérience</label>
+                <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
+                  <SelectTrigger className="w-full h-9">
+                    <SelectValue>{EXPERIENCE_LABELS[filterExperience] ?? filterExperience}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Préavis</label>
+                <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
+                  <SelectTrigger className="w-full h-9">
+                    <SelectValue>{NOTICE_LABELS[filterNotice] ?? filterNotice}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(NOTICE_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
 
-          <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Préavis">
-                {NOTICE_LABELS[filterNotice] ?? filterNotice}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {Object.entries(NOTICE_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* Visual separator between filter and display controls. */}
+          <div className="h-6 w-px bg-border mx-1 hidden md:block" />
 
-          <Input
-            value={filterSearch}
-            onChange={(e) => setFilterSearch(e.target.value)}
-            placeholder="Rechercher (nom, ville, poste…)"
-            className="w-56 h-9"
-          />
-
-          {(filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all' || filterExperience !== 'all' || filterNotice !== 'all' || filterSearch || activeChipCount > 0) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all')
-                setFilterExperience('all'); setFilterNotice('all'); setFilterSearch('')
-                setChipStuck(false); setChipDocsMissing(false); setChipNeedsAction(false)
-              }}
-            >
-              Réinitialiser
-            </Button>
-          )}
-
+          {/* Sort. */}
           <Select
             value={sortBy}
             onValueChange={(v) => {
@@ -678,10 +726,8 @@ export default function RecruitPipelinePage() {
               localStorage.setItem('pipeline-sort', next)
             }}
           >
-            <SelectTrigger className="w-[230px] h-9 ml-auto" aria-label="Trier les candidatures">
-              {/* Base-ui's <Value> shows the raw value by default — pass
-                  children that resolve the label from state, matching the
-                  pattern of the other Selects on this page. */}
+            <SelectTrigger className="w-[220px] h-9 gap-1.5" aria-label="Trier les candidatures">
+              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
               <SelectValue>{SORT_LABELS[sortBy]}</SelectValue>
             </SelectTrigger>
             <SelectContent>
@@ -695,7 +741,7 @@ export default function RecruitPipelinePage() {
             <Button
               variant={viewMode === 'list' ? 'default' : 'ghost'}
               size="sm"
-              className="gap-1.5 rounded-r-none text-xs"
+              className="gap-1.5 rounded-r-none text-xs h-9"
               onClick={() => changeView('list')}
             >
               <LayoutList className="h-3.5 w-3.5" />
@@ -704,7 +750,7 @@ export default function RecruitPipelinePage() {
             <Button
               variant={viewMode === 'kanban' ? 'default' : 'ghost'}
               size="sm"
-              className="gap-1.5 rounded-l-none text-xs"
+              className="gap-1.5 rounded-l-none text-xs h-9"
               onClick={() => changeView('kanban')}
             >
               <Kanban className="h-3.5 w-3.5" />
@@ -712,18 +758,19 @@ export default function RecruitPipelinePage() {
             </Button>
           </div>
 
-          <Link to="/recruit" className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+          <Link to="/recruit" className="text-sm text-muted-foreground hover:text-foreground hover:underline tabular-nums">
             {filtered.length} candidature{filtered.length !== 1 ? 's' : ''}
           </Link>
         </div>
 
-        {/* Smart filter chips (Item 21 P2) — multi-select, AND-combined. */}
+        {/* Row 2: quick chips (always) + active filter pills (conditional) +
+            Réinitialiser button aligned right when anything is active. */}
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Filtres rapides</span>
+          {/* Quick-action chips (smart combos). */}
           <Button
             variant={chipStuck ? 'default' : 'outline'}
             size="sm"
-            className="h-6 text-[11px] px-2"
+            className="h-7 text-[11px] px-2.5 gap-1"
             onClick={() => setChipStuck(!chipStuck)}
             title="Candidatures en attente depuis plus de 7 jours"
           >
@@ -732,7 +779,7 @@ export default function RecruitPipelinePage() {
           <Button
             variant={chipDocsMissing ? 'default' : 'outline'}
             size="sm"
-            className="h-6 text-[11px] px-2"
+            className="h-7 text-[11px] px-2.5 gap-1"
             onClick={() => setChipDocsMissing(!chipDocsMissing)}
             title="Dossier incomplet (CV/Lettre/ABORO)"
           >
@@ -741,13 +788,65 @@ export default function RecruitPipelinePage() {
           <Button
             variant={chipNeedsAction ? 'default' : 'outline'}
             size="sm"
-            className="h-6 text-[11px] px-2"
+            className="h-7 text-[11px] px-2.5 gap-1"
             onClick={() => setChipNeedsAction(!chipNeedsAction)}
             title="Bloqué OU dossier incomplet OU alerte soft skill"
           >
             🚨 Action requise
           </Button>
+
+          {/* Active-filter pills — removable one at a time. */}
+          {activePillCount > 0 && <div className="h-5 w-px bg-border mx-1" />}
+          {filterPole !== 'all' && (
+            <FilterPill
+              label={`Pôle : ${POLE_LABELS[filterPole] ?? filterPole}`}
+              onRemove={() => { setFilterPole('all'); setFilterPoste('all') }}
+            />
+          )}
+          {filterPoste !== 'all' && (
+            <FilterPill
+              label={`Poste : ${postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}`}
+              onRemove={() => setFilterPoste('all')}
+            />
+          )}
+          {filterStatut !== 'all' && (
+            <FilterPill
+              label={`Statut : ${STATUT_LABELS[filterStatut] ?? filterStatut}`}
+              onRemove={() => setFilterStatut('all')}
+            />
+          )}
+          {filterExperience !== 'all' && (
+            <FilterPill
+              label={`Exp. : ${EXPERIENCE_LABELS[filterExperience] ?? filterExperience}`}
+              onRemove={() => setFilterExperience('all')}
+            />
+          )}
+          {filterNotice !== 'all' && (
+            <FilterPill
+              label={`Préavis : ${NOTICE_LABELS[filterNotice] ?? filterNotice}`}
+              onRemove={() => setFilterNotice('all')}
+            />
+          )}
+          {filterSearch && (
+            <FilterPill
+              label={`Recherche : "${filterSearch}"`}
+              onRemove={() => setFilterSearch('')}
+            />
+          )}
+
+          {hasAnyActive && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-7 text-[11px] px-2"
+              onClick={resetAll}
+            >
+              Réinitialiser
+            </Button>
+          )}
         </div>
+        </>
+        })()}
 
         {/* Candidatures — list or kanban */}
         <div ref={candidaturesRef} className="scroll-mt-16" />
