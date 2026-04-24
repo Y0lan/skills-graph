@@ -26,6 +26,20 @@ export const STATUT_DESCRIPTIONS: Record<string, string> = {
   refuse: 'Candidature déclinée — terminal (possible depuis toute étape).',
 }
 
+/** Recommended next action per statut — source of truth shared by the
+ *  pipeline stepper, the candidature switcher, and the action rail. */
+export const NEXT_ACTION: Record<string, string> = {
+  postule: 'Trier le candidat',
+  preselectionne: 'Envoyer le Skill Radar',
+  skill_radar_envoye: 'Relancer si pas de retour',
+  skill_radar_complete: "Planifier l'entretien 1",
+  entretien_1: 'Planifier le test Aboro',
+  aboro: "Planifier l'entretien 2",
+  entretien_2: 'Préparer la proposition',
+  proposition: 'Attendre la réponse du candidat',
+  embauche: 'Onboarding',
+}
+
 export const STATUT_COLORS: Record<string, string> = {
   postule: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   preselectionne: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',

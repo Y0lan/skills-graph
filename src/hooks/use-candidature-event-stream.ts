@@ -13,9 +13,15 @@ import { useEffect, useRef } from 'react'
  */
 
 export interface CandidatureEventHandlers {
-  onDocumentScanUpdated?: (payload: { documentId: string; scanStatus: string; filename: string }) => void
-  onExtractionRunCompleted?: (payload: { runId: string; type: string }) => void
-  onStatusChanged?: (payload: { statutFrom: string | null; statutTo: string; byUserSlug: string }) => void
+  /** Each handler receives the candidatureId the stream is subscribed
+   *  to as the FIRST argument. Callers should update state keyed by
+   *  THIS id, never by some outer-scope "current selection" closure —
+   *  when the user switches candidatures, late events from the old
+   *  stream can still fire before unsubscribe completes, and the
+   *  handler ref is always the LATEST one (updated every render). */
+  onDocumentScanUpdated?: (candidatureId: string, payload: { documentId: string; scanStatus: string; filename: string }) => void
+  onExtractionRunCompleted?: (candidatureId: string, payload: { runId: string; type: string }) => void
+  onStatusChanged?: (candidatureId: string, payload: { statutFrom: string | null; statutTo: string; byUserSlug: string }) => void
 }
 
 export function useCandidatureEventStream(candidatureId: string | undefined, handlers: CandidatureEventHandlers): void {
@@ -30,23 +36,29 @@ export function useCandidatureEventStream(candidatureId: string | undefined, han
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let cancelled = false
 
+    // The candidatureId this effect-scope is subscribed to. Captured once
+    // here and passed to every handler call so late events from an old
+    // stream can't accidentally update the "currently selected" id
+    // after the user has switched candidatures.
+    const subscribedId = candidatureId
+
     const open = () => {
       if (cancelled) return
-      es = new EventSource(`/api/recruitment/candidatures/${candidatureId}/events/stream`, { withCredentials: true })
+      es = new EventSource(`/api/recruitment/candidatures/${subscribedId}/events/stream`, { withCredentials: true })
 
       es.addEventListener('open', () => { reconnectAttempts = 0 })
 
       es.addEventListener('document_scan_updated', (e) => {
         try {
           const data = JSON.parse((e as MessageEvent).data) as { documentId: string; scanStatus: string; filename: string }
-          handlersRef.current.onDocumentScanUpdated?.(data)
+          handlersRef.current.onDocumentScanUpdated?.(subscribedId, data)
         } catch { /* malformed */ }
       })
 
       es.addEventListener('extraction_run_completed', (e) => {
         try {
           const data = JSON.parse((e as MessageEvent).data) as { runId: string; type: string }
-          handlersRef.current.onExtractionRunCompleted?.(data)
+          handlersRef.current.onExtractionRunCompleted?.(subscribedId, data)
         } catch { /* malformed */ }
       })
 
@@ -55,7 +67,7 @@ export function useCandidatureEventStream(candidatureId: string | undefined, han
           const data = JSON.parse((e as MessageEvent).data) as { statutFrom: string | null; statutTo: string; byUserSlug: string }
           // Skip the initial __connected__ heartbeat
           if (data.statutTo === '__connected__') return
-          handlersRef.current.onStatusChanged?.(data)
+          handlersRef.current.onStatusChanged?.(subscribedId, data)
         } catch { /* malformed */ }
       })
 

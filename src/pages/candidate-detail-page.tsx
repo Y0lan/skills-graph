@@ -1,25 +1,18 @@
-import { useCallback, useMemo, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import AppHeader from '@/components/app-header'
-import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
-import FitReport from '@/components/recruit/fit-report'
-import MultiPosteCard from '@/components/recruit/multi-poste-card'
-import CandidatePipelineStepper from '@/components/recruit/candidate-pipeline-stepper'
-import CandidateScoreSummary from '@/components/recruit/candidate-score-summary'
-import CandidateDocumentsPanel from '@/components/recruit/candidate-documents-panel'
 import ExtractionStatusBanner from '@/components/recruit/extraction-status-banner'
 import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
-import CandidateEmailsCard from '@/components/recruit/candidate-emails-card'
-import CandidateHistoryByStage from '@/components/recruit/candidate-history-by-stage'
-import ScheduledEmailBanner from '@/components/recruit/scheduled-email-banner'
-import CandidateNotesSection from '@/components/recruit/candidate-notes-section'
-import AboroProfileSection from '@/components/recruit/aboro-profile-section'
+import CandidateIdentityStrip from '@/components/recruit/candidate-identity-strip'
+import CandidatureSwitcher from '@/components/recruit/candidature-switcher'
+import CandidateActionRail from '@/components/recruit/candidate-action-rail'
+import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
@@ -40,9 +33,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, Clock, AlertTriangle, Mail, Phone, Globe, MapPin, AlertCircle, RotateCcw, Upload, X, Calendar, FileText, Wand2, Eye, Copy } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
-import { formatPhone } from '@/lib/utils'
+import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, AlertTriangle, Mail, AlertCircle, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
+import { STATUT_LABELS } from '@/lib/constants'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
@@ -151,6 +143,20 @@ export default function CandidateDetailPage() {
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
   const [sendingNow, setSendingNow] = useState<string | null>(null)
 
+  // Currently selected candidature id (for multi-candidature candidates).
+  // Synced to URL query ?c=<id> via useSearchParams so deep-links work
+  // AND the browser back/forward buttons restore the previous selection.
+  // Invalid ids get canonicalized once candidatures load.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedCandidatureId = searchParams.get('c')
+  const setSelectedCandidatureId = useCallback((nextId: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('c', nextId)
+      return next
+    }, { replace: false })
+  }, [setSearchParams])
+
   // Gmail-style AI edit + HTML preview shared across transition dialog paths.
   const [aiInstructionOpen, setAiInstructionOpen] = useState(false)
   const [aiInstruction, setAiInstruction] = useState('')
@@ -237,22 +243,115 @@ export default function CandidateDetailPage() {
     }
   }, [transitionDialog, transitionEmailBody, transitionNotes, transitionIncludeReason])
 
-  // Item 8: subscribe to the first candidature's SSE stream so scan + status
-  // updates land without manual reload. Multi-candidature candidates only get
-  // live updates on the first candidature today (the typical case is one
-  // candidature per person).
-  useCandidatureEventStream(candidatures[0]?.id, {
-    onDocumentScanUpdated: (p) => {
+  // Effective selected candidature id: the URL/state value if it still
+  // matches a loaded candidature, otherwise fall back to the first one.
+  // This is also the id we subscribe to for SSE updates.
+  const effectiveSelectedId = (() => {
+    if (selectedCandidatureId && candidatures.some(c => c.id === selectedCandidatureId)) {
+      return selectedCandidatureId
+    }
+    return candidatures[0]?.id ?? null
+  })()
+
+  // Canonicalize an invalid ?c=<id> once candidatures have loaded. If
+  // the URL carries an id that doesn't exist (typo, stale bookmark,
+  // deleted candidature), strip it so the URL matches what's actually
+  // rendered. Runs once per candidatures change; uses replace to avoid
+  // polluting history with the invalid state.
+  useEffect(() => {
+    if (!selectedCandidatureId) return
+    if (candidatures.length === 0) return
+    if (candidatures.some(c => c.id === selectedCandidatureId)) return
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('c')
+      return next
+    }, { replace: true })
+  }, [selectedCandidatureId, candidatures, setSearchParams])
+
+  // Subscribe to the SELECTED candidature's SSE stream (was: first
+  // candidature only). When the user switches candidatures in the
+  // workspace switcher, the hook's internal cleanup tears down the
+  // previous stream and opens a new one. Handlers receive the
+  // subscribed candidatureId as the first argument — we key every
+  // state update by THAT id (never by the outer-scope effectiveSelectedId
+  // closure), so a late event from the previous stream can't
+  // accidentally mutate the newly-selected candidature.
+  useCandidatureEventStream(effectiveSelectedId ?? undefined, {
+    onDocumentScanUpdated: (subscribedId, p) => {
+      const nextStatus = p.scanStatus as 'pending' | 'clean' | 'infected' | 'error' | 'skipped'
+      // Update the per-candidature map (authoritative for the rail +
+      // workspace) AND the flat state (backward compat for anything
+      // still reading it).
+      setCandidatureDataMap(prev => {
+        const entry = prev[subscribedId]
+        if (!entry) return prev
+        return {
+          ...prev,
+          [subscribedId]: {
+            ...entry,
+            documents: entry.documents.map(d => d.id === p.documentId ? { ...d, scan_status: nextStatus } : d),
+          },
+        }
+      })
       setDocuments(prev => prev.map(d => d.id === p.documentId
-        ? { ...d, scan_status: p.scanStatus as 'pending' | 'clean' | 'infected' | 'error' | 'skipped' }
+        ? { ...d, scan_status: nextStatus }
         : d))
     },
-    onStatusChanged: (p) => {
-      setCandidatures(prev => prev.map(c => c.id === candidatures[0]?.id
+    onStatusChanged: (subscribedId, p) => {
+      // Update candidatures list (source of truth for statut).
+      setCandidatures(prev => prev.map(c => c.id === subscribedId
         ? { ...c, statut: p.statutTo }
         : c))
+      // Refresh events + transitions + documents for this candidature so
+      // the rail's revert-window, the actions column, the documents
+      // slot checklist, and the history all stay in sync after an
+      // auto-advance fired outside this tab (typical case: the candidate
+      // submitted their Skill Radar). NOTE: the detail endpoint returns
+      // events but NOT documents — we fetch `/documents` explicitly.
+      // Matches the pattern in use-transition-state.ts.
+      Promise.all([
+        fetch(`/api/recruitment/candidatures/${subscribedId}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+        fetch(`/api/recruitment/candidatures/${subscribedId}/transitions`, { credentials: 'include' }).then(r => r.ok ? r.json() : null),
+        fetch(`/api/recruitment/candidatures/${subscribedId}/documents`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]).then(([detail, transitions, freshDocs]) => {
+        setCandidatureDataMap(prev => {
+          const entry = prev[subscribedId] ?? { events: [], allowedTransitions: null, documents: [] }
+          return {
+            ...prev,
+            [subscribedId]: {
+              events: detail?.events ?? entry.events,
+              allowedTransitions: transitions ?? entry.allowedTransitions,
+              documents: Array.isArray(freshDocs) ? freshDocs : entry.documents,
+            },
+          }
+        })
+        // Flat-state sync for the currently selected candidature only.
+        if (detail?.events && subscribedId === effectiveSelectedId) setEvents(detail.events)
+        if (transitions && subscribedId === effectiveSelectedId) setAllowedTransitions(transitions)
+        if (Array.isArray(freshDocs) && subscribedId === effectiveSelectedId) setDocuments(freshDocs)
+      }).catch(() => { /* non-fatal */ })
     },
   })
+
+  // Refresh candidate + candidatures on window focus. The SSE stream only
+  // covers the SELECTED candidature, so an unselected candidature can go
+  // stale if the recruiter returns to the tab after an auto-advance (e.g.
+  // the candidate submitted their Skill Radar while this tab was in the
+  // background). Cheap global safety net.
+  useEffect(() => {
+    if (!id) return
+    const onFocus = () => {
+      fetch(`/api/recruitment/candidatures?candidateId=${encodeURIComponent(id)}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then((fresh: typeof candidatures | null) => {
+          if (Array.isArray(fresh)) setCandidatures(fresh)
+        })
+        .catch(() => {})
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [id, setCandidatures])
 
   const handleRevertStatus = useCallback(async (candidatureId: string, emailState: 'sent' | 'scheduled' | 'none') => {
     const msg = emailState === 'sent'
@@ -478,10 +577,27 @@ export default function CandidateDetailPage() {
     transitionDialog.targetStatut !== 'skill_radar_complete' &&
     (transitionHasEmailTemplate || transitionEmailLoading)
 
+  // Resolve the currently selected candidature object from the effective id.
+  // DO NOT cross-candidature-fallback to the flat state. The flat
+  // `events`/`documents`/`allowedTransitions` come from candidatures[0]
+  // for backward compatibility — falling back when the SELECTED
+  // candidature's map entry is missing would render (and worse: revert /
+  // send against) the WRONG candidature's data. Only fall back to the
+  // flat state when the selected IS candidatures[0].
+  const selectedCandidature = candidatures.find(c => c.id === effectiveSelectedId) ?? null
+  const selectedCData = selectedCandidature && candidatureDataMap
+    ? candidatureDataMap[selectedCandidature.id]
+    : null
+  const isSelectedFirst = selectedCandidature && candidatures[0]?.id === selectedCandidature.id
+  const selectedEvents = selectedCData?.events ?? (isSelectedFirst ? events : [])
+  const selectedDocuments = selectedCData?.documents ?? (isSelectedFirst ? documents : [])
+  const selectedTransitions = selectedCData?.allowedTransitions ?? (isSelectedFirst ? allowedTransitions : null)
+  const selectedIsHydrating = !!selectedCandidature && !selectedCData && !isSelectedFirst
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
+      <div className="mx-auto max-w-6xl px-4 pt-16 pb-8">
         {/* ── BACK + NAVIGATION ── */}
         <div className="flex items-center justify-between mb-4">
           <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -518,431 +634,183 @@ export default function CandidateDetailPage() {
 
         {/* ══════════ ABOVE THE FOLD ══════════ */}
 
-        {/* ── CV extraction status banner ── */}
+        {/* Identity hero — avatar + name + contact + top skills + meta. */}
+        <CandidateIdentityStrip
+          candidate={candidate}
+          candidatures={candidatures}
+          topSkills={topSkills}
+          onToggleProfile={() => {
+            // Expand the "Profil IA détaillé" disclosure inside the
+            // workspace and scroll to it.
+            localStorage.setItem('candidate-profile-expanded', 'true')
+            setTimeout(() => {
+              const el = document.querySelector('[data-section="profile-disclosure"]')
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }, 60)
+          }}
+        />
+
+        {/* CV extraction status banner — inline under the identity strip,
+            only when the extraction is in a non-trivial state. */}
         {candidate.extractionStatus && candidate.extractionStatus !== 'idle' && candidate.extractionStatus !== 'succeeded' ? (
-          <ExtractionStatusBanner
-            status={candidate.extractionStatus}
-            attempts={candidate.extractionAttempts}
-            lastError={candidate.lastExtractionError}
-            lastExtractionAt={candidate.lastExtractionAt}
-            canRetry={candidate.canRetryExtraction ?? true}
-            retrying={reextracting}
-            onRetry={async () => {
-              setReextracting(true)
-              try {
-                const res = await fetch(`/api/recruitment/candidates/${candidate.id}/reextract`, {
-                  method: 'POST',
-                  credentials: 'include',
-                })
-                const body = await res.json()
-                if (!res.ok) {
-                  toast.error(body.error ?? `HTTP ${res.status}`)
-                } else {
-                  toast.success(`Extraction ${body.status}`)
-                  setTimeout(() => window.location.reload(), 800)
+          <div className="mb-6">
+            <ExtractionStatusBanner
+              status={candidate.extractionStatus}
+              attempts={candidate.extractionAttempts}
+              lastError={candidate.lastExtractionError}
+              lastExtractionAt={candidate.lastExtractionAt}
+              canRetry={candidate.canRetryExtraction ?? true}
+              retrying={reextracting}
+              onRetry={async () => {
+                setReextracting(true)
+                try {
+                  const res = await fetch(`/api/recruitment/candidates/${candidate.id}/reextract`, {
+                    method: 'POST',
+                    credentials: 'include',
+                  })
+                  const body = await res.json()
+                  if (!res.ok) {
+                    toast.error(body.error ?? `HTTP ${res.status}`)
+                  } else {
+                    toast.success(`Extraction ${body.status}`)
+                    setTimeout(() => window.location.reload(), 800)
+                  }
+                } finally {
+                  setReextracting(false)
                 }
-              } finally {
-                setReextracting(false)
-              }
-            }}
-          />
-        ) : null}
-
-        {/* ── Profile card — only rendered once an aiProfile exists ──
-            No Historique / Ré-extraire buttons: per recruiter feedback,
-            the multi-pass extraction self-validates, so we default to
-            "trust the AI." A corrupted extraction surfaces via the
-            ExtractionStatusBanner above; refreshing the CV means
-            re-uploading. Lock API remains server-side for power users.
-        */}
-        {candidate.aiProfile ? (
-          <>
-            <CandidateProfileCard
-              candidateId={candidate.id}
-              profile={candidate.aiProfile as unknown as AiProfile}
-              topSkills={topSkills}
+              }}
             />
-          </>
+          </div>
         ) : null}
 
-        {/* ── 1. IDENTITY HEADER ──
-            When the CV extraction has produced an aiProfile, the new hero
-            inside <CandidateProfileCard> covers name/contact/location. We
-            keep this block only as a fallback for candidates without an
-            extracted profile yet, but we always render the right-column
-            status badges below (they communicate pipeline meta, not
-            profile data).
-        */}
-        {/* Fallback hero for candidates without an aiProfile. When aiProfile
-            exists, CandidateProfileCard already owns the hero so this whole
-            row is dropped — the Skill Radar en attente badge now lives in
-            the per-candidature card header below (semantically: it's about
-            a specific candidature, not the candidate), and the Rouvrir
-            button lives next to it when the form has been submitted. */}
-        {!candidate.aiProfile && (
-          <div className="flex items-start gap-4 flex-wrap">
-            <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold flex items-center gap-2 flex-wrap">
-                {candidate.name}
-                {candidatures.length > 1 && (
-                  <Badge variant="outline" className="text-[11px] font-normal" title="Ce candidat a plusieurs candidatures actives">
-                    {candidatures.length} candidatures
-                  </Badge>
-                )}
-              </h1>
-              <p className="text-muted-foreground">
-                {candidatures.length > 0
-                  ? candidatures.map(c => c.posteTitre).filter(Boolean).join(' · ')
-                  : candidate.role /* edge case: candidate without any candidature (manual create) */}
-              </p>
+        {/* Candidatures switcher — only renders when candidate has ≥2
+            candidatures. Collapses what used to be N stacked cards into a
+            single dense row selector. */}
+        {candidatures.length >= 2 && (
+          <CandidatureSwitcher
+            candidatures={candidatures}
+            selectedId={effectiveSelectedId ?? ''}
+            isPendingRadar={(c) => isPending && c.statut === 'skill_radar_envoye'}
+            onSelect={setSelectedCandidatureId}
+          />
+        )}
 
-              {/* Contact info */}
-              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground max-w-full">
-                {candidate.email && (
-                  <a href={`mailto:${candidate.email}`} className="flex items-center gap-1 hover:text-foreground min-w-0 max-w-full">
-                    <Mail className="h-3.5 w-3.5 shrink-0" /> <span className="truncate" title={candidate.email}>{candidate.email}</span>
-                  </a>
+        {/* Empty state: candidate with no candidature (manual create). */}
+        {candidatures.length === 0 && (
+          <div className="border rounded-md p-8 text-center text-sm text-muted-foreground mb-6">
+            Ce candidat n'a encore aucune candidature active.
+          </div>
+        )}
+
+        {/* 2-column layout: workspace (left) + action rail (right,
+            sticky). On narrow viewports the rail falls below the
+            workspace — the primary action is also repeated in the
+            workspace's status band so the F-pattern scan still works. */}
+        {selectedCandidature && selectedIsHydrating && (
+          <div className="border rounded-md p-8 text-center text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+            Chargement de la candidature…
+          </div>
+        )}
+
+        {selectedCandidature && !selectedIsHydrating && (
+          <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+            <div className="min-w-0">
+              <CandidatureWorkspace
+                /* Key by candidature id so switching remounts the whole
+                   workspace subtree. Keeps CandidateNotesSection and any
+                   other component that caches per-candidature state in
+                   useState(() => initial) from leaking state across
+                   candidature switches. Cheap — mount cost is small, and
+                   the SSE hook already tears down + re-opens when id
+                   changes. */
+                key={selectedCandidature.id}
+                candidature={selectedCandidature}
+                candidate={candidate}
+                events={selectedEvents}
+                setEvents={setEvents}
+                documents={selectedDocuments}
+                setDocuments={setDocuments}
+                setCandidatureDataMap={setCandidatureDataMap}
+                notes={notes}
+                setNotes={setNotes}
+                aboroProfile={aboroProfile}
+                setAboroProfile={setAboroProfile}
+                candidateRadar={candidateRadar}
+                teamRadar={teamRadar}
+                gapAnalysis={gapAnalysis}
+                bonusSkills={bonusSkills}
+                multiPosteCompatibility={multiPosteCompatibility}
+                analyzing={analyzing}
+                onGenerateAnalysis={generateAnalysis}
+                sendingNow={sendingNow}
+                revertingStatus={revertingStatus}
+                changingStatus={changingStatus}
+                onSendNow={handleSendNow}
+                onRevertScheduled={(cid) => handleRevertStatus(cid, 'scheduled')}
+                profileDisclosure={candidate.aiProfile ? (
+                  <div data-section="profile-disclosure">
+                    <CandidateProfileCard
+                      candidateId={candidate.id}
+                      profile={candidate.aiProfile as unknown as AiProfile}
+                      topSkills={topSkills}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic" data-section="profile-disclosure">
+                    Aucune extraction CV détaillée encore disponible.
+                  </p>
                 )}
-                {candidate.telephone && (
-                  <span className="flex items-center gap-1 min-w-0">
-                    <Phone className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{formatPhone(candidate.telephone)}</span>
-                  </span>
-                )}
-                {candidate.pays && (
-                  <span className="flex items-center gap-1 min-w-0">
-                    <MapPin className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{candidate.pays}</span>
-                  </span>
-                )}
-                {candidate.linkedinUrl && (
-                  <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                    <Globe className="h-3.5 w-3.5 shrink-0" /> LinkedIn
-                  </a>
-                )}
-                {candidate.githubUrl && (
-                  <a href={candidate.githubUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground">
-                    <Globe className="h-3.5 w-3.5 shrink-0" /> GitHub
-                  </a>
-                )}
-              </div>
+              />
+            </div>
+            <div>
+              <CandidateActionRail
+                candidature={selectedCandidature}
+                events={selectedEvents}
+                allowedTransitions={selectedTransitions}
+                candidate={{
+                  id: candidate.id,
+                  submittedAt: candidate.submittedAt,
+                  expiresAt: candidate.expiresAt,
+                }}
+                showCopyLink={
+                  !candidate.submittedAt
+                  && new Date(candidate.expiresAt) >= new Date()
+                  && (selectedCandidature.statut === 'postule'
+                      || selectedCandidature.statut === 'preselectionne'
+                      || selectedCandidature.statut === 'skill_radar_envoye')
+                }
+                busyId={revertingStatus ?? sendingNow}
+                changingStatus={changingStatus}
+                onOpenTransition={handleOpenTransition}
+                onRevert={handleRevertStatus}
+                onSendNow={handleSendNow}
+                onReopen={async (candidateId) => {
+                  const res = await fetch(`/api/evaluate/${candidateId}/reopen`, {
+                    method: 'POST',
+                    credentials: 'include',
+                  })
+                  if (res.ok) {
+                    toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
+                    window.location.reload()
+                  } else {
+                    toast.error('Erreur lors de la reouverture')
+                  }
+                }}
+              />
             </div>
           </div>
         )}
 
-        {/* ── 2. PER-CANDIDATURE: STEPPER + SCORES + DOSSIER + ACTIONS ── */}
-        {candidatures.map(c => {
-          const cData = candidatureDataMap?.[c.id]
-          const cEvents = cData?.events ?? events
-          const cTransitions = cData?.allowedTransitions ?? allowedTransitions
-          const cDocuments = cData?.documents ?? documents
-
-          return (
-            <Card key={c.id} className="mt-6">
-              <CardContent className="py-5 px-5 space-y-5">
-                {/* Candidature context. Pending-radar + Submitted /
-                    Analyse / Rouvrir badges live here next to the statut
-                    instead of floating above in empty space between the
-                    profile card and this one. Semantically: these are
-                    per-candidature signals, not candidate-level. */}
-                {(() => {
-                  const awaitingRadar = isPending && c.statut === 'skill_radar_envoye'
-                  const submitted = !!candidate.submittedAt
-                  const analysed = submitted && !!candidate.aiReport
-                  return (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <p className="text-sm font-medium">{c.posteTitre}</p>
-                      {awaitingRadar ? (
-                        // Merged badge: the statut itself already says
-                        // "Skill Radar envoyé", so tack the pending state
-                        // onto the same pill with a clock icon + amber
-                        // tint instead of rendering a second badge that
-                        // says the same thing in different words.
-                        <Badge
-                          variant="secondary"
-                          className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                          title="Le Skill Radar a été envoyé au candidat, on attend qu'il complète l'auto-évaluation"
-                        >
-                          <Clock className="mr-1 h-3 w-3" />
-                          Skill Radar envoyé · en attente de réponse
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className={`text-xs ${STATUT_COLORS[c.statut] ?? ''}`}>
-                          {STATUT_LABELS[c.statut] ?? c.statut}
-                        </Badge>
-                      )}
-                      {!awaitingRadar && analysed && (
-                        <Badge variant="default" className="bg-[#1B6179]">Analyse</Badge>
-                      )}
-                      {!awaitingRadar && submitted && !analysed && (
-                        <Badge variant="default" className="bg-primary">Skill Radar soumis</Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
-                      </span>
-                      {/* Copy the Skill Radar evaluation link directly —
-                          no email required. Useful when the recruiter
-                          wants to hand the link over in person / chat /
-                          SMS, or when the original email bounced. Gated
-                          on BOTH the candidate-level submitted flag AND
-                          the candidature statut: once the candidature
-                          auto-advances past skill_radar_envoye, the link
-                          is no longer useful even if submitted_at hasn't
-                          propagated through SSE yet. */}
-                      {!submitted
-                        && new Date(candidate.expiresAt) >= new Date()
-                        && (c.statut === 'postule' || c.statut === 'preselectionne' || c.statut === 'skill_radar_envoye')
-                        && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            const link = `${window.location.origin}/evaluate/${candidate.id}`
-                            // navigator.clipboard is undefined on http://
-                            // (non-secure origins). Use it when available,
-                            // fall back to a hidden textarea + execCommand
-                            // so recruiters on an internal http:// URL
-                            // aren't silently lied to by a success toast.
-                            try {
-                              if (navigator.clipboard?.writeText) {
-                                await navigator.clipboard.writeText(link)
-                              } else {
-                                const ta = document.createElement('textarea')
-                                ta.value = link
-                                ta.style.position = 'fixed'
-                                ta.style.opacity = '0'
-                                document.body.appendChild(ta)
-                                ta.focus()
-                                ta.select()
-                                const ok = document.execCommand('copy')
-                                document.body.removeChild(ta)
-                                if (!ok) throw new Error('execCommand failed')
-                              }
-                              toast.success('Lien du Skill Radar copié')
-                            } catch {
-                              toast.error(`Copie impossible — voici le lien : ${link}`, { duration: 15000 })
-                            }
-                          }}
-                          className="gap-1.5 h-7 ml-auto"
-                          title="Copier le lien d'évaluation Skill Radar (utile sans passer par un email)"
-                        >
-                          <Copy className="h-3 w-3" />
-                          Copier le lien Skill Radar
-                        </Button>
-                      )}
-                      {submitted && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={async () => {
-                            const res = await fetch(`/api/evaluate/${candidate.id}/reopen`, {
-                              method: 'POST',
-                              credentials: 'include',
-                            })
-                            if (res.ok) {
-                              toast.success('Evaluation rouverte — le candidat peut modifier ses reponses')
-                              window.location.reload()
-                            } else {
-                              toast.error('Erreur lors de la reouverture')
-                            }
-                          }}
-                          className="gap-1.5 h-7 ml-auto"
-                        >
-                          <RotateCcw className="h-3 w-3" />
-                          Rouvrir
-                        </Button>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {/* Scheduled-email banner — shows whenever a candidate-facing
-                    email is queued at Resend but hasn't fired yet. Lets the
-                    recruiter fast-track or undo before the 10-min window. */}
-                <ScheduledEmailBanner
-                  events={cEvents}
-                  disabled={changingStatus || revertingStatus === c.id || sendingNow === c.id}
-                  onSendNow={() => handleSendNow(c.id)}
-                  onCancel={() => handleRevertStatus(c.id, 'scheduled')}
-                />
-
-                {/* Soft skill alerts */}
-                {c.softSkillAlerts && c.softSkillAlerts.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {c.softSkillAlerts.map((a, i) => (
-                      <Badge key={i} variant="outline" className="text-[10px] border-amber-500 text-amber-600">
-                        {'\u26A0'} {a.message}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {/* Pipeline stepper */}
-                <CandidatePipelineStepper candidature={c} events={cEvents} />
-
-                {/* Email tracking — shows each email sent + open/bounce status */}
-                <CandidateEmailsCard events={cEvents} />
-
-                {/* 2-column grid: Scores | Actions. Documents live in their
-                    own full-width panel below — the old Dossier quick-actions
-                    row duplicated the panel's functionality. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
-                  {/* Scores */}
-                  <CandidateScoreSummary
-                    tauxPoste={c.tauxPoste}
-                    tauxEquipe={c.tauxEquipe}
-                    tauxSoft={c.tauxSoft}
-                    candidatureId={c.id}
-                  />
-
-                  {/* Actions */}
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Actions</p>
-                    {cTransitions && (cTransitions.allowedTransitions.length > 0 || cTransitions.skipTransitions.length > 0) ? (
-                      <div className="flex flex-col gap-2">
-                        {/* Normal forward transitions */}
-                        {cTransitions.allowedTransitions.filter(s => s !== 'refuse').map(s => (
-                          <Button
-                            key={s}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleOpenTransition(c.id, s, false, [], c.statut)}
-                            disabled={changingStatus}
-                            className="justify-start gap-2"
-                          >
-                            <ChevronRight className="h-3 w-3" />
-                            {STATUT_LABELS[s] ?? s}
-                          </Button>
-                        ))}
-                        {/* Skip transitions */}
-                        {cTransitions.skipTransitions.map(st => (
-                          <Button
-                            key={st.statut}
-                            size="sm"
-                            variant="ghost"
-                            className="justify-start text-muted-foreground"
-                            onClick={() => handleOpenTransition(c.id, st.statut, true, st.skipped, c.statut)}
-                            disabled={changingStatus}
-                          >
-                            {STATUT_LABELS[st.statut] ?? st.statut}
-                            <span className="text-[10px] ml-1">(sauter {st.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')})</span>
-                          </Button>
-                        ))}
-                        {/* Refuse */}
-                        {cTransitions.allowedTransitions.includes('refuse') && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleOpenTransition(c.id, 'refuse', false, [], c.statut)}
-                            disabled={changingStatus}
-                            className="justify-start gap-2 mt-1"
-                          >
-                            <X className="h-3 w-3" />
-                            Refuser
-                          </Button>
-                        )}
-
-                        {/* Revert last transition (within 10 min). Terminal
-                            statuses (refuse/embauche) can also be reverted when
-                            the candidate email is still scheduled — cancelling
-                            it at Resend before it fires is the whole point of
-                            the 10-min delay. */}
-                        {(() => {
-                          const statusChanges = cEvents
-                            .filter(e => e.type === 'status_change' && e.statutTo)
-                            .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || (b.id ?? 0) - (a.id ?? 0))
-                          const lastStatusChange = statusChanges[0]
-                          if (!lastStatusChange) return null
-                          // Initial-entry sentinel: self-loop "postule → postule"
-                          // marks candidature creation. Treated as initial only
-                          // when it's the sole status_change event — matches the
-                          // server-side guard so we never render a button whose
-                          // click would 409.
-                          const isInitialSentinel =
-                            lastStatusChange.statutFrom != null
-                            && lastStatusChange.statutFrom === lastStatusChange.statutTo
-                            && statusChanges.length === 1
-                          if (isInitialSentinel) return null
-                          const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
-                          if (ageMs > 10 * 60 * 1000) return null
-                          const lastStatusTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
-                          // Inspect only email events AFTER the last status change. Most-recent wins.
-                          const postStatusEmailEvents = cEvents
-                            .filter(e =>
-                              (e.type === 'email_scheduled' || e.type === 'email_sent' || e.type === 'email_cancelled' || e.type === 'email_failed') &&
-                              new Date(e.createdAt + 'Z').getTime() >= lastStatusTs - 1000
-                            )
-                            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-                          const latestEmailEvent = postStatusEmailEvents[0]
-                          const emailState: 'sent' | 'scheduled' | 'none' =
-                            latestEmailEvent?.type === 'email_sent' ? 'sent'
-                            : latestEmailEvent?.type === 'email_scheduled' ? 'scheduled'
-                            : 'none'
-                          const isTerminal = lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse'
-                          // Terminal statuses are only revertable when the email is still scheduled
-                          // (we can yank it from Resend). If already sent → block.
-                          if (isTerminal && emailState !== 'scheduled') return null
-                          const minutesLeft = Math.max(1, Math.round((10 * 60 * 1000 - ageMs) / 60000))
-                          const busyId = revertingStatus === c.id || sendingNow === c.id
-                          return (
-                            <div className="flex flex-col gap-1 mt-2">
-                              {emailState === 'scheduled' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="justify-start gap-2 border-primary/40 text-primary hover:bg-primary/10"
-                                  disabled={busyId}
-                                  onClick={() => handleSendNow(c.id)}
-                                  title="Envoyer l'email maintenant sans attendre la fin des 10 minutes"
-                                >
-                                  <Mail className="h-3 w-3" />
-                                  {sendingNow === c.id ? 'Envoi…' : 'Envoyer l\u2019email maintenant'}
-                                </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className={`justify-start gap-2 ${emailState === 'sent' ? 'text-amber-600 dark:text-amber-400' : emailState === 'scheduled' ? 'text-primary' : 'text-muted-foreground'}`}
-                                disabled={busyId}
-                                onClick={() => handleRevertStatus(c.id, emailState)}
-                                title={emailState === 'sent' ? "L'email a déjà été envoyé — le candidat l'a reçu" : emailState === 'scheduled' ? 'L\u2019email sera annulé avant envoi' : undefined}
-                              >
-                                <RotateCcw className="h-3 w-3" />
-                                {revertingStatus === c.id ? 'Annulation…' : 'Annuler la dernière transition'}
-                                {emailState === 'sent' && <span className="text-[10px] font-medium">(email envoyé)</span>}
-                                {emailState === 'scheduled' && <span className="text-[10px] font-medium">(email programmé)</span>}
-                                <span className="text-[10px] text-muted-foreground/60 ml-1">
-                                  ({minutesLeft}min restantes)
-                                </span>
-                              </Button>
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Aucune action disponible</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Full file manager — inline under the 3-col grid. Rename,
-                    delete, preview, download per document (no popup). */}
-                <div className="pt-4 border-t">
-                  <CandidateDocumentsPanel
-                    candidatureId={c.id}
-                    documents={cDocuments}
-                    setDocuments={setDocuments}
-                    setEvents={setEvents}
-                    setCandidatureDataMap={setCandidatureDataMap}
-                    currentStatut={c.statut}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-
-        {/* ── TRANSITION DIALOG ── */}
+        {/* ── TRANSITION DIALOG ──
+            Upgraded from size="lg" to size="2xl" and split into two
+            columns: left = read-only context the recruiter wants to
+            reference while composing (candidate, scores, dossier,
+            warnings); right = the form fields. This replaces the
+            kitchen-sink single-column layout — now recruiters can see
+            scores + doc state while they write the email. */}
         <AlertDialog open={!!transitionDialog} onOpenChange={(open) => { if (!open) { closeTransitionDialog(); resetEmailAssistants() } }}>
-          <AlertDialogContent size="lg">
+          <AlertDialogContent size="2xl">
             <AlertDialogHeader>
               <AlertDialogTitle>
                 {transitionDialog?.targetStatut === 'refuse'
@@ -965,7 +833,77 @@ export default function CandidateDetailPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
 
-            <div className="space-y-4 py-2">
+            <div className="py-2 grid gap-5 md:grid-cols-[240px_1fr]">
+              {/* LEFT COLUMN — read-only context. The recruiter can glance
+                  at the candidate's scores + doc state while composing
+                  the email on the right. Rebuilt from the selected
+                  candidature; hidden on narrow viewports to keep the
+                  dialog usable. */}
+              {transitionDialog && (() => {
+                const tCand = candidatures.find(c => c.id === transitionDialog.candidatureId)
+                const tDocs = tCand ? (candidatureDataMap?.[tCand.id]?.documents ?? documents) : []
+                const has = (type: string) => tDocs.some(d => d.type === type && !d.deleted_at)
+                const slots = {
+                  cv: has('cv'), lettre: has('lettre'), aboro: has('aboro'),
+                  others: tDocs.filter(d => !d.deleted_at && !['cv', 'lettre', 'aboro'].includes(d.type)).length,
+                }
+                return (
+                  <aside className="hidden md:flex md:flex-col gap-4 text-xs text-muted-foreground border-r pr-5">
+                    <div>
+                      <p className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground mb-1">Candidat</p>
+                      <p className="text-foreground font-medium">{candidate.name}</p>
+                      {tCand && <p className="text-muted-foreground">{tCand.posteTitre}</p>}
+                    </div>
+
+                    {tCand && (tCand.tauxPoste !== null || tCand.tauxEquipe !== null || tCand.tauxGlobal !== null) && (
+                      <div>
+                        <p className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground mb-1">Scores</p>
+                        <div className="space-y-0.5 tabular-nums">
+                          {tCand.tauxPoste !== null && <p>Poste <span className="float-right text-foreground font-medium">{Math.round(tCand.tauxPoste)}%</span></p>}
+                          {tCand.tauxEquipe !== null && <p>Équipe <span className="float-right text-foreground font-medium">{Math.round(tCand.tauxEquipe)}%</span></p>}
+                          {tCand.tauxSoft !== null && tCand.tauxSoft !== undefined && <p>Soft <span className="float-right text-foreground font-medium">{Math.round(tCand.tauxSoft)}%</span></p>}
+                          {tCand.tauxGlobal !== null && <p>Global <span className="float-right text-foreground font-medium">{Math.round(tCand.tauxGlobal)}%</span></p>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="text-[10px] font-semibold tracking-[0.14em] uppercase text-muted-foreground mb-1">Dossier</p>
+                      <div className="space-y-0.5">
+                        <p><span className={slots.cv ? 'text-emerald-600' : 'text-muted-foreground/50'}>{slots.cv ? '✓' : '—'} CV</span></p>
+                        <p><span className={slots.lettre ? 'text-emerald-600' : 'text-muted-foreground/50'}>{slots.lettre ? '✓' : '—'} Lettre</span></p>
+                        <p><span className={slots.aboro ? 'text-emerald-600' : 'text-muted-foreground/50'}>{slots.aboro ? '✓' : '—'} Aboro</span></p>
+                        {slots.others > 0 && <p className="text-muted-foreground">+ {slots.others} autre{slots.others > 1 ? 's' : ''}</p>}
+                      </div>
+                    </div>
+
+                    {transitionDialog.isSkip && (
+                      <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-amber-600 dark:text-amber-400">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide">Attention</p>
+                        <p className="mt-0.5 text-[11px] leading-snug">Étapes sautées : {transitionDialog.skipped.map(s => STATUT_LABELS[s] ?? s).join(', ')}</p>
+                      </div>
+                    )}
+
+                    {transitionDialog.targetStatut === 'embauche' && (
+                      <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2 py-1.5 text-emerald-600 dark:text-emerald-400">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide">Définitif</p>
+                        <p className="mt-0.5 text-[11px] leading-snug">L'embauche est une action terminale.</p>
+                      </div>
+                    )}
+
+                    {transitionDialog.targetStatut === 'refuse' && (
+                      <div className="rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1.5 text-rose-600 dark:text-rose-400">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide">Définitif</p>
+                        <p className="mt-0.5 text-[11px] leading-snug">Un email de refus sera envoyé (obligatoire).</p>
+                      </div>
+                    )}
+                  </aside>
+                )
+              })()}
+
+              {/* RIGHT COLUMN — form fields (unchanged behavior, just
+                  hosted in the second grid column). */}
+              <div className="space-y-4 min-w-0">
               {/* 1. Email preview section (first -- external consequence) */}
               {showEmailSection && (
                 <div className="rounded-lg border">
@@ -1287,6 +1225,7 @@ export default function CandidateDetailPage() {
                   </div>
                 )}
               </div>
+              </div>
             </div>
 
             <AlertDialogFooter>
@@ -1332,175 +1271,6 @@ export default function CandidateDetailPage() {
           </DialogContent>
         </Dialog>
 
-        {/* ══════════ BELOW THE FOLD ══════════ */}
-
-        {isPending ? (
-          <Card className="mt-8">
-            <CardContent className="p-12 text-center">
-              <Clock className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h2 className="mt-4 text-lg font-medium">En attente de l'evaluation</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Le candidat n'a pas encore soumis son evaluation.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* 2-column: Notes + Radar/Fit */}
-            <div className="mt-8 grid gap-6 lg:grid-cols-2">
-              {/* Left: Recruiter notes */}
-              <div className="space-y-6">
-                {candidatures[0]?.id && (
-                  <CandidateNotesSection
-                    candidateId={candidate.id}
-                    candidatureId={candidatures[0].id}
-                    notes={candidatures[0]?.notesDirecteur ?? notes}
-                    onNotesChange={setNotes}
-                  />
-                )}
-
-                {/* Behavioral profile (Aboro) */}
-                <AboroProfileSection
-                  candidateId={candidate.id}
-                  aboroProfile={aboroProfile}
-                  hasCandidatures={candidatures.length > 0}
-                  onProfileUpdated={setAboroProfile}
-                />
-              </div>
-
-              {/* Right: Radar + Fit report */}
-              <div className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Radar — Candidat vs Equipe</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <VisxRadarChart
-                      data={candidateRadar}
-                      overlay={teamRadar}
-                      primaryLabel={candidate.name}
-                      overlayLabel="Moyenne equipe"
-                      showOverlayToggle
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* AI Report */}
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle className="text-base">Analyse IA</CardTitle>
-                    {!candidate.aiReport && (
-                      <Button onClick={generateAnalysis} disabled={analyzing} size="sm">
-                        {analyzing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                        Generer l'analyse
-                      </Button>
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {candidate.aiReport ? (
-                      <FitReport report={candidate.aiReport} />
-                    ) : analyzing ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="mr-3 h-6 w-6 animate-spin" />
-                        <span className="text-muted-foreground">Analyse en cours... (15-30 secondes)</span>
-                      </div>
-                    ) : (
-                      <p className="py-8 text-center text-sm text-muted-foreground">
-                        Cliquez sur &laquo; Generer l'analyse &raquo; pour obtenir un rapport IA comparant ce candidat a l'equipe.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Multi-poste compatibility */}
-                {multiPosteCompatibility.length > 0 && (
-                  <MultiPosteCard entries={multiPosteCompatibility} />
-                )}
-              </div>
-            </div>
-
-            {/* Gap analysis */}
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-base">Analyse des ecarts</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="max-h-[400px] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-card">
-                      <tr className="border-b text-left text-muted-foreground">
-                        <th className="pb-2 pr-4 font-medium">Competence</th>
-                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-20">Candidat</th>
-                        <th className="pb-2 px-3 font-medium text-center whitespace-nowrap w-16">Equipe</th>
-                        <th className="pb-2 pl-3 font-medium text-center whitespace-nowrap w-14">Ecart</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {gapAnalysis.slice(0, 20).map((g, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="py-2 pr-4">{g!.skill}</td>
-                          <td className="py-2 px-3 text-center font-mono">{g!.candidateScore}</td>
-                          <td className="py-2 px-3 text-center font-mono text-muted-foreground">{g!.teamAvg}</td>
-                          <td className="py-2 pl-3 text-center">
-                            <span className={g!.gap > 0 ? 'text-green-600 font-medium' : g!.gap < 0 ? 'text-amber-600' : 'text-muted-foreground'}>
-                              {g!.gap > 0 ? '+' : ''}{g!.gap}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Bonus skills */}
-            {bonusSkills && bonusSkills.length > 0 && (
-              <div className="mt-4">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Competences bonus (hors poste)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {bonusSkills.map((s) => (
-                    <Badge key={s.skillId} variant="outline" className="text-[10px]">
-                      + {s.skillLabel} {s.score}/5
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-          </>
-        )}
-
-        {/* ── FULL HISTORY BY STAGE ──
-            Rendered outside the isPending gate so per-stage transition notes
-            and documents stay visible during the early stages (postulé /
-            présélectionné / skill_radar_envoyé), before the candidate has
-            submitted their evaluation — which is precisely when the recruiter
-            is adding them. */}
-        {candidatures.length > 0 && (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle className="text-base">Historique complet</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {candidatures.map(c => {
-                const cData = candidatureDataMap?.[c.id]
-                const cEvents = cData?.events ?? events
-                const cDocs = cData?.documents ?? documents
-                return (
-                  <div key={c.id}>
-                    {candidatures.length > 1 && (
-                      <p className="text-xs font-medium text-muted-foreground mb-2 mt-4 first:mt-0">
-                        {c.posteTitre}
-                      </p>
-                    )}
-                    <CandidateHistoryByStage events={cEvents} documents={cDocs} currentStatut={c.statut} />
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Check, X, SkipForward, HelpCircle } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, STATUT_DESCRIPTIONS, formatDateShort } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, STATUT_DESCRIPTIONS, NEXT_ACTION, formatDateShort } from '@/lib/constants'
 import type { CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
 
 /** Pipeline column order — mirrors kanban-board.tsx */
@@ -23,19 +23,6 @@ interface StepInfo {
   statut: string
   state: StepState
   date: string | null
-}
-
-/** Recommended next action per stage */
-const NEXT_ACTION: Record<string, string> = {
-  postule: 'Trier le candidat',
-  preselectionne: 'Envoyer le Skill Radar',
-  skill_radar_envoye: 'Relancer si pas de retour',
-  skill_radar_complete: 'Planifier l\'entretien 1',
-  entretien_1: 'Planifier le test Aboro',
-  aboro: 'Planifier l\'entretien 2',
-  entretien_2: 'Préparer la proposition',
-  proposition: 'Attendre la réponse du candidat',
-  embauche: 'Onboarding',
 }
 
 function computeSteps(candidature: CandidatureInfo, events: CandidatureEvent[]): StepInfo[] {
