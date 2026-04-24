@@ -256,7 +256,10 @@ export default function RecruitPipelinePage() {
     const rect = el.getBoundingClientRect()
     const isOffscreen = rect.top < 0 || rect.top > window.innerHeight - 80
     if (isOffscreen) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      // Instant, not smooth. Smooth animation was eating follow-up clicks on
+      // the filter toolbar: mousedown landed on chip A, mouseup landed on
+      // chip B after reflow, browser dropped the click.
+      el.scrollIntoView({ behavior: 'auto', block: 'nearest' })
     }
   }, [scrollTrigger])
 
@@ -682,7 +685,7 @@ export default function RecruitPipelinePage() {
                           render={(
                             <button
                               type="button"
-                              onClick={() => { setFilterStatut(s.k); setScrollTrigger(n => n + 1) }}
+                              onClick={() => { setFilterStatut(prev => prev === s.k ? 'all' : s.k); setScrollTrigger(n => n + 1) }}
                               className={`${s.color} hover:brightness-110 transition-[filter]`}
                               style={{ width: `${pct}%` }}
                               aria-label={`${STATUT_LABELS[s.k] ?? s.k}: ${n}`}
@@ -703,7 +706,7 @@ export default function RecruitPipelinePage() {
                     <button
                       key={k}
                       type="button"
-                      onClick={() => { setFilterStatut(k); setScrollTrigger(n => n + 1) }}
+                      onClick={() => { setFilterStatut(prev => prev === k ? 'all' : k); setScrollTrigger(n => n + 1) }}
                       className="hover:text-foreground transition-colors"
                     >
                       {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
@@ -762,19 +765,31 @@ export default function RecruitPipelinePage() {
                       return (
                         <div
                           key={p.id}
-                          className={`group relative flex items-center gap-3 py-3 border-t border-border/60 transition-colors hover:bg-muted/40 ${isSelected ? 'bg-muted/60' : ''}`}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={isSelected}
+                          onClick={() => {
+                            // Clear pole unconditionally: posteId narrows strictly
+                            // more than pole, so keeping a stale pole can contradict
+                            // the new poste (e.g. pole=legacy + poste from java).
+                            // This also makes the Poste chip × a clean unscope.
+                            setFilterPole('all')
+                            setFilterPoste(isSelected ? 'all' : p.id)
+                            setFilterStatut('all')
+                            setScrollTrigger(n => n + 1)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' && e.key !== ' ') return
+                            e.preventDefault()
+                            setFilterPole('all')
+                            setFilterPoste(isSelected ? 'all' : p.id)
+                            setFilterStatut('all')
+                            setScrollTrigger(n => n + 1)
+                          }}
+                          className={`group relative flex items-center gap-3 py-3 border-t border-border/60 transition-colors cursor-pointer hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${isSelected ? 'bg-muted/60' : ''}`}
                         >
                           {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFilterPole(pole)
-                              setFilterPoste(p.id)
-                              setFilterStatut('all')
-                              setScrollTrigger(n => n + 1)
-                            }}
-                            className="flex-1 flex items-baseline gap-4 text-left min-w-0"
-                          >
+                          <div className="flex-1 flex items-baseline gap-4 text-left min-w-0">
                             <span className="text-[11px] font-mono tabular-nums text-muted-foreground/60 w-6 shrink-0 pl-2">
                               {String(idx).padStart(2, '0')}
                             </span>
@@ -784,8 +799,8 @@ export default function RecruitPipelinePage() {
                                 {p.headcount} poste{p.headcountFlexible ? ' (flex.)' : ''} · {p.experienceMin} ans
                               </span>
                             </div>
-                          </button>
-                          <div className="flex items-center gap-3 shrink-0 pr-2">
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0 pr-2" onClick={(e) => e.stopPropagation()}>
                             <div className="text-right tabular-nums">
                               <span className="text-sm font-semibold text-foreground">{p.candidateCount}</span>
                               <span className="text-[11px] text-muted-foreground">
@@ -1142,21 +1157,21 @@ export default function RecruitPipelinePage() {
           // so the same pôle/poste/statut dropdowns work in both views.
           (() => {
             const q = filterSearch.trim().toLowerCase()
-            // Pipeline's filterPoste is a poste ID; candidates store the
-            // stringy poste title (`role`). Resolve via postes lookup so
-            // both views use the same dropdown state.
-            const filterPosteTitle = filterPoste === 'all'
+            // Pipeline's filterPoste/filterPole are IDs. Candidates expose
+            // only a stringy `role` title, which collides when two postes
+            // share a title. Resolve via candidatures: build a Set of
+            // candidate IDs whose applications match the filter, then
+            // filter candidates by id.
+            const allowedByPoste = filterPoste === 'all'
               ? null
-              : postes.find(p => p.id === filterPoste)?.titre ?? null
-            // filterPole narrows to the postes of that pôle — translate
-            // into a set of allowed titles.
-            const filterPoleTitles = filterPole === 'all'
+              : new Set(candidatures.filter(c => c.posteId === filterPoste).map(c => c.candidateId))
+            const allowedByPole = filterPole === 'all'
               ? null
-              : new Set(postes.filter(p => p.pole === filterPole).map(p => p.titre))
+              : new Set(candidatures.filter(c => c.postePole === filterPole).map(c => c.candidateId))
             const filteredCands = candidates.filter(c => {
               if (q && !c.name.toLowerCase().includes(q)) return false
-              if (filterPosteTitle && c.role !== filterPosteTitle) return false
-              if (filterPoleTitles && !filterPoleTitles.has(c.role)) return false
+              if (allowedByPoste && !allowedByPoste.has(c.id)) return false
+              if (allowedByPole && !allowedByPole.has(c.id)) return false
               if (filterStatut !== 'all' && c.pipelineStatus !== filterStatut) return false
               return true
             })
