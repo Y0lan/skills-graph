@@ -1175,11 +1175,29 @@ export default function RecruitPipelinePage() {
         ) : viewMode === 'candidates' ? (
           // Candidate-level table — aggregated by person (a candidate can
           // have multiple candidatures, and candidates can exist without
-          // any candidature at all). Search + sort only; the pôle/poste/
-          // statut dropdowns are candidature-scoped and don't apply here.
+          // any candidature at all). Filters are resolved against the
+          // candidate's `role` (stringy poste title) + `pipelineStatus`
+          // so the same pôle/poste/statut dropdowns work in both views.
           (() => {
             const q = filterSearch.trim().toLowerCase()
-            const filteredCands = q ? candidates.filter(c => c.name.toLowerCase().includes(q)) : candidates
+            // Pipeline's filterPoste is a poste ID; candidates store the
+            // stringy poste title (`role`). Resolve via postes lookup so
+            // both views use the same dropdown state.
+            const filterPosteTitle = filterPoste === 'all'
+              ? null
+              : postes.find(p => p.id === filterPoste)?.titre ?? null
+            // filterPole narrows to the postes of that pôle — translate
+            // into a set of allowed titles.
+            const filterPoleTitles = filterPole === 'all'
+              ? null
+              : new Set(postes.filter(p => p.pole === filterPole).map(p => p.titre))
+            const filteredCands = candidates.filter(c => {
+              if (q && !c.name.toLowerCase().includes(q)) return false
+              if (filterPosteTitle && c.role !== filterPosteTitle) return false
+              if (filterPoleTitles && !filterPoleTitles.has(c.role)) return false
+              if (filterStatut !== 'all' && c.pipelineStatus !== filterStatut) return false
+              return true
+            })
             const statusOrder = (c: Candidate): number => {
               if (c.pipelineStatus) return PIPELINE_ORDER[c.pipelineStatus] ?? -1
               if (c.hasReport) return -2
