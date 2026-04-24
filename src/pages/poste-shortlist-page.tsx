@@ -83,7 +83,9 @@ export default function PosteShortlistPage() {
     })
   }
 
-  const canCompare = selected.size >= 2 && selected.size <= 5
+  // Cap aligned with the comparison report's MAX_OVERLAY = 4 (report-comparison-page.tsx).
+  // Selecting 5 would silently drop the 5th on the report side.
+  const canCompare = selected.size >= 2 && selected.size <= 4
   const canOutreach = selected.size > 0 && selected.size <= 20
 
   const sendOutreach = async () => {

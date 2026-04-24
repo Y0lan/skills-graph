@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Loader2, Printer, AlertTriangle, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -104,6 +105,7 @@ function buildRadarData(
 
 export default function ReportComparisonPage() {
   const { posteId } = useParams<{ posteId: string }>()
+  const [searchParams] = useSearchParams()
   const [state, setState] = useState<PageState>('loading')
   const [payload, setPayload] = useState<ComparisonPayload | null>(null)
   const [categories, setCategories] = useState<CategoryInfo[]>([])
@@ -141,7 +143,10 @@ export default function ReportComparisonPage() {
         setPayload(data)
         setCategories(cats)
 
-        // Initialize selection to top 3 (or all, if fewer) — only if nothing yet selected.
+        // Initialize selection from URL `?candidatures=...` (first load only),
+        // falling back to top-3. A stale/empty URL intersection surfaces a
+        // toast so the recruiter knows the link is outdated rather than
+        // silently seeing a different set of candidates.
         setSelectedIds(prev => {
           if (prev.size > 0) {
             // Preserve existing selection if candidates still present; drop gone ones.
@@ -149,6 +154,26 @@ export default function ReportComparisonPage() {
             const kept = new Set(Array.from(prev).filter(id => stillPresent.has(id)))
             if (kept.size > 0) return kept
           }
+
+          const urlIds = (searchParams.get('candidatures') ?? '').split(',').filter(Boolean)
+          if (urlIds.length > 0) {
+            const presentSet = new Set(data.candidatures.map(c => c.id))
+            const intersected = urlIds.filter(id => presentSet.has(id))
+            if (intersected.length === 0) {
+              toast.warning(`Les candidats du lien ne sont plus dans ce poste — affichage des ${Math.min(3, data.candidatures.length)} premiers par score.`)
+              return new Set(data.candidatures.slice(0, 3).map(c => c.id))
+            }
+            const capped = intersected.slice(0, MAX_OVERLAY)
+            const dropped = intersected.length - capped.length
+            const missing = urlIds.length - intersected.length
+            if (missing > 0) {
+              toast.info(`${missing} candidat(s) du lien ne sont plus disponibles — affichage des ${capped.length} restant(s).`)
+            } else if (dropped > 0) {
+              toast.info(`Comparaison limitée à ${MAX_OVERLAY} candidats — ${dropped} masqué(s).`)
+            }
+            return new Set(capped)
+          }
+
           return new Set(data.candidatures.slice(0, 3).map(c => c.id))
         })
 
@@ -173,6 +198,10 @@ export default function ReportComparisonPage() {
 
     loadData()
     return () => { cancelled = true }
+    // `searchParams` is intentionally read as initial state — changing URL
+    // params post-load does NOT re-fetch or re-select. The selection is
+    // owned by the user once they've toggled checkboxes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posteId, reloadToken])
 
   const bundles: CandidateBundle[] = useMemo(() => {
