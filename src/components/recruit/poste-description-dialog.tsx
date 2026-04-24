@@ -71,27 +71,27 @@ export default function PosteDescriptionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="w-[95vw] sm:max-w-3xl">
-        <DialogHeader>
+      <DialogContent className="w-[95vw] sm:max-w-3xl max-h-[85vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="p-6 pb-2 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             Fiche de poste
             <span className="text-sm font-normal text-muted-foreground">— {posteTitre}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2">
+        <div className="flex-1 min-h-0 px-6 flex flex-col gap-2 overflow-y-auto">
           <Textarea
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="Collez la fiche de poste complète ici. Le contenu est utilisé par l’IA pour calibrer les scores et questions en fonction du rôle."
-            className="min-h-[320px] font-mono text-xs"
+            className="font-mono text-xs resize-none h-[50vh] shrink-0"
             autoFocus
           />
-          <div className={`flex items-center justify-between text-xs ${tooLong ? 'text-red-600' : 'text-muted-foreground'}`}>
+          <div className={`flex items-center justify-between text-xs shrink-0 ${tooLong ? 'text-red-600' : 'text-muted-foreground'}`}>
             <span>Markdown autorisé. Non rendu — envoyé tel quel à l’IA.</span>
             <span>{value.length.toLocaleString('fr-FR')} / {MAX_CHARS.toLocaleString('fr-FR')}</span>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="p-6 pt-2 shrink-0 border-t bg-background">
           <Button variant="ghost" onClick={onClose} disabled={saving}>Annuler</Button>
           <Button onClick={handleSave} disabled={!dirty || tooLong || saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
