@@ -47,6 +47,13 @@ export default function PosteShortlistPage() {
   const [outreachStatut, setOutreachStatut] = useState('skill_radar_envoye')
   const [outreachMessage, setOutreachMessage] = useState('')
   const [sending, setSending] = useState(false)
+  // Live preview state. `previewHtml` is already sanitized + logo-inlined
+  // server-side (previewizeEmailHtml). Rendered in a sandboxed iframe so
+  // the recruiter sees exactly what lands in the candidate's inbox.
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewSubject, setPreviewSubject] = useState<string | null>(null)
+  const [previewStatus, setPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const fetchShortlist = useCallback(async () => {
     if (!posteId) return
@@ -63,6 +70,58 @@ export default function PosteShortlistPage() {
   }, [posteId])
 
   useEffect(() => { fetchShortlist() }, [fetchShortlist])
+
+  // Live email preview: calls /emails/preview when the dialog is open
+  // and the statut / customBody changes. Debounced so every keystroke
+  // doesn't hammer the server. AbortController tied to the effect run
+  // so late responses from stale requests don't clobber fresh ones.
+  // Anchored to the FIRST selected candidate for placeholder data —
+  // other candidates receive the same template with their own names.
+  useEffect(() => {
+    if (!outreachOpen) return
+    if (selected.size === 0) return
+
+    const firstCandidatureId = Array.from(selected)[0]
+    setPreviewStatus('loading')
+    const controller = new AbortController()
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await fetch('/api/recruitment/emails/preview', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            candidatureId: firstCandidatureId,
+            statut: outreachStatut,
+            customBody: outreachMessage.trim() || undefined,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+          setPreviewStatus('error')
+          setPreviewError(err.error ?? `HTTP ${res.status}`)
+          setPreviewHtml(null)
+          setPreviewSubject(null)
+          return
+        }
+        const body = await res.json() as { subject: string; html: string }
+        setPreviewHtml(body.html)
+        setPreviewSubject(body.subject)
+        setPreviewError(null)
+        setPreviewStatus('ready')
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+        setPreviewStatus('error')
+        setPreviewError(err instanceof Error ? err.message : 'Erreur de prévisualisation')
+      }
+    }, 300)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(t)
+    }
+  }, [outreachOpen, outreachStatut, outreachMessage, selected])
 
   const sorted = useMemo(() => {
     if (!data) return []
@@ -87,6 +146,11 @@ export default function PosteShortlistPage() {
   // Selecting 5 would silently drop the 5th on the report side.
   const canCompare = selected.size >= 2 && selected.size <= 4
   const canOutreach = selected.size > 0 && selected.size <= 20
+  const firstSelectedName = useMemo(() => {
+    if (!data || selected.size === 0) return null
+    const firstId = Array.from(selected)[0]
+    return data.items.find(it => it.candidatureId === firstId)?.name ?? null
+  }, [data, selected])
 
   const sendOutreach = async () => {
     if (!posteId) return
@@ -248,39 +312,74 @@ export default function PosteShortlistPage() {
       </div>
 
       <Dialog open={outreachOpen} onOpenChange={(v) => { if (!v) setOutreachOpen(false) }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] sm:max-w-4xl max-h-[90vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="p-6 pb-2 shrink-0">
             <DialogTitle>Contacter {selected.size} candidat{selected.size > 1 ? 's' : ''}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Template d&apos;email (statut)</label>
-              <Select value={outreachStatut} onValueChange={(v) => setOutreachStatut(v ?? 'skill_radar_envoye')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="skill_radar_envoye">Envoyer skill radar</SelectItem>
-                  <SelectItem value="preselectionne">Pré-sélectionné</SelectItem>
-                  <SelectItem value="entretien_1">Entretien 1</SelectItem>
-                  <SelectItem value="entretien_2">Entretien 2</SelectItem>
-                </SelectContent>
-              </Select>
+          <div className="flex-1 min-h-0 grid md:grid-cols-2 gap-4 px-6 overflow-y-auto">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="outreach-statut" className="text-xs">Template d&apos;email</Label>
+                <Select value={outreachStatut} onValueChange={(v) => setOutreachStatut(v ?? 'skill_radar_envoye')}>
+                  <SelectTrigger id="outreach-statut"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="skill_radar_envoye">{STATUT_LABELS.skill_radar_envoye}</SelectItem>
+                    <SelectItem value="preselectionne">{STATUT_LABELS.preselectionne}</SelectItem>
+                    <SelectItem value="entretien_1">{STATUT_LABELS.entretien_1}</SelectItem>
+                    <SelectItem value="entretien_2">{STATUT_LABELS.entretien_2}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="outreach-message" className="text-xs">Message personnalisé (optionnel, markdown)</Label>
+                <Textarea
+                  id="outreach-message"
+                  value={outreachMessage}
+                  onChange={e => setOutreachMessage(e.target.value)}
+                  rows={8}
+                  placeholder="Laisser vide pour utiliser le template par défaut"
+                  className="font-mono text-xs resize-none"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Max 20 candidats par envoi. Les échecs individuels n&apos;arrêtent pas le lot.
+              </p>
+              {selected.size > 1 && firstSelectedName ? (
+                <p className="text-[11px] text-muted-foreground bg-muted/40 rounded px-2 py-1.5 border">
+                  Aperçu personnalisé pour <span className="font-medium">{firstSelectedName}</span>.
+                  Les {selected.size - 1} autre{selected.size - 1 > 1 ? 's' : ''} candidat{selected.size - 1 > 1 ? 's' : ''} recevront le même gabarit avec leurs informations.
+                </p>
+              ) : null}
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Message personnalisé (optionnel, markdown)</label>
-              <Textarea
-                value={outreachMessage}
-                onChange={e => setOutreachMessage(e.target.value)}
-                rows={5}
-                placeholder="Laisser vide pour utiliser le template par défaut"
+            <div className="space-y-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between text-xs">
+                <Label className="text-xs">Aperçu email</Label>
+                {previewStatus === 'loading' ? (
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Rendu…
+                  </span>
+                ) : previewStatus === 'error' ? (
+                  <span className="text-red-600" title={previewError ?? ''}>Erreur d&apos;aperçu</span>
+                ) : previewStatus === 'ready' ? (
+                  <span className="text-muted-foreground">Rendu réel</span>
+                ) : null}
+              </div>
+              {previewSubject ? (
+                <div className="text-xs px-2 py-1.5 rounded-t border bg-muted/40">
+                  <span className="text-muted-foreground">Objet :</span> <span className="font-medium">{previewSubject}</span>
+                </div>
+              ) : null}
+              <iframe
+                sandbox=""
+                srcDoc={previewHtml ?? ''}
+                title="Aperçu email"
+                className={`flex-1 min-h-[360px] w-full border bg-white ${previewSubject ? 'rounded-b' : 'rounded'}`}
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Max 20 candidats par envoi. Les échecs individuels n&apos;arrêtent pas le lot.
-            </p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="p-6 pt-4 shrink-0 border-t bg-background">
             <Button variant="ghost" onClick={() => setOutreachOpen(false)} disabled={sending}>Annuler</Button>
-            <Button onClick={sendOutreach} disabled={sending}>
+            <Button onClick={sendOutreach} disabled={sending || previewStatus === 'loading' || previewStatus === 'error'}>
               {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
               Envoyer ({selected.size})
             </Button>

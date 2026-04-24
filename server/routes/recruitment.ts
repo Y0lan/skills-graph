@@ -1209,6 +1209,75 @@ protectedRouter.post('/candidatures/:id/notes', mutationRateLimit, (req, res) =>
   res.json({ ok: true })
 })
 
+/**
+ * Append a free-form markdown note to a candidature timeline.
+ *
+ * This is the companion to POST /candidatures/:id/notes (which overwrites
+ * the structured evaluation JSON in candidatures.notes_directeur). This
+ * endpoint is APPEND-ONLY: each call creates a new candidature_events row
+ * of type='note' with the markdown body stored in content_md, so the
+ * recruiter timeline becomes a conversational stream of short notes with
+ * a preserved authorship and timestamp for every entry.
+ *
+ * Shape of each stored row:
+ *   type='note', content_md=<markdown>, notes=NULL, created_by=<slug>.
+ *
+ * Intentionally does NOT publish a SSE channel — a future v2.5 may add
+ * 'note_created' on the recruitmentBus so two tabs on the same candidate
+ * stay in sync; today the window-focus refresh is enough.
+ */
+protectedRouter.post('/candidatures/:id/events/note', mutationRateLimit, (req, res) => {
+  const raw = (req.body as { contentMd?: unknown }).contentMd
+  if (typeof raw !== 'string') {
+    res.status(400).json({ error: 'contentMd requis' })
+    return
+  }
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) {
+    res.status(400).json({ error: 'La note ne peut pas être vide' })
+    return
+  }
+  if (trimmed.length > 5000) {
+    res.status(400).json({ error: 'Note trop longue (5000 caractères max)' })
+    return
+  }
+
+  const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id)
+  if (!exists) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  const user = getUser(req)
+  const row = getDb().prepare(`
+    INSERT INTO candidature_events (candidature_id, type, content_md, created_by)
+    VALUES (?, 'note', ?, ?)
+    RETURNING id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
+  `).get(req.params.id, trimmed, user.slug || 'unknown') as {
+    id: number
+    type: string
+    statut_from: string | null
+    statut_to: string | null
+    notes: string | null
+    content_md: string | null
+    email_snapshot: string | null
+    created_by: string
+    created_at: string
+  }
+
+  res.json({
+    id: row.id,
+    type: row.type,
+    statutFrom: row.statut_from,
+    statutTo: row.statut_to,
+    notes: row.notes,
+    contentMd: row.content_md,
+    emailSnapshot: row.email_snapshot,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  })
+})
+
 // Recalculate compatibility for a candidature
 protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res) => {
   try {
@@ -1394,12 +1463,20 @@ protectedRouter.post('/postes/:posteId/outreach', heavyRateLimit, async (req, re
       if (!row) { failed.push({ candidatureId: cid, error: 'Candidature introuvable pour ce poste' }); continue }
       if (!row.email) { failed.push({ candidatureId: cid, error: 'Candidat sans email' }); continue }
 
+      const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`
       const result = await sendTransitionEmail({
         to: row.email,
         candidateName: row.name,
         role: poste.titre,
         statut,
         customBody,
+        // Parity with /emails/preview — when the outreach statut is
+        // skill_radar_envoye, each candidate gets their unique eval link.
+        // Without this the preview showed a real link but the sent email
+        // had href="" (codex pass-2 finding #5).
+        evaluationUrl: statut === 'skill_radar_envoye'
+          ? `${baseUrl}/evaluate/${row.candidate_id}`
+          : undefined,
       })
       if (!result.sent) {
         failed.push({ candidatureId: cid, error: 'email non envoyé (template manquant ou clé API absente)' })
