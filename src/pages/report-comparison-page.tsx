@@ -305,9 +305,7 @@ export default function ReportComparisonPage() {
 
   return (
     <div className="min-h-screen bg-white text-black print:text-black">
-      <style>{`@media print { .no-print { display: none !important; } @page { size: landscape; margin: 1cm; } }`}</style>
-
-      <div className="no-print fixed top-4 right-4 z-50">
+      <div className="print-hide fixed top-4 right-4 z-50">
         <Button onClick={() => window.print()} size="sm">
           <Printer className="h-4 w-4 mr-2" />
           Imprimer / Enregistrer PDF
@@ -327,7 +325,7 @@ export default function ReportComparisonPage() {
         {/* Staleness banner */}
         {showStalenessBanner && (
           <div
-            className="no-print rounded-lg border border-amber-400 bg-amber-50 p-4 dark:bg-amber-900/20"
+            className="print-hide rounded-lg border border-amber-400 bg-amber-50 p-4 dark:bg-amber-900/20"
             data-testid="state-stale"
           >
             <div className="flex items-start gap-2">
@@ -350,7 +348,7 @@ export default function ReportComparisonPage() {
         )}
 
         {/* Interactive ranked table (hidden in print) */}
-        <div className="no-print">
+        <div className="print-hide">
           <h2 className="text-lg font-bold mb-3">Classement</h2>
           <div className="rounded-lg border">
             <table className="w-full text-sm">

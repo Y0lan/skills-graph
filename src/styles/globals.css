@@ -193,3 +193,21 @@
   60% { transform: scale(1.3); }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* ── Print rules ─────────────────────────────────────────────────────
+   Global utility classes usable by any page. `.print-hide` hides an
+   element during print; `.print-only` reveals one that's hidden on
+   screen. The comparison report + any future printable view rely on
+   these instead of inline <style> blocks so print logic is audited in
+   one place. */
+@media print {
+  .print-hide { display: none !important; }
+  .print-only { display: revert !important; }
+  /* Ensure colored backgrounds render (WebKit requires this hint). */
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* Page setup for printable reports. */
+  @page { size: landscape; margin: 1cm; }
+}
+@media screen {
+  .print-only { display: none; }
+}

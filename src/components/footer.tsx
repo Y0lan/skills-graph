@@ -16,7 +16,7 @@ export default function Footer() {
     : '/assets/logo-sinapse-horizontal.svg'
 
   return (
-    <footer className="border-t border-border/50 bg-muted/30 mt-auto">
+    <footer className="border-t border-border/50 bg-muted/30 mt-auto print-hide">
       <div className="mx-auto max-w-7xl px-4 sm:px-8 py-12">
         {/* Top section — 3-column grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-12">

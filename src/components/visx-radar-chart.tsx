@@ -199,7 +199,7 @@ export default function VisxRadarChart({
           left={tooltipLeft}
           top={tooltipTop}
           style={{ position: 'fixed', pointerEvents: 'none' }}
-          className="!rounded-md !border !border-border !bg-popover !px-3 !py-2 !text-sm !shadow-md"
+          className="print-hide !rounded-md !border !border-border !bg-popover !px-3 !py-2 !text-sm !shadow-md"
         >
           <p className="mb-1 font-medium text-popover-foreground">
             {tooltipData.label}
