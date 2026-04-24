@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown, ClipboardCheck, PhoneCall, Check, XCircle } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
 import RoleManagerPanel from '@/components/recruit/role-manager-panel'
@@ -119,6 +119,36 @@ const PIPELINE_ORDER: Record<string, number> = {
   preselectionne: 2, postule: 1, refuse: 0,
 }
 
+// ─── Pipeline stages (funnel shortcut) ───────────────────────────────
+// Group the 10 statuses into 4 meaningful stages + 1 terminal chip.
+// Stage filter is a SEPARATE dimension from exact statut filter; they
+// combine AND-wise so the recruiter can say "Évaluation stage" OR
+// "specifically skill_radar_complete" without either overriding the
+// other. `refuse` is not in the active funnel — terminal rejections
+// would distort stage ratios — it lives in the standalone chip.
+type PipelineStage = 'nouveaux' | 'evaluation' | 'entretiens' | 'decision'
+const STAGE_STATUSES: Record<PipelineStage, readonly string[]> = {
+  nouveaux: ['postule', 'preselectionne'],
+  evaluation: ['skill_radar_envoye', 'skill_radar_complete', 'aboro'],
+  entretiens: ['entretien_1', 'entretien_2'],
+  decision: ['proposition', 'embauche'],
+} as const
+const STAGE_LABELS: Record<PipelineStage, string> = {
+  nouveaux: 'Nouveaux',
+  evaluation: 'Évaluation',
+  entretiens: 'Entretiens',
+  decision: 'Décision',
+}
+const STAGE_ORDER: PipelineStage[] = ['nouveaux', 'evaluation', 'entretiens', 'decision']
+
+/** Pure helper — exported for unit testing. Returns true if the given
+ *  statut passes the stage filter. `'all'` = no stage filter. */
+export function statutMatchesStageFilter(statut: string | null | undefined, stage: PipelineStage | 'refuses' | 'all'): boolean {
+  if (stage === 'all') return true
+  if (stage === 'refuses') return statut === 'refuse'
+  return STAGE_STATUSES[stage].includes(statut ?? '')
+}
+
 const SORT_KEYS = [
   'poste_desc', 'poste_asc',
   'global_desc', 'global_asc',
@@ -211,6 +241,8 @@ export default function RecruitPipelinePage() {
   const [filterSearch, setFilterSearch] = useState<string>('')
   const [editingPoste, setEditingPoste] = useState<Poste | null>(null)
   const [filterStatut, setFilterStatut] = useState<string>('all')
+  // Separate dimension from filterStatut — see STAGE_STATUSES comment.
+  const [filterStage, setFilterStage] = useState<PipelineStage | 'refuses' | 'all'>('all')
   // Item 21 P2 smart filter chips — multi-select, AND-combined.
   const [chipStuck, setChipStuck] = useState(false)
   const [chipDocsMissing, setChipDocsMissing] = useState(false)
@@ -442,6 +474,7 @@ export default function RecruitPipelinePage() {
     if (filterPole !== 'all' && c.postePole !== filterPole) return false
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
+    if (!statutMatchesStageFilter(c.statut, filterStage)) return false
     // Free-form search: match any of name / poste / city / current role / current company
     if (searchNeedle) {
       const hay = [
@@ -657,48 +690,94 @@ export default function RecruitPipelinePage() {
               <KpiCell label="Embauches" sublabel="campagne" count={stats.statusBreakdown?.embauche ?? 0} tone="success" />
             </div>
 
-            {/* Pipeline flow bar + per-stage labels — replaces the
-                separate "Pipeline" panel. Every segment and label is a
-                click target that applies the statut filter. */}
-            <div className="border-t px-4 py-3 space-y-2">
-              <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
+            {/* Funnel stage shortcuts — 4 active stages + Refusés chip.
+                Each pill counts statuts in the stage and filters on click.
+                Combines with the exact-statut dropdown AND-wise; does not
+                replace it. Refusés is terminal so it lives beside the
+                funnel to keep stage ratios honest. */}
+            <div className="border-t px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
                 {(() => {
-                  const stages = [
-                    { k: 'postule', color: 'bg-muted-foreground/40' },
-                    { k: 'preselectionne', color: 'bg-primary/60' },
-                    { k: 'skill_radar_envoye', color: 'bg-primary/70' },
-                    { k: 'skill_radar_complete', color: 'bg-primary/80' },
-                    { k: 'entretien_1', color: 'bg-primary' },
-                    { k: 'aboro', color: 'bg-chart-2' },
-                    { k: 'entretien_2', color: 'bg-chart-2' },
-                    { k: 'proposition', color: 'bg-chart-3' },
-                    { k: 'embauche', color: 'bg-emerald-500' },
-                  ]
-                  const total = stats.totalActive + (stats.statusBreakdown?.embauche ?? 0) || 1
-                  return stages.map(s => {
-                    const n = stats.statusBreakdown?.[s.k] ?? 0
-                    if (n === 0) return null
-                    const pct = (n / total) * 100
+                  const breakdown = stats.statusBreakdown ?? {}
+                  const totalActive = STAGE_ORDER.reduce(
+                    (sum, st) => sum + STAGE_STATUSES[st].reduce((s, k) => s + (breakdown[k] ?? 0), 0),
+                    0,
+                  ) || 1
+                  const stageCount = (st: PipelineStage) =>
+                    STAGE_STATUSES[st].reduce((s, k) => s + (breakdown[k] ?? 0), 0)
+                  const stageIcon: Record<PipelineStage, typeof Users> = {
+                    nouveaux: Users,
+                    evaluation: ClipboardCheck,
+                    entretiens: PhoneCall,
+                    decision: Check,
+                  }
+                  return STAGE_ORDER.map(st => {
+                    const n = stageCount(st)
+                    const pct = Math.round((n / totalActive) * 100)
+                    const active = filterStage === st
+                    const Icon = stageIcon[st]
                     return (
-                      <Tooltip key={s.k}>
-                        <TooltipTrigger
-                          render={(
-                            <button
-                              type="button"
-                              onClick={() => { setFilterStatut(prev => prev === s.k ? 'all' : s.k); setScrollTrigger(n => n + 1) }}
-                              className={`${s.color} hover:brightness-110 transition-[filter]`}
-                              style={{ width: `${pct}%` }}
-                              aria-label={`${STATUT_LABELS[s.k] ?? s.k}: ${n}`}
-                            />
-                          )}
-                        />
-                        <TooltipContent className="text-xs">{STATUT_LABELS[s.k] ?? s.k} : {n}</TooltipContent>
-                      </Tooltip>
+                      <button
+                        key={st}
+                        type="button"
+                        onClick={() => {
+                          setFilterStage(prev => prev === st ? 'all' : st)
+                          setScrollTrigger(x => x + 1)
+                        }}
+                        className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs tabular-nums transition-all ${
+                          active
+                            ? 'border-primary bg-primary/10 text-foreground'
+                            : 'border-border hover:border-primary/60 hover:bg-muted'
+                        }`}
+                        aria-pressed={active}
+                        aria-label={`Filtrer sur l'étape ${STAGE_LABELS[st]} (${n} candidat(s))`}
+                      >
+                        <Icon className="h-3.5 w-3.5 opacity-70" />
+                        <span className={active ? 'font-medium' : ''}>{STAGE_LABELS[st]}</span>
+                        <span className="font-semibold">{n}</span>
+                        <span className="text-muted-foreground text-[10px]">· {pct}%</span>
+                      </button>
                     )
                   })
                 })()}
+                {(stats.statusBreakdown?.refuse ?? 0) > 0 ? (
+                  <>
+                    <span className="text-muted-foreground/40 mx-1" aria-hidden>·</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilterStage(prev => prev === 'refuses' ? 'all' : 'refuses')
+                        setScrollTrigger(x => x + 1)
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs tabular-nums transition-all ${
+                        filterStage === 'refuses'
+                          ? 'border-red-400 bg-red-500/10 text-red-700 dark:text-red-300'
+                          : 'border-border text-muted-foreground hover:border-red-400/60 hover:text-foreground'
+                      }`}
+                      aria-pressed={filterStage === 'refuses'}
+                      aria-label={`Filtrer sur les candidats refusés (${stats.statusBreakdown?.refuse} candidat(s))`}
+                    >
+                      <XCircle className="h-3.5 w-3.5 opacity-70" />
+                      Refusés
+                      <span className="font-semibold">{stats.statusBreakdown?.refuse}</span>
+                    </button>
+                  </>
+                ) : null}
+                {filterStage !== 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilterStage('all')}
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline ml-1"
+                  >
+                    Effacer l’étape
+                  </button>
+                ) : null}
               </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+              {/* Secondary: per-statut counts for precision users. Kept
+                  below the pills and made compact — primary interaction
+                  is the pills above and the exact-statut dropdown in the
+                  toolbar. */}
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground/80 tabular-nums mt-2">
                 {['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition', 'embauche'].map(k => {
                   const n = stats.statusBreakdown?.[k] ?? 0
                   if (n === 0) return null
@@ -706,8 +785,8 @@ export default function RecruitPipelinePage() {
                     <button
                       key={k}
                       type="button"
-                      onClick={() => { setFilterStatut(prev => prev === k ? 'all' : k); setScrollTrigger(n => n + 1) }}
-                      className="hover:text-foreground transition-colors"
+                      onClick={() => { setFilterStatut(prev => prev === k ? 'all' : k); setScrollTrigger(x => x + 1) }}
+                      className={`hover:text-foreground transition-colors ${filterStatut === k ? 'text-foreground font-medium' : ''}`}
                     >
                       {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
                     </button>
@@ -1173,6 +1252,7 @@ export default function RecruitPipelinePage() {
               if (allowedByPoste && !allowedByPoste.has(c.id)) return false
               if (allowedByPole && !allowedByPole.has(c.id)) return false
               if (filterStatut !== 'all' && c.pipelineStatus !== filterStatut) return false
+              if (!statutMatchesStageFilter(c.pipelineStatus, filterStage)) return false
               return true
             })
             const statusOrder = (c: Candidate): number => {
