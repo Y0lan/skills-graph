@@ -22,11 +22,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X } from 'lucide-react'
+import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
+import RoleManagerPanel from '@/components/recruit/role-manager-panel'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
 import KanbanBoard from '@/components/recruit/kanban-board'
 import StatusChip from '@/components/recruit/status-chip'
 import DocsChip from '@/components/recruit/docs-chip'
@@ -91,6 +93,29 @@ interface DashboardStats {
   totalCandidatures: number
   totalActive: number
   statusBreakdown: Record<string, number>
+}
+
+/** Candidate-level record from /api/candidates — one row per person
+ *  (as opposed to Candidature which is one row per application). Used
+ *  by the "Candidats" view mode which merged the old /recruit page. */
+interface Candidate {
+  id: string
+  name: string
+  role: string
+  email: string | null
+  createdBy: string
+  createdAt: string
+  expiresAt: string
+  submittedAt: string | null
+  hasReport: boolean
+  pipelineStatus: string | null
+  candidatureCount: number
+}
+
+const PIPELINE_ORDER: Record<string, number> = {
+  embauche: 9, proposition: 8, entretien_2: 7, aboro: 6,
+  entretien_1: 5, skill_radar_complete: 4, skill_radar_envoye: 3,
+  preselectionne: 2, postule: 1, refuse: 0,
 }
 
 const SORT_KEYS = ['fit_desc', 'fit_asc', 'date_desc', 'date_asc'] as const
@@ -229,9 +254,18 @@ export default function RecruitPipelinePage() {
   const [weightEquipe, setWeightEquipe] = useState(20)
   const [weightSoft, setWeightSoft] = useState(30)
   const [savingWeights, setSavingWeights] = useState(false)
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(() =>
-    (localStorage.getItem('pipeline-view') as 'list' | 'kanban') ?? 'list'
-  )
+  type ViewMode = 'list' | 'candidates' | 'kanban'
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const v = localStorage.getItem('pipeline-view')
+    return (v === 'list' || v === 'candidates' || v === 'kanban') ? v : 'list'
+  })
+  // Candidate-level state (merged from old /recruit page).
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [candSortKey, setCandSortKey] = useState<'name' | 'role' | 'status' | 'createdAt'>('createdAt')
+  const [candSortDir, setCandSortDir] = useState<'asc' | 'desc'>('desc')
+  const [newCandidateOpen, setNewCandidateOpen] = useState(false)
+  const [showRoleManager, setShowRoleManager] = useState(false)
+  const [customRoleCount, setCustomRoleCount] = useState(0)
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const v = localStorage.getItem('pipeline-sort') as SortKey | null
     return v && SORT_KEYS.includes(v) ? v : 'fit_desc'
@@ -298,14 +332,16 @@ export default function RecruitPipelinePage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [postesRes, candidaturesRes, dashRes] = await Promise.all([
+      const [postesRes, candidaturesRes, dashRes, candRes] = await Promise.all([
         fetch('/api/recruitment/postes', { credentials: 'include' }),
         fetch('/api/recruitment/candidatures', { credentials: 'include' }),
         fetch('/api/recruitment/dashboard', { credentials: 'include' }),
+        fetch('/api/candidates', { credentials: 'include' }),
       ])
       if (postesRes.ok) setPostes(await postesRes.json())
       if (candidaturesRes.ok) setCandidatures(await candidaturesRes.json())
       if (dashRes.ok) setStats(await dashRes.json())
+      if (candRes.ok) setCandidates(await candRes.json())
     } catch (err) {
       console.error('Failed to fetch recruitment data:', err)
     } finally {
@@ -314,6 +350,25 @@ export default function RecruitPipelinePage() {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Candidate-level actions (merged from old /recruit page).
+  const copyCandidateLink = useCallback((id: string) => {
+    const link = `${window.location.origin}/evaluate/${id}`
+    navigator.clipboard.writeText(link).catch(() => {})
+    toast.success('Lien copié !')
+  }, [])
+
+  const handleDeleteCandidateById = useCallback(async (id: string, name: string) => {
+    if (!confirm(`Supprimer le candidat ${name} ?\n\nToutes ses candidatures et documents seront supprimés définitivement.`)) return
+    try {
+      const res = await fetch(`/api/candidates/${id}`, { method: 'DELETE', credentials: 'include' })
+      if (!res.ok) throw new Error('Erreur')
+      toast.success('Candidat supprimé (toutes candidatures incluses)')
+      fetchData()
+    } catch {
+      toast.error('Erreur lors de la suppression')
+    }
+  }, [fetchData])
 
   const handleDeleteCandidate = useCallback(async () => {
     if (!deleteTarget) return
@@ -370,7 +425,7 @@ export default function RecruitPipelinePage() {
     finally { setSavingWeights(false) }
   }, [weightPoste, weightEquipe, weightSoft, fetchData])
 
-  const changeView = useCallback((mode: 'list' | 'kanban') => {
+  const changeView = useCallback((mode: ViewMode) => {
     setViewMode(mode)
     localStorage.setItem('pipeline-view', mode)
   }, [])
@@ -512,43 +567,82 @@ export default function RecruitPipelinePage() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={(
-                  <Button variant="ghost" size="sm" onClick={openWeightsDialog} className="h-9 w-9 p-0">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                )}
-              />
-              <TooltipContent>Pondération du score</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={(
-                  <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer" className="inline-flex">
-                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
-                      <FileText className="h-4 w-4" />
+          <div className="flex items-center gap-2">
+            {/* Primary action: new candidate. Promoted to the masthead
+                after merging /recruit — this is the high-intent button. */}
+            <Button size="sm" className="h-9 gap-1.5" onClick={() => setNewCandidateOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Nouveau candidat
+            </Button>
+
+            {/* Secondary utilities grouped as icon-only. */}
+            <div className="flex items-center gap-1 pl-1 border-l">
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant={showRoleManager ? 'secondary' : 'ghost'}
+                      size="sm"
+                      onClick={() => setShowRoleManager(v => !v)}
+                      className="h-9 gap-1 px-2"
+                    >
+                      <UserCog className="h-4 w-4" />
+                      <span className="text-xs">Rôles</span>
+                      {customRoleCount > 0 && (
+                        <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums ml-0.5">
+                          {customRoleCount}
+                        </Badge>
+                      )}
                     </Button>
-                  </a>
-                )}
-              />
-              <TooltipContent>Exporter PDF</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={(
-                  <Link to="/recruit" className="inline-flex">
-                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
-                      <Users className="h-4 w-4" />
+                  )}
+                />
+                <TooltipContent>Gérer les rôles personnalisés</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button variant="ghost" size="sm" onClick={openWeightsDialog} className="h-9 w-9 p-0">
+                      <Settings className="h-4 w-4" />
                     </Button>
-                  </Link>
-                )}
-              />
-              <TooltipContent>Tous les candidats</TooltipContent>
-            </Tooltip>
+                  )}
+                />
+                <TooltipContent>Pondération du score</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer" className="inline-flex">
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                    </a>
+                  )}
+                />
+                <TooltipContent>Exporter PDF</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Link to="/recruit/funnel" className="inline-flex">
+                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                        <GitBranch className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                  )}
+                />
+                <TooltipContent>Funnel</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </div>
+
+        {/* Role manager panel — slides in under the masthead when open. */}
+        {showRoleManager && (
+          <div className="mb-8 pb-6 border-b">
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">Rôles</p>
+            <RoleManagerPanel onCountChange={setCustomRoleCount} />
+          </div>
+        )}
 
         {/* ── Dashboard band: Pipeline health + À traiter ─────────
             Asymmetric 5:3 grid. Left = pipeline flow at a glance via
@@ -968,7 +1062,17 @@ export default function RecruitPipelinePage() {
               onClick={() => changeView('list')}
             >
               <LayoutList className="h-3.5 w-3.5" />
-              Liste
+              Candidatures
+            </Button>
+            <Button
+              variant={viewMode === 'candidates' ? 'default' : 'ghost'}
+              size="sm"
+              className="gap-1.5 rounded-none border-x text-xs h-9"
+              onClick={() => changeView('candidates')}
+              title="Vue par candidat (un candidat peut avoir plusieurs candidatures)"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Candidats
             </Button>
             <Button
               variant={viewMode === 'kanban' ? 'default' : 'ghost'}
@@ -1046,7 +1150,10 @@ export default function RecruitPipelinePage() {
 
         {/* Candidatures — list or kanban */}
         <div ref={candidaturesRef} className="scroll-mt-16" />
-        {filtered.length === 0 ? (
+        {/* Empty state only gates the candidature views — the 'candidates'
+            view has its own empty state, since a candidate can exist
+            without any candidature yet. */}
+        {viewMode !== 'candidates' && filtered.length === 0 ? (
           <div className="border-t border-b py-16 text-center text-muted-foreground">
             <Users className="h-8 w-8 mx-auto mb-3 opacity-40" />
             <p className="text-sm">Aucune candidature pour ces filtres.</p>
@@ -1065,6 +1172,156 @@ export default function RecruitPipelinePage() {
             }))}
             onDelete={(candidatureId, candidateName, posteTitre) => setDeleteTarget({ candidatureId, name: candidateName, posteTitre })}
           />
+        ) : viewMode === 'candidates' ? (
+          // Candidate-level table — aggregated by person (a candidate can
+          // have multiple candidatures, and candidates can exist without
+          // any candidature at all). Search + sort only; the pôle/poste/
+          // statut dropdowns are candidature-scoped and don't apply here.
+          (() => {
+            const q = filterSearch.trim().toLowerCase()
+            const filteredCands = q ? candidates.filter(c => c.name.toLowerCase().includes(q)) : candidates
+            const statusOrder = (c: Candidate): number => {
+              if (c.pipelineStatus) return PIPELINE_ORDER[c.pipelineStatus] ?? -1
+              if (c.hasReport) return -2
+              if (c.submittedAt) return -3
+              return -4
+            }
+            const sortedCands = [...filteredCands].sort((a, b) => {
+              let cmp = 0
+              switch (candSortKey) {
+                case 'name': cmp = a.name.localeCompare(b.name, 'fr'); break
+                case 'role': cmp = a.role.localeCompare(b.role, 'fr'); break
+                case 'status': cmp = statusOrder(a) - statusOrder(b); break
+                case 'createdAt': cmp = a.createdAt.localeCompare(b.createdAt); break
+              }
+              return candSortDir === 'asc' ? cmp : -cmp
+            })
+
+            const toggleSort = (key: typeof candSortKey) => {
+              if (candSortKey === key) setCandSortDir(d => d === 'asc' ? 'desc' : 'asc')
+              else { setCandSortKey(key); setCandSortDir(key === 'name' ? 'asc' : 'desc') }
+            }
+            const sortIcon = (key: typeof candSortKey) => {
+              if (candSortKey !== key) return <ArrowUpDown className="h-3 w-3 opacity-40" />
+              return candSortDir === 'asc'
+                ? <ArrowUp className="h-3 w-3 text-primary" />
+                : <ArrowDown className="h-3 w-3 text-primary" />
+            }
+
+            if (sortedCands.length === 0) {
+              return (
+                <div className="border-t border-b py-16 text-center text-muted-foreground">
+                  <Users className="h-8 w-8 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">Aucun candidat {filterSearch ? 'pour cette recherche' : ''}.</p>
+                </div>
+              )
+            }
+
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-3 pt-2 font-medium">
+                        <button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                          Nom {sortIcon('name')}
+                        </button>
+                      </th>
+                      <th className="pb-3 pt-2 font-medium">
+                        <button onClick={() => toggleSort('role')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                          Poste {sortIcon('role')}
+                        </button>
+                      </th>
+                      <th className="pb-3 pt-2 font-medium">
+                        <button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                          Statut {sortIcon('status')}
+                        </button>
+                      </th>
+                      <th className="pb-3 pt-2 font-medium">
+                        <button onClick={() => toggleSort('createdAt')} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                          Créé le {sortIcon('createdAt')}
+                        </button>
+                      </th>
+                      <th className="pb-3 pt-2 font-medium text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedCands.map(c => {
+                      const statusLabel = c.pipelineStatus ? (STATUT_LABELS[c.pipelineStatus] ?? c.pipelineStatus) : null
+                      const statusClass = c.pipelineStatus ? (STATUT_COLORS[c.pipelineStatus] ?? '') : ''
+                      return (
+                        <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="py-3">
+                            <Link to={`/recruit/${c.id}`} className="hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
+                              {c.name}
+                            </Link>
+                            {c.candidatureCount > 1 && (
+                              <span className="ml-2 text-[10px] text-muted-foreground tabular-nums">
+                                ({c.candidatureCount} candidatures)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 text-muted-foreground">{c.role}</td>
+                          <td className="py-3">
+                            {statusLabel ? (
+                              <Badge variant="secondary" className={statusClass}>{statusLabel}</Badge>
+                            ) : c.hasReport ? (
+                              <Badge variant="default" className="bg-[#1B6179]">Analysé</Badge>
+                            ) : c.submittedAt ? (
+                              <Badge variant="default" className="bg-primary">Soumis</Badge>
+                            ) : new Date(c.expiresAt) < new Date() ? (
+                              <Badge variant="destructive">Expiré</Badge>
+                            ) : (
+                              <Badge variant="secondary">En attente</Badge>
+                            )}
+                          </td>
+                          <td className="py-3 text-muted-foreground tabular-nums">{formatDate(c.createdAt)}</td>
+                          <td className="py-3">
+                            <div className="flex items-center justify-end gap-1">
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(
+                                    <Button variant="ghost" size="sm" onClick={() => copyCandidateLink(c.id)} className="h-8 w-8 p-0">
+                                      <Copy className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                />
+                                <TooltipContent className="text-xs">Copier le lien d'évaluation</TooltipContent>
+                              </Tooltip>
+                              {c.submittedAt && (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={(
+                                      <Link to={`/recruit/${c.id}`} className="inline-flex">
+                                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                          <Eye className="h-4 w-4" />
+                                        </Button>
+                                      </Link>
+                                    )}
+                                  />
+                                  <TooltipContent className="text-xs">Voir le profil</TooltipContent>
+                                </Tooltip>
+                              )}
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(
+                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteCandidateById(c.id, c.name)} className="h-8 w-8 p-0">
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  )}
+                                />
+                                <TooltipContent className="text-xs">Supprimer le candidat</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()
         ) : (
           // Editorial list: hairline-separated rows. Selection state is a
           // left teal accent (not a ring) so it's visible but doesn't
@@ -1249,6 +1506,13 @@ export default function RecruitPipelinePage() {
           }}
         />
       ) : null}
+
+      {/* New candidate dialog (merged from old /recruit page). */}
+      <NewCandidateDialog
+        open={newCandidateOpen}
+        onOpenChange={setNewCandidateOpen}
+        onCreated={fetchData}
+      />
     </div>
   )
 }

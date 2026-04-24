@@ -12,7 +12,6 @@ import Footer from '@/components/footer'
 const LandingPage = lazy(() => import('@/pages/landing-page'))
 const FormPage = lazy(() => import('@/pages/form-page'))
 const DashboardPage = lazy(() => import('@/pages/dashboard-page'))
-const RecruitPage = lazy(() => import('@/pages/recruit-page'))
 const CandidateDetailPage = lazy(() => import('@/pages/candidate-detail-page'))
 const CandidateFormPage = lazy(() => import('@/pages/candidate-form-page'))
 const RecruitPipelinePage = lazy(() => import('@/pages/recruit-pipeline-page'))
@@ -78,7 +77,8 @@ function App() {
                 <Route path="/form/:slug" element={<ProtectedRoute><FormPage /></ProtectedRoute>} />
                 <Route path="/equipe" element={<ProtectedRoute checkOwnership={false}><EquipePage /></ProtectedRoute>} />
                 <Route path="/dashboard/:slug?" element={<ProtectedRoute checkOwnership={false}><DashboardPage /></ProtectedRoute>} />
-                <Route path="/recruit" element={<ProtectedRoute checkOwnership={false}><RecruitPage /></ProtectedRoute>} />
+                {/* /recruit merged into /recruit/pipeline — old URL redirects. */}
+                <Route path="/recruit" element={<Navigate to="/recruit/pipeline" replace />} />
                 <Route path="/recruit/pipeline" element={<ProtectedRoute checkOwnership={false}><RecruitPipelinePage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/campaign" element={<ProtectedRoute checkOwnership={false}><ReportCampaignPage /></ProtectedRoute>} />
                 <Route path="/recruit/reports/comparison/:posteId" element={<ProtectedRoute checkOwnership={false}><ReportComparisonPage /></ProtectedRoute>} />
