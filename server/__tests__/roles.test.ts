@@ -81,33 +81,48 @@ describe('Role DB helpers', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('getRoles() returns seeded roles (4 default + 7 recruitment)', () => {
+  it('getRoles() returns the seeded recruitment roles, all wired to a poste', () => {
     const roles = getRoles()
-    expect(roles.length).toBeGreaterThanOrEqual(4)
     const ids = roles.map(r => r.id).sort()
     expect(ids).toEqual(expect.arrayContaining([
-      'analyste-fonctionnel',
-      'dev-full-stack',
-      'devops',
-      'qa-engineer',
+      'architecte-si',
+      'business-analyst',
+      'candidature-libre',
+      'dev-java-fullstack',
+      'dev-jboss-senior',
+      'dev-senior-adelia',
+      'tech-lead-adelia',
+      'tech-lead-java',
     ]))
+    for (const r of roles.filter(r => r.createdBy === 'system')) {
+      expect(r.hasPoste).toBe(true)
+    }
   })
 
-  it('getRole("dev-full-stack") returns the full-stack role with correct category IDs', () => {
-    const role = getRole('dev-full-stack')
+  it('legacy team-skill-radar roles are no longer exposed', () => {
+    for (const legacyId of ['dev-full-stack', 'devops', 'qa-engineer', 'analyste-fonctionnel']) {
+      expect(getRole(legacyId)).toBeNull()
+    }
+  })
+
+  it('getRole("architecte-si") returns the architecte role with correct category IDs', () => {
+    const role = getRole('architecte-si')
     expect(role).not.toBeNull()
-    expect(role!.id).toBe('dev-full-stack')
-    expect(role!.label).toBe('Développeur Full Stack')
+    expect(role!.id).toBe('architecte-si')
+    expect(role!.label).toBe('Architecte SI Logiciel')
     expect(role!.createdBy).toBe('system')
+    expect(role!.hasPoste).toBe(true)
     expect(role!.categoryIds).toEqual(
       expect.arrayContaining([
+        'architecture-governance',
         'core-engineering',
         'backend-integration',
+        'platform-engineering',
         'frontend-ui',
         'soft-skills-delivery',
       ]),
     )
-    expect(role!.categoryIds).toHaveLength(4)
+    expect(role!.categoryIds).toHaveLength(6)
   })
 
   it('getRole("nonexistent") returns null', () => {
@@ -132,7 +147,7 @@ describe('Role DB helpers', () => {
 
   it('createRole() with duplicate ID throws (SQLite UNIQUE)', () => {
     expect(() => {
-      createRole('dev-full-stack', 'Duplicate', ['core-engineering'], 'tester')
+      createRole('architecte-si', 'Duplicate', ['core-engineering'], 'tester')
     }).toThrow()
   })
 
@@ -164,15 +179,17 @@ describe('Role DB helpers', () => {
   })
 
   it('getRoleCategories() returns correct category IDs', () => {
-    const cats = getRoleCategories('devops')
+    const cats = getRoleCategories('tech-lead-java')
     expect(cats).toEqual(
       expect.arrayContaining([
         'core-engineering',
+        'backend-integration',
+        'frontend-ui',
         'platform-engineering',
-        'observability-reliability',
-        'security-compliance',
+        'architecture-governance',
+        'soft-skills-delivery',
       ]),
     )
-    expect(cats).toHaveLength(4)
+    expect(cats).toHaveLength(6)
   })
 })

@@ -1043,82 +1043,87 @@ export function initDatabase(): void {
   }
 
   // Seed default roles if roles table is empty (AFTER catalog seed — FK dependency)
-  const roleCount = (db.prepare('SELECT COUNT(*) as c FROM roles').get() as { c: number }).c
-  if (roleCount === 0) {
-    const seedRoles: { id: string; label: string; categories: string[] }[] = [
-      { id: 'dev-full-stack', label: 'Développeur Full Stack', categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'soft-skills-delivery'] },
-      { id: 'devops', label: 'Ingénieur DevOps', categories: ['core-engineering', 'platform-engineering', 'observability-reliability', 'security-compliance'] },
-      { id: 'qa-engineer', label: 'QA Engineer', categories: ['qa-test-engineering', 'core-engineering', 'observability-reliability'] },
-      { id: 'analyste-fonctionnel', label: 'Analyste Fonctionnel', categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training'] },
-    ]
-    const insertRole = db.prepare('INSERT INTO roles (id, label, created_by) VALUES (?, ?, ?)')
-    const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
-    const seedTransaction = db.transaction(() => {
-      for (const role of seedRoles) {
-        insertRole.run(role.id, role.label, 'system')
-        for (const catId of role.categories) {
-          insertCat.run(role.id, catId)
-        }
+  // Retire legacy team-skill-radar roles. Soft-delete keeps FKs from candidates
+  // and postes intact while removing them from the recruit UI, which is the only
+  // surface that reads the roles table. The team radar maps role → categories
+  // via targets.json, so these rows never actually did anything for it.
+  const LEGACY_ROLE_IDS = ['dev-full-stack', 'devops', 'qa-engineer', 'analyste-fonctionnel']
+  const legacyPlaceholders = LEGACY_ROLE_IDS.map(() => '?').join(',')
+  db.prepare(
+    `UPDATE roles SET deleted_at = CURRENT_TIMESTAMP
+     WHERE id IN (${legacyPlaceholders}) AND deleted_at IS NULL`,
+  ).run(...LEGACY_ROLE_IDS)
+
+  // Recruitment roles + their category bindings.
+  // The role + role_categories rows are re-asserted on every boot so renames or
+  // cascades from catalog migrations self-heal; postes themselves stay in the
+  // one-shot block below (they carry business data like headcount).
+  const recruitmentRoles: { id: string; label: string; categories: string[] }[] = [
+    {
+      id: 'tech-lead-adelia',
+      label: 'Tech Lead Adélia (RPG)',
+      categories: ['domain-knowledge', 'backend-integration', 'soft-skills-delivery', 'core-engineering'],
+    },
+    {
+      id: 'dev-senior-adelia',
+      label: 'Dev Senior Adélia (RPG)',
+      categories: ['domain-knowledge', 'backend-integration', 'core-engineering'],
+    },
+    {
+      id: 'tech-lead-java',
+      label: 'Tech Lead Java / JBoss',
+      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance', 'soft-skills-delivery'],
+    },
+    {
+      id: 'dev-java-fullstack',
+      label: 'Dev Java Senior Full Stack',
+      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance'],
+    },
+    {
+      id: 'dev-jboss-senior',
+      label: 'Dev JBoss Senior',
+      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering'],
+    },
+    {
+      id: 'architecte-si',
+      label: 'Architecte SI Logiciel',
+      categories: ['architecture-governance', 'core-engineering', 'backend-integration', 'platform-engineering', 'frontend-ui', 'soft-skills-delivery'],
+    },
+    {
+      id: 'business-analyst',
+      label: 'Business Analyst',
+      categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training', 'soft-skills-delivery', 'design-ux'],
+    },
+    {
+      id: 'candidature-libre',
+      label: 'Candidature Libre',
+      categories: [
+        'core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering',
+        'observability-reliability', 'security-compliance', 'architecture-governance',
+        'soft-skills-delivery', 'domain-knowledge', 'ai-engineering', 'qa-test-engineering',
+        'infrastructure-systems-network', 'analyse-fonctionnelle', 'project-management-pmo',
+        'change-management-training', 'design-ux', 'data-engineering-governance',
+        'management-leadership', 'legacy-ibmi-adelia', 'javaee-jboss',
+      ],
+    },
+  ]
+
+  const upsertRole = db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)')
+  const upsertRoleCat = db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)')
+  const catExistsCheck = db.prepare('SELECT 1 FROM categories WHERE id = ?')
+  const syncRecruitmentRoles = db.transaction(() => {
+    for (const role of recruitmentRoles) {
+      upsertRole.run(role.id, role.label, 'system')
+      for (const catId of role.categories) {
+        if (catExistsCheck.get(catId)) upsertRoleCat.run(role.id, catId)
       }
-    })
-    seedTransaction()
-  }
+    }
+  })
+  syncRecruitmentRoles()
 
   // Seed recruitment postes if postes table is empty
   const posteCount = (db.prepare('SELECT COUNT(*) as c FROM postes').get() as { c: number }).c
   if (posteCount === 0) {
-    const recruitmentRoles: { id: string; label: string; categories: string[] }[] = [
-      {
-        id: 'tech-lead-adelia',
-        label: 'Tech Lead Adélia (RPG)',
-        categories: ['domain-knowledge', 'backend-integration', 'soft-skills-delivery', 'core-engineering'],
-      },
-      {
-        id: 'dev-senior-adelia',
-        label: 'Dev Senior Adélia (RPG)',
-        categories: ['domain-knowledge', 'backend-integration', 'core-engineering'],
-      },
-      {
-        id: 'tech-lead-java',
-        label: 'Tech Lead Java / JBoss',
-        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance', 'soft-skills-delivery'],
-      },
-      {
-        id: 'dev-java-fullstack',
-        label: 'Dev Java Senior Full Stack',
-        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance'],
-      },
-      {
-        id: 'dev-jboss-senior',
-        label: 'Dev JBoss Senior',
-        categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering'],
-      },
-      {
-        id: 'architecte-si',
-        label: 'Architecte SI Logiciel',
-        categories: ['architecture-governance', 'core-engineering', 'backend-integration', 'platform-engineering', 'frontend-ui', 'soft-skills-delivery'],
-      },
-      {
-        id: 'business-analyst',
-        label: 'Business Analyst',
-        categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training', 'soft-skills-delivery', 'design-ux'],
-      },
-      {
-        id: 'candidature-libre',
-        label: 'Candidature Libre',
-        categories: [
-          'core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering',
-          'observability-reliability', 'security-compliance', 'architecture-governance',
-          'soft-skills-delivery', 'domain-knowledge', 'ai-engineering', 'qa-test-engineering',
-          'infrastructure-systems-network', 'analyse-fonctionnelle', 'project-management-pmo',
-          'change-management-training', 'design-ux', 'data-engineering-governance',
-          'management-leadership', 'legacy-ibmi-adelia', 'javaee-jboss',
-        ],
-      },
-    ]
-
-    const insertRole = db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)')
-    const insertCat = db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)')
     const insertPoste = db.prepare(`
       INSERT INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1135,14 +1140,7 @@ export function initDatabase(): void {
       { id: 'candidature-libre', roleId: 'candidature-libre', titre: 'Candidature Libre', pole: 'java_modernisation', headcount: 99, flexible: true, expMin: 0, cigref: '' },
     ]
 
-    const catExistsCheck = db.prepare('SELECT 1 FROM categories WHERE id = ?')
     const seedPostes = db.transaction(() => {
-      for (const role of recruitmentRoles) {
-        insertRole.run(role.id, role.label, 'system')
-        for (const catId of role.categories) {
-          if (catExistsCheck.get(catId)) insertCat.run(role.id, catId)
-        }
-      }
       for (const p of postes) {
         insertPoste.run(p.id, p.roleId, p.titre, p.pole, p.headcount, p.flexible ? 1 : 0, p.expMin, p.cigref, 'CDIC')
       }
@@ -1401,11 +1399,15 @@ export interface RoleWithCategories {
   createdBy: string
   createdAt: string
   categoryIds: string[]
+  hasPoste: boolean
 }
 
 export function getRoles(): RoleWithCategories[] {
   const roles = db.prepare('SELECT * FROM roles WHERE deleted_at IS NULL ORDER BY label').all() as RoleRow[]
   const allCats = db.prepare('SELECT * FROM role_categories').all() as RoleCategoryRow[]
+  const posteRoleIds = new Set(
+    (db.prepare('SELECT DISTINCT role_id FROM postes').all() as { role_id: string }[]).map(r => r.role_id),
+  )
   const catsByRole = new Map<string, string[]>()
   for (const rc of allCats) {
     const list = catsByRole.get(rc.role_id) ?? []
@@ -1418,6 +1420,7 @@ export function getRoles(): RoleWithCategories[] {
     createdBy: r.created_by,
     createdAt: r.created_at,
     categoryIds: catsByRole.get(r.id) ?? [],
+    hasPoste: posteRoleIds.has(r.id),
   }))
 }
 
@@ -1425,11 +1428,13 @@ export function getRole(id: string): RoleWithCategories | null {
   const role = db.prepare('SELECT * FROM roles WHERE id = ? AND deleted_at IS NULL').get(id) as RoleRow | undefined
   if (!role) return null
   const cats = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(id) as { category_id: string }[]
+  const posteCount = (db.prepare('SELECT COUNT(*) as c FROM postes WHERE role_id = ?').get(id) as { c: number }).c
   return {
     id: role.id,
     label: role.label,
     createdBy: role.created_by,
     createdAt: role.created_at,
+    hasPoste: posteCount > 0,
     categoryIds: cats.map(c => c.category_id),
   }
 }

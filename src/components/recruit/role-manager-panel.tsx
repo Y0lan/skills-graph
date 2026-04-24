@@ -20,6 +20,7 @@ interface Role {
   label: string
   categoryIds: string[]
   createdBy: string
+  hasPoste: boolean
 }
 
 interface CatalogCategory {
@@ -100,14 +101,14 @@ export default function RoleManagerPanel({ onCountChange }: { onCountChange?: (c
   return (
     <div className="space-y-3">
       {/* System roles — read-only, pre-wired categories */}
-      {roles.filter(r => r.createdBy === 'system').length > 0 && (
+      {roles.filter(r => r.createdBy === 'system' && r.hasPoste).length > 0 && (
         <div className="rounded-md border border-border/50 bg-muted/20 p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium">Postes recrutement</span>
             <span className="text-[11px] text-muted-foreground">Catégories pré-sélectionnées · lecture seule</span>
           </div>
           <div className="space-y-1.5">
-            {roles.filter(r => r.createdBy === 'system').map(r => (
+            {roles.filter(r => r.createdBy === 'system' && r.hasPoste).map(r => (
               <div key={r.id} className="flex items-start gap-3 rounded-md bg-background px-3 py-2 text-sm">
                 <span className="font-medium shrink-0 w-56 truncate" title={r.label}>{r.label}</span>
                 <div className="flex flex-wrap gap-1 flex-1 min-w-0">

@@ -19,6 +19,7 @@ interface Role {
   label: string
   categoryIds: string[]
   createdBy: string
+  hasPoste: boolean
 }
 
 interface CatalogCategory {
@@ -176,9 +177,9 @@ export default function NewCandidateDialog({
                   className="flex h-9 w-full rounded-md border border-input bg-background text-foreground px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   <option value="">— Choisir un rôle —</option>
-                  {roles.filter(r => r.createdBy === 'system').length > 0 && (
+                  {roles.filter(r => r.createdBy === 'system' && r.hasPoste).length > 0 && (
                     <optgroup label="Postes recrutement">
-                      {roles.filter(r => r.createdBy === 'system').map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      {roles.filter(r => r.createdBy === 'system' && r.hasPoste).map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                     </optgroup>
                   )}
                   {roles.filter(r => r.createdBy !== 'system').length > 0 && (

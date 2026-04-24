@@ -141,6 +141,20 @@ export function seedCatalog(db: Database.Database): void {
       }
     }
 
+    // Migrate role_categories to renamed category IDs before the cascade wipes
+    // them. role_categories.category_id has ON DELETE CASCADE, so any unrenamed
+    // rows pointing at the old ID would vanish when we prune the categories
+    // table below — silently stripping categories off recruitment roles.
+    for (const [oldId, newId] of Object.entries(CATEGORY_RENAMES)) {
+      db.prepare(
+        'UPDATE OR IGNORE role_categories SET category_id = ? WHERE category_id = ?',
+      ).run(newId, oldId)
+      // UPDATE OR IGNORE skips rows that would collide with an existing
+      // (role_id, newId) pair. Drop any such leftovers so the cascade has
+      // nothing to do for them.
+      db.prepare('DELETE FROM role_categories WHERE category_id = ?').run(oldId)
+    }
+
     // Clean up orphaned rows from skills/categories removed from the catalog
     const currentSkillIds = catalog.categories.flatMap(c => c.skills.map(s => s.id))
     const currentCatIds = catalog.categories.map(c => c.id)
