@@ -34,50 +34,55 @@ const ProfileField = <T extends z.ZodTypeAny>(inner: T) => z.object({
   humanLockedBy: z.string().nullable(),
 })
 
+// Entry schemas use `.nullish()` (accepts string | null | undefined) on
+// fields the LLM may silently omit. Empirically the Anthropic model drops
+// keys for fields it can't find in the CV (e.g. `experience[*].location`
+// when the entry has no location). `.nullable()` alone rejects undefined
+// and the whole profile extraction fails Zod parse.
 const EducationEntry = z.object({
-  degree: z.string().nullable(),
-  school: z.string().nullable(),
-  field: z.string().nullable(),
-  yearStart: z.union([z.string(), z.number()]).nullable(),
-  yearEnd: z.union([z.string(), z.number()]).nullable(),
-  honors: z.string().nullable(),
+  degree: z.string().nullish(),
+  school: z.string().nullish(),
+  field: z.string().nullish(),
+  yearStart: z.union([z.string(), z.number()]).nullish(),
+  yearEnd: z.union([z.string(), z.number()]).nullish(),
+  honors: z.string().nullish(),
 })
 
 const ExperienceEntry = z.object({
-  company: z.string().nullable(),
-  role: z.string().nullable(),
-  start: z.string().nullable(),
-  end: z.string().nullable(),
-  durationMonths: z.number().nullable(),
-  location: z.string().nullable(),
-  description: z.string().nullable(),
+  company: z.string().nullish(),
+  role: z.string().nullish(),
+  start: z.string().nullish(),
+  end: z.string().nullish(),
+  durationMonths: z.number().nullish(),
+  location: z.string().nullish(),
+  description: z.string().nullish(),
   technologies: z.array(z.string()).default([]),
 })
 
 const LanguageEntry = z.object({
   language: z.string(),
-  level: z.string().nullable(),
-  certification: z.string().nullable(),
+  level: z.string().nullish(),
+  certification: z.string().nullish(),
 })
 
 const CertificationEntry = z.object({
   label: z.string(),
-  issuer: z.string().nullable(),
-  year: z.union([z.string(), z.number()]).nullable(),
-  expiresAt: z.string().nullable(),
+  issuer: z.string().nullish(),
+  year: z.union([z.string(), z.number()]).nullish(),
+  expiresAt: z.string().nullish(),
 })
 
 const PublicationEntry = z.object({
   title: z.string(),
-  venue: z.string().nullable(),
-  year: z.union([z.string(), z.number()]).nullable(),
-  url: z.string().nullable(),
+  venue: z.string().nullish(),
+  year: z.union([z.string(), z.number()]).nullish(),
+  url: z.string().nullish(),
 })
 
 const OpenSourceProject = z.object({
   name: z.string(),
-  url: z.string().nullable(),
-  description: z.string().nullable(),
+  url: z.string().nullish(),
+  description: z.string().nullish(),
 })
 
 const AdditionalFact = z.object({
