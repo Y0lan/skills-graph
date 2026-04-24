@@ -26,6 +26,7 @@ import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, Layo
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
 import RoleManagerPanel from '@/components/recruit/role-manager-panel'
+import KpiCell from '@/components/recruit/kpi-cell'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
@@ -118,11 +119,31 @@ const PIPELINE_ORDER: Record<string, number> = {
   preselectionne: 2, postule: 1, refuse: 0,
 }
 
-const SORT_KEYS = ['fit_desc', 'fit_asc', 'date_desc', 'date_asc'] as const
+const SORT_KEYS = [
+  'poste_desc', 'poste_asc',
+  'global_desc', 'global_asc',
+  'equipe_desc', 'equipe_asc',
+  'date_desc', 'date_asc',
+] as const
 type SortKey = (typeof SORT_KEYS)[number]
 const SORT_LABELS: Record<SortKey, string> = {
-  fit_desc: 'Score poste (élevé → faible)',
-  fit_asc: 'Score poste (faible → élevé)',
+  poste_desc: 'Score poste (élevé → faible)',
+  poste_asc: 'Score poste (faible → élevé)',
+  global_desc: 'Score global (élevé → faible)',
+  global_asc: 'Score global (faible → élevé)',
+  equipe_desc: 'Score équipe (élevé → faible)',
+  equipe_asc: 'Score équipe (faible → élevé)',
+  date_desc: 'Plus récent',
+  date_asc: 'Plus ancien',
+}
+/** Compact trigger label for the chip — full description stays in the menu. */
+const SORT_CHIP_LABELS: Record<SortKey, string> = {
+  poste_desc: 'Score poste ↓',
+  poste_asc: 'Score poste ↑',
+  global_desc: 'Score global ↓',
+  global_asc: 'Score global ↑',
+  equipe_desc: 'Score équipe ↓',
+  equipe_asc: 'Score équipe ↑',
   date_desc: 'Plus récent',
   date_asc: 'Plus ancien',
 }
@@ -178,61 +199,6 @@ function CompatibilityBar({ value, label }: { value: number | null; label: strin
   )
 }
 
-/** À traiter row — large click target that shows the count, pulses when
- *  non-zero (subtle), and toggles the matching quick-chip filter. Tone
- *  drives the number color so recruiters pick up priority peripherally. */
-function TriageRow({
-  icon, label, count, tone, active, onClick,
-}: {
-  icon: string; label: string; count: number
-  tone: 'urgent' | 'warn' | 'accent' | 'muted'
-  active: boolean
-  onClick: () => void
-}) {
-  const numColor =
-    count === 0 ? 'text-muted-foreground/50'
-    : tone === 'urgent' ? 'text-rose-500'
-    : tone === 'warn' ? 'text-amber-500'
-    : tone === 'accent' ? 'text-chart-2'
-    : 'text-foreground'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group w-full flex items-center gap-3 py-2.5 px-1 text-left transition-colors hover:bg-muted/40 ${active ? 'bg-muted/60' : ''}`}
-      aria-pressed={active}
-    >
-      <span className="text-base leading-none">{icon}</span>
-      <span className="flex-1 text-sm text-foreground/90 group-hover:text-foreground">
-        {label}
-        {active && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-primary font-semibold">· filtre actif</span>}
-      </span>
-      <span className={`text-2xl font-bold tabular-nums leading-none ${numColor}`} style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
-        {count}
-      </span>
-      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground" />
-    </button>
-  )
-}
-
-/** Small removable pill used in the active-filter summary. Shows the
- *  "Field : value" label with an × button that clears that filter alone. */
-function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full border border-border bg-muted/40 text-[11px] text-foreground">
-      <span className="max-w-[160px] truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Retirer le filtre ${label}`}
-        className="inline-flex items-center justify-center h-5 w-5 rounded-full hover:bg-muted transition-colors"
-      >
-        <X className="h-3 w-3 text-muted-foreground" />
-      </button>
-    </span>
-  )
-}
-
 export default function RecruitPipelinePage() {
   const [postes, setPostes] = useState<Poste[]>([])
   const [candidatures, setCandidatures] = useState<Candidature[]>([])
@@ -266,9 +232,13 @@ export default function RecruitPipelinePage() {
   const [newCandidateOpen, setNewCandidateOpen] = useState(false)
   const [showRoleManager, setShowRoleManager] = useState(false)
   const [customRoleCount, setCustomRoleCount] = useState(0)
+  const [postesOpen, setPostesOpen] = useState(() => localStorage.getItem('pipeline-postes-open') === 'true')
   const [sortBy, setSortBy] = useState<SortKey>(() => {
-    const v = localStorage.getItem('pipeline-sort') as SortKey | null
-    return v && SORT_KEYS.includes(v) ? v : 'fit_desc'
+    const raw = localStorage.getItem('pipeline-sort')
+    // Backward compat: the first sort release used `fit_*` for the (then-
+    // single) poste-score axis. Keep stored prefs working without a reset.
+    const migrated = raw === 'fit_desc' ? 'poste_desc' : raw === 'fit_asc' ? 'poste_asc' : raw
+    return migrated && (SORT_KEYS as readonly string[]).includes(migrated) ? (migrated as SortKey) : 'poste_desc'
   })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [downloadingZip, setDownloadingZip] = useState(false)
@@ -507,19 +477,22 @@ export default function RecruitPipelinePage() {
     return true
   })
 
-  // Sort after filtering. Ties break on created_at DESC so the chosen sort
-  // still places newer applications above older ones inside equal-score
-  // groups — matches the server's default tiebreak.
+  // Sort after filtering. Ties on score break on created_at DESC so newer
+  // applications still bubble up inside equal-score groups (matches the
+  // server's tiebreak). The sort key encodes axis + direction:
+  //   poste|global|equipe|date  _  asc|desc
   const sorted = [...filtered].sort((a, b) => {
-    if (sortBy === 'fit_desc' || sortBy === 'fit_asc') {
-      const aFit = a.tauxPoste ?? -Infinity
-      const bFit = b.tauxPoste ?? -Infinity
-      const delta = sortBy === 'fit_desc' ? bFit - aFit : aFit - bFit
+    const [axisKey, dir] = sortBy.split('_') as ['poste' | 'global' | 'equipe' | 'date', 'asc' | 'desc']
+    if (axisKey !== 'date') {
+      const field = axisKey === 'poste' ? 'tauxPoste' : axisKey === 'global' ? 'tauxGlobal' : 'tauxEquipe'
+      const aV = a[field] ?? -Infinity
+      const bV = b[field] ?? -Infinity
+      const delta = dir === 'desc' ? bV - aV : aV - bV
       if (delta !== 0) return delta
     }
     const aTs = new Date(a.createdAt + (a.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
     const bTs = new Date(b.createdAt + (b.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
-    return sortBy === 'date_asc' ? aTs - bTs : bTs - aTs
+    return dir === 'asc' && axisKey === 'date' ? aTs - bTs : bTs - aTs
   })
 
   const activeChipCount = (chipStuck ? 1 : 0) + (chipDocsMissing ? 1 : 0) + (chipNeedsAction ? 1 : 0)
@@ -547,247 +520,212 @@ export default function RecruitPipelinePage() {
     <div className="min-h-screen">
       <AppHeader />
       <main className="container mx-auto max-w-6xl px-4 pt-16 pb-8">
-        {/* ── Masthead ─────────────────────────────────────────────
-            Editorial header: eyebrow label, compact H1, actions right.
-            Actions collapse to icon-only to free up horizontal weight
-            for the title block. */}
-        <div className="flex items-end justify-between mb-8 pb-4 border-b">
-          <div>
-            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-1">
-              Campagne · Avril 2026 · {postes.length} postes
-            </p>
-            <h1 className="text-3xl font-bold tracking-tight" style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
+        {/* ── Masthead (compact) ──────────────────────────────────
+            One title line + one action row. Stats moved to the KPI
+            strip below — no duplication. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
               Recrutement
             </h1>
-            {stats && (
-              <p className="text-sm text-muted-foreground mt-1 tabular-nums">
-                <span className="text-foreground font-medium">{stats.totalCandidatures}</span> candidatures ·{' '}
-                <span className="text-foreground font-medium">{stats.totalActive}</span> en cours ·{' '}
-                <span className="text-foreground font-medium">{stats.statusBreakdown?.embauche ?? 0}</span> embauché(s)
-              </p>
-            )}
+            <span className="text-sm text-muted-foreground">
+              Campagne avril 2026 · {postes.length} postes
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Primary action: new candidate. Promoted to the masthead
-                after merging /recruit — this is the high-intent button. */}
-            <Button size="sm" className="h-9 gap-1.5" onClick={() => setNewCandidateOpen(true)}>
+          <div className="flex items-center gap-1">
+            <Button size="sm" className="h-9 gap-1.5 mr-1" onClick={() => setNewCandidateOpen(true)}>
               <Plus className="h-4 w-4" />
               Nouveau candidat
             </Button>
-
-            {/* Secondary utilities grouped as icon-only. */}
-            <div className="flex items-center gap-1 pl-1 border-l">
-              <Tooltip>
-                <TooltipTrigger
-                  render={(
-                    <Button
-                      variant={showRoleManager ? 'secondary' : 'ghost'}
-                      size="sm"
-                      onClick={() => setShowRoleManager(v => !v)}
-                      className="h-9 gap-1 px-2"
-                    >
-                      <UserCog className="h-4 w-4" />
-                      <span className="text-xs">Rôles</span>
-                      {customRoleCount > 0 && (
-                        <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums ml-0.5">
-                          {customRoleCount}
-                        </Badge>
-                      )}
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Button
+                    variant={showRoleManager ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setShowRoleManager(v => !v)}
+                    className="h-9 gap-1 px-2"
+                  >
+                    <UserCog className="h-4 w-4" />
+                    {customRoleCount > 0 && (
+                      <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums">
+                        {customRoleCount}
+                      </Badge>
+                    )}
+                  </Button>
+                )}
+              />
+              <TooltipContent>Gérer les rôles personnalisés</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Button variant="ghost" size="sm" onClick={openWeightsDialog} className="h-9 w-9 p-0">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                )}
+              />
+              <TooltipContent>Pondération du score</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer" className="inline-flex">
+                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                      <FileText className="h-4 w-4" />
                     </Button>
-                  )}
-                />
-                <TooltipContent>Gérer les rôles personnalisés</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={(
-                    <Button variant="ghost" size="sm" onClick={openWeightsDialog} className="h-9 w-9 p-0">
-                      <Settings className="h-4 w-4" />
+                  </a>
+                )}
+              />
+              <TooltipContent>Exporter PDF</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Link to="/recruit/funnel" className="inline-flex">
+                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                      <GitBranch className="h-4 w-4" />
                     </Button>
-                  )}
-                />
-                <TooltipContent>Pondération du score</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={(
-                    <a href="/recruit/reports/campaign" target="_blank" rel="noopener noreferrer" className="inline-flex">
-                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
-                        <FileText className="h-4 w-4" />
-                      </Button>
-                    </a>
-                  )}
-                />
-                <TooltipContent>Exporter PDF</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={(
-                    <Link to="/recruit/funnel" className="inline-flex">
-                      <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
-                        <GitBranch className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                  )}
-                />
-                <TooltipContent>Funnel</TooltipContent>
-              </Tooltip>
-            </div>
+                  </Link>
+                )}
+              />
+              <TooltipContent>Funnel</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         {/* Role manager panel — slides in under the masthead when open. */}
         {showRoleManager && (
-          <div className="mb-8 pb-6 border-b">
+          <div className="mb-6 pb-6 border-b">
             <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">Rôles</p>
             <RoleManagerPanel onCountChange={setCustomRoleCount} />
           </div>
         )}
 
-        {/* ── Dashboard band: Pipeline health + À traiter ─────────
-            Asymmetric 5:3 grid. Left = pipeline flow at a glance via
-            per-stage mini-bars. Right = actionable triage buttons that
-            pre-apply the right filters so recruiters go from "what
-            matters today" to the candidate list in one click. */}
+        {/* ── KPI strip — 6 equal cells ───────────────────────────
+            Single-weight tabular dashboard. Neutral cells read-only,
+            triage cells click to toggle the matching quick-chip and
+            scroll to the list. Colors only fire when count > 0 so a
+            healthy pipeline stays calm, not noisy. */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-[5fr_3fr] gap-0 md:gap-6 mb-10">
-            {/* Pipeline overview */}
-            <div className="pb-6 md:pb-0 md:border-r md:pr-6 border-b md:border-b-0 mb-6 md:mb-0">
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">Pipeline</p>
-              <div className="flex items-baseline gap-6 mb-5">
-                <div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-5xl font-bold tabular-nums leading-none" style={{ fontFamily: "'Raleway Variable', sans-serif" }}>
-                      {stats.totalActive}
-                    </span>
-                    <span className="text-sm text-muted-foreground">actives</span>
-                  </div>
-                </div>
-                <div className="h-8 w-px bg-border" />
-                <div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-bold tabular-nums leading-none text-foreground/80">
-                      {(stats.statusBreakdown?.entretien_1 ?? 0) + (stats.statusBreakdown?.entretien_2 ?? 0)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">entretiens</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-bold tabular-nums leading-none text-emerald-500">
-                      {stats.statusBreakdown?.embauche ?? 0}
-                    </span>
-                    <span className="text-xs text-muted-foreground">embauches</span>
-                  </div>
-                </div>
-              </div>
-              {/* Per-stage mini-bar — shows flow distribution across the
-                  9 pipeline statuts. Click a segment to filter. */}
-              <div className="space-y-1.5">
-                <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
-                  {(() => {
-                    const stages = [
-                      { k: 'postule', color: 'bg-muted-foreground/40' },
-                      { k: 'preselectionne', color: 'bg-primary/60' },
-                      { k: 'skill_radar_envoye', color: 'bg-primary/70' },
-                      { k: 'skill_radar_complete', color: 'bg-primary/80' },
-                      { k: 'entretien_1', color: 'bg-primary' },
-                      { k: 'aboro', color: 'bg-chart-2' },
-                      { k: 'entretien_2', color: 'bg-chart-2' },
-                      { k: 'proposition', color: 'bg-chart-3' },
-                      { k: 'embauche', color: 'bg-emerald-500' },
-                    ]
-                    const total = stats.totalActive + (stats.statusBreakdown?.embauche ?? 0) || 1
-                    return stages.map(s => {
-                      const n = stats.statusBreakdown?.[s.k] ?? 0
-                      if (n === 0) return null
-                      const pct = (n / total) * 100
-                      return (
-                        <Tooltip key={s.k}>
-                          <TooltipTrigger
-                            render={(
-                              <button
-                                type="button"
-                                onClick={() => { setFilterStatut(s.k); setScrollTrigger(n => n + 1) }}
-                                className={`${s.color} hover:brightness-110 transition-[filter]`}
-                                style={{ width: `${pct}%` }}
-                                aria-label={`${STATUT_LABELS[s.k] ?? s.k}: ${n}`}
-                              />
-                            )}
-                          />
-                          <TooltipContent className="text-xs">{STATUT_LABELS[s.k] ?? s.k} : {n}</TooltipContent>
-                        </Tooltip>
-                      )
-                    })
-                  })()}
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
-                  {['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition'].map(k => {
-                    const n = stats.statusBreakdown?.[k] ?? 0
-                    if (n === 0) return null
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={() => { setFilterStatut(k); setScrollTrigger(n => n + 1) }}
-                        className="hover:text-foreground transition-colors"
-                      >
-                        {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+          <div className="mb-6 border-y">
+            <div className="grid grid-cols-3 sm:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-border">
+              <KpiCell label="Total" sublabel="candidatures" count={stats.totalCandidatures} tone="neutral" />
+              <KpiCell label="Actifs" sublabel="en cours" count={stats.totalActive} tone="neutral" />
+              <KpiCell
+                label="Action"
+                sublabel="requise"
+                count={triageCounts.needsAction}
+                tone="urgent"
+                interactive
+                active={chipNeedsAction}
+                onClick={() => { setChipNeedsAction(v => !v); setScrollTrigger(n => n + 1) }}
+              />
+              <KpiCell
+                label="Bloquée"
+                sublabel="> 7 jours"
+                count={triageCounts.stuck}
+                tone="warn"
+                interactive
+                active={chipStuck}
+                onClick={() => { setChipStuck(v => !v); setScrollTrigger(n => n + 1) }}
+              />
+              <KpiCell
+                label="Dossier"
+                sublabel="incomplet"
+                count={triageCounts.docsMissing}
+                tone="accent"
+                interactive
+                active={chipDocsMissing}
+                onClick={() => { setChipDocsMissing(v => !v); setScrollTrigger(n => n + 1) }}
+              />
+              <KpiCell label="Embauches" sublabel="campagne" count={stats.statusBreakdown?.embauche ?? 0} tone="success" />
             </div>
 
-            {/* À traiter — action triage panel. Clickable rows that
-                toggle the matching quick-chip AND scroll to the list. */}
-            <div>
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">À traiter</p>
-              <div className="divide-y divide-border">
-                <TriageRow
-                  icon="🚨"
-                  label="Action requise"
-                  count={triageCounts.needsAction}
-                  tone={triageCounts.needsAction > 0 ? 'urgent' : 'muted'}
-                  active={chipNeedsAction}
-                  onClick={() => { setChipNeedsAction(v => !v); setScrollTrigger(n => n + 1) }}
-                />
-                <TriageRow
-                  icon="⏱"
-                  label="Bloquées > 7j"
-                  count={triageCounts.stuck}
-                  tone={triageCounts.stuck > 0 ? 'warn' : 'muted'}
-                  active={chipStuck}
-                  onClick={() => { setChipStuck(v => !v); setScrollTrigger(n => n + 1) }}
-                />
-                <TriageRow
-                  icon="📂"
-                  label="Dossier incomplet"
-                  count={triageCounts.docsMissing}
-                  tone={triageCounts.docsMissing > 0 ? 'accent' : 'muted'}
-                  active={chipDocsMissing}
-                  onClick={() => { setChipDocsMissing(v => !v); setScrollTrigger(n => n + 1) }}
-                />
+            {/* Pipeline flow bar + per-stage labels — replaces the
+                separate "Pipeline" panel. Every segment and label is a
+                click target that applies the statut filter. */}
+            <div className="border-t px-4 py-3 space-y-2">
+              <div className="flex h-1.5 rounded-full overflow-hidden bg-muted">
+                {(() => {
+                  const stages = [
+                    { k: 'postule', color: 'bg-muted-foreground/40' },
+                    { k: 'preselectionne', color: 'bg-primary/60' },
+                    { k: 'skill_radar_envoye', color: 'bg-primary/70' },
+                    { k: 'skill_radar_complete', color: 'bg-primary/80' },
+                    { k: 'entretien_1', color: 'bg-primary' },
+                    { k: 'aboro', color: 'bg-chart-2' },
+                    { k: 'entretien_2', color: 'bg-chart-2' },
+                    { k: 'proposition', color: 'bg-chart-3' },
+                    { k: 'embauche', color: 'bg-emerald-500' },
+                  ]
+                  const total = stats.totalActive + (stats.statusBreakdown?.embauche ?? 0) || 1
+                  return stages.map(s => {
+                    const n = stats.statusBreakdown?.[s.k] ?? 0
+                    if (n === 0) return null
+                    const pct = (n / total) * 100
+                    return (
+                      <Tooltip key={s.k}>
+                        <TooltipTrigger
+                          render={(
+                            <button
+                              type="button"
+                              onClick={() => { setFilterStatut(s.k); setScrollTrigger(n => n + 1) }}
+                              className={`${s.color} hover:brightness-110 transition-[filter]`}
+                              style={{ width: `${pct}%` }}
+                              aria-label={`${STATUT_LABELS[s.k] ?? s.k}: ${n}`}
+                            />
+                          )}
+                        />
+                        <TooltipContent className="text-xs">{STATUT_LABELS[s.k] ?? s.k} : {n}</TooltipContent>
+                      </Tooltip>
+                    )
+                  })
+                })()}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+                {['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition', 'embauche'].map(k => {
+                  const n = stats.statusBreakdown?.[k] ?? 0
+                  if (n === 0) return null
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => { setFilterStatut(k); setScrollTrigger(n => n + 1) }}
+                      className="hover:text-foreground transition-colors"
+                    >
+                      {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Postes — editorial numeric-prefix list ────────────
-            Chapter-marked rows grouped under pôle eyebrows. Flat
-            layout (no nested cards) so the scanning eye reads down
-            the numeric column, then laterally to counts. Secondary
-            actions (compare / shortlist / edit) live in an inline
-            icon strip that reveals on hover — keeps the row calm by
-            default. */}
-        <section className="mb-10">
-          <div className="flex items-baseline justify-between mb-3">
-            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">Postes</p>
-            <p className="text-[11px] text-muted-foreground tabular-nums">
-              {postes.length} postes · {postes.reduce((s, p) => s + p.candidateCount, 0)} candidats
-            </p>
-          </div>
+        {/* ── Postes — editorial numeric-prefix list, collapsed ──
+            Wrapped in a <details> disclosure; defaults closed. Most
+            recruiters filter by poste via the toolbar dropdown — the
+            detailed list is navigation + admin (compare / shortlist /
+            edit), not primary work. State persists in localStorage. */}
+        <details
+          open={postesOpen}
+          onToggle={e => {
+            const next = e.currentTarget.open
+            setPostesOpen(next)
+            localStorage.setItem('pipeline-postes-open', String(next))
+          }}
+          className="mb-6 group"
+        >
+          <summary className="cursor-pointer list-none flex items-center gap-2 py-2 border-b hover:bg-muted/20 select-none">
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+            <span className="text-[10px] font-semibold tracking-[0.18em] uppercase text-muted-foreground">Postes</span>
+            <span className="text-[11px] text-muted-foreground tabular-nums ml-auto">
+              {postes.length} postes · {postes.reduce((s, p) => s + p.candidateCount, 0)} candidats · {postes.reduce((s, p) => s + p.activeCount, 0)} actifs
+            </span>
+          </summary>
+          <div className="pt-2">
+
           {(() => {
             let idx = 0
             return ['legacy', 'java_modernisation', 'fonctionnel'].map(pole => {
@@ -900,252 +838,264 @@ export default function RecruitPipelinePage() {
               )
             })
           })()}
-        </section>
-
-        {/* ── Candidatures — working area ─────────────────────── */}
-        <section>
-          <div className="flex items-baseline justify-between mb-3">
-            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
-              Candidatures
-            </p>
-            <Link to="/recruit" className="text-[11px] text-muted-foreground hover:text-foreground tabular-nums">
-              <span className="text-foreground font-medium">{filtered.length}</span>
-              {filtered.length !== candidatures.length ? ` / ${candidatures.length}` : ''} résultat{filtered.length !== 1 ? 's' : ''}
-            </Link>
           </div>
-        {/* Filters — redesigned: single toolbar row (search + primary filters +
-            advanced popover + sort + view + count) with active pills + quick
-            chips on a second row that only appears when something is in use. */}
+        </details>
+
+        {/* ── Candidatures — working area ───────────────────────
+            Single-row Stripe-inline bar. Each filter is a two-state
+            chip: ghost+label when empty, primary-tinted with inline
+            value + × clear when active. No pills row below (active
+            state lives in the chip itself). Quick triage chips live
+            in the KPI strip above, not here. */}
+        <section>
         {(() => {
           const advancedActiveCount =
             (filterExperience !== 'all' ? 1 : 0) +
             (filterNotice !== 'all' ? 1 : 0)
-          const activePillCount =
-            (filterPole !== 'all' ? 1 : 0) +
-            (filterPoste !== 'all' ? 1 : 0) +
-            (filterStatut !== 'all' ? 1 : 0) +
-            advancedActiveCount +
-            (filterSearch ? 1 : 0)
-          const hasAnyActive = activePillCount > 0 || activeChipCount > 0
+          const hasAnyActive =
+            filterPole !== 'all' || filterPoste !== 'all' || filterStatut !== 'all' ||
+            filterExperience !== 'all' || filterNotice !== 'all' ||
+            !!filterSearch || activeChipCount > 0
           const resetAll = () => {
             setFilterPole('all'); setFilterPoste('all'); setFilterStatut('all')
             setFilterExperience('all'); setFilterNotice('all'); setFilterSearch('')
             setChipStuck(false); setChipDocsMissing(false); setChipNeedsAction(false)
           }
-          return <>
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          {/* Search with leading icon — primary affordance, grows to fill. */}
-          <div className="relative flex-1 min-w-[200px] max-w-md">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-            <Input
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              placeholder="Rechercher (nom, ville, poste…)"
-              className="pl-8 h-9"
-            />
-          </div>
+          // Chip styling: ghost when empty, primary-tinted when active.
+          const chipEmpty = 'h-8 px-3 rounded-md border border-border bg-transparent text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground gap-1.5'
+          const chipActive = 'h-8 pl-3 pr-2 rounded-md border-primary/40 bg-primary/10 text-sm text-foreground font-medium hover:bg-primary/15 gap-1.5'
+          // Tiny × button that attaches flush to the right of an active chip.
+          const chipClear = (onClick: () => void, label: string) => (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onClick() }}
+              aria-label={`Retirer ${label}`}
+              className="inline-flex items-center justify-center h-8 w-7 -ml-px rounded-r-md border border-primary/40 bg-primary/10 text-muted-foreground hover:bg-primary/20 hover:text-foreground transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )
+          return (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* Search — the one primary control, wider than the chips. */}
+            <div className="relative flex-1 min-w-[200px] max-w-[360px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Rechercher un candidat"
+                className="pl-8 h-8"
+              />
+            </div>
 
-          {/* Primary filter dropdowns — the three most-used axes. */}
-          <Select value={filterPole} onValueChange={(v) => { setFilterPole(v ?? 'all'); setFilterPoste('all') }}>
-            <SelectTrigger className="w-40 h-9">
-              <SelectValue>
-                {filterPole === 'all' ? 'Tous les pôles' : POLE_LABELS[filterPole] ?? filterPole}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les pôles</SelectItem>
-              {Object.entries(POLE_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {/* Pôle chip */}
+            <span className="inline-flex items-stretch">
+              <Select value={filterPole} onValueChange={(v) => { setFilterPole(v ?? 'all'); setFilterPoste('all') }}>
+                <SelectTrigger
+                  className={`${filterPole === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
+                  aria-label="Filtrer par pôle"
+                >
+                  <SelectValue>
+                    {filterPole === 'all' ? 'Pôle' : <>Pôle <span className="text-muted-foreground">:</span> {POLE_LABELS[filterPole] ?? filterPole}</>}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les pôles</SelectItem>
+                  {Object.entries(POLE_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filterPole !== 'all' && chipClear(() => { setFilterPole('all'); setFilterPoste('all') }, 'Pôle')}
+            </span>
 
-          <Select value={filterPoste} onValueChange={(v) => setFilterPoste(v ?? 'all')}>
-            <SelectTrigger className="w-48 h-9">
-              <SelectValue>
-                {filterPoste === 'all' ? 'Tous les postes' : postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les postes</SelectItem>
-              {postes
-                .filter(p => filterPole === 'all' || p.pole === filterPole)
-                .map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.titre}</SelectItem>
+            {/* Poste chip */}
+            <span className="inline-flex items-stretch">
+              <Select value={filterPoste} onValueChange={(v) => setFilterPoste(v ?? 'all')}>
+                <SelectTrigger
+                  className={`${filterPoste === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
+                  aria-label="Filtrer par poste"
+                >
+                  <SelectValue>
+                    {filterPoste === 'all' ? 'Poste' : <>Poste <span className="text-muted-foreground">:</span> {postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}</>}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les postes</SelectItem>
+                  {postes
+                    .filter(p => filterPole === 'all' || p.pole === filterPole)
+                    .map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.titre}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {filterPoste !== 'all' && chipClear(() => setFilterPoste('all'), 'Poste')}
+            </span>
+
+            {/* Statut chip */}
+            <span className="inline-flex items-stretch">
+              <Select value={filterStatut} onValueChange={(v) => setFilterStatut(v ?? 'all')}>
+                <SelectTrigger
+                  className={`${filterStatut === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
+                  aria-label="Filtrer par statut"
+                >
+                  <SelectValue>
+                    {filterStatut === 'all' ? 'Statut' : <>Statut <span className="text-muted-foreground">:</span> {STATUT_LABELS[filterStatut] ?? filterStatut}</>}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les statuts</SelectItem>
+                  {Object.entries(STATUT_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filterStatut !== 'all' && chipClear(() => setFilterStatut('all'), 'Statut')}
+            </span>
+
+            {/* Plus — advanced filters (Expérience + Préavis). Count badge
+                when active; otherwise compact icon+label. */}
+            <Popover>
+              <PopoverTrigger
+                render={(
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`h-8 gap-1.5 ${advancedActiveCount > 0 ? 'border-primary/40 bg-primary/10 text-foreground' : 'text-muted-foreground'}`}
+                  />
+                )}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Plus
+                {advancedActiveCount > 0 && (
+                  <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums">
+                    {advancedActiveCount}
+                  </Badge>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3 space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Expérience</label>
+                  <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue>{EXPERIENCE_LABELS[filterExperience] ?? filterExperience}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Préavis</label>
+                  <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
+                    <SelectTrigger className="w-full h-9">
+                      <SelectValue>{NOTICE_LABELS[filterNotice] ?? filterNotice}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(NOTICE_LABELS).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Trier chip — compact arrow-label, full description in menu. */}
+            <Select
+              value={sortBy}
+              onValueChange={(v) => {
+                const next = v as SortKey
+                setSortBy(next)
+                localStorage.setItem('pipeline-sort', next)
+              }}
+            >
+              <SelectTrigger className={`${chipEmpty} text-foreground`} aria-label="Trier les candidatures">
+                <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <SelectValue>Trier : {SORT_CHIP_LABELS[sortBy]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="min-w-[240px]">
+                <div className="px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Par score</div>
+                {(['poste_desc', 'poste_asc', 'global_desc', 'global_asc', 'equipe_desc', 'equipe_asc'] as const).map(k => (
+                  <SelectItem key={k} value={k}>{SORT_LABELS[k]}</SelectItem>
                 ))}
-            </SelectContent>
-          </Select>
+                <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Par date</div>
+                <SelectItem value="date_desc">{SORT_LABELS.date_desc}</SelectItem>
+                <SelectItem value="date_asc">{SORT_LABELS.date_asc}</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={filterStatut} onValueChange={(v) => setFilterStatut(v ?? 'all')}>
-            <SelectTrigger className="w-40 h-9">
-              <SelectValue>
-                {filterStatut === 'all' ? 'Tous les statuts' : STATUT_LABELS[filterStatut] ?? filterStatut}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les statuts</SelectItem>
-              {Object.entries(STATUT_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {/* View toggle — icons only, tooltips on hover. */}
+            <div className="inline-flex rounded-md border border-border ml-auto">
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant={viewMode === 'list' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-r-none"
+                      onClick={() => changeView('list')}
+                      aria-label="Vue Candidatures"
+                    >
+                      <LayoutList className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                />
+                <TooltipContent className="text-xs">Candidatures</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant={viewMode === 'candidates' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-none border-x"
+                      onClick={() => changeView('candidates')}
+                      aria-label="Vue Candidats"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                />
+                <TooltipContent className="text-xs">Candidats (par personne)</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-l-none"
+                      onClick={() => changeView('kanban')}
+                      aria-label="Vue Kanban"
+                    >
+                      <Kanban className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                />
+                <TooltipContent className="text-xs">Kanban</TooltipContent>
+              </Tooltip>
+            </div>
 
-          {/* Advanced filters (rarely used: Expérience + Préavis) tucked away. */}
-          <Popover>
-            <PopoverTrigger render={<Button variant="outline" size="sm" className="h-9 gap-1.5" />}>
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filtres
-              {advancedActiveCount > 0 && (
-                <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] tabular-nums">
-                  {advancedActiveCount}
-                </Badge>
-              )}
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-3 space-y-3">
-              <div>
-                <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Expérience</label>
-                <Select value={filterExperience} onValueChange={(v) => setFilterExperience(v ?? 'all')}>
-                  <SelectTrigger className="w-full h-9">
-                    <SelectValue>{EXPERIENCE_LABELS[filterExperience] ?? filterExperience}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(EXPERIENCE_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-muted-foreground mb-1 block uppercase tracking-wide">Préavis</label>
-                <Select value={filterNotice} onValueChange={(v) => setFilterNotice(v ?? 'all')}>
-                  <SelectTrigger className="w-full h-9">
-                    <SelectValue>{NOTICE_LABELS[filterNotice] ?? filterNotice}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(NOTICE_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* Visual separator between filter and display controls. */}
-          <div className="h-6 w-px bg-border mx-1 hidden md:block" />
-
-          {/* Sort. */}
-          <Select
-            value={sortBy}
-            onValueChange={(v) => {
-              const next = v as SortKey
-              setSortBy(next)
-              localStorage.setItem('pipeline-sort', next)
-            }}
-          >
-            <SelectTrigger className="w-[220px] h-9 gap-1.5" aria-label="Trier les candidatures">
-              <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
-              <SelectValue>{SORT_LABELS[sortBy]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_KEYS.map(k => (
-                <SelectItem key={k} value={k}>{SORT_LABELS[k]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="inline-flex rounded-md border border-border">
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="sm"
-              className="gap-1.5 rounded-r-none text-xs h-9"
-              onClick={() => changeView('list')}
-            >
-              <LayoutList className="h-3.5 w-3.5" />
-              Candidatures
-            </Button>
-            <Button
-              variant={viewMode === 'candidates' ? 'default' : 'ghost'}
-              size="sm"
-              className="gap-1.5 rounded-none border-x text-xs h-9"
-              onClick={() => changeView('candidates')}
-              title="Vue par candidat (un candidat peut avoir plusieurs candidatures)"
-            >
-              <Users className="h-3.5 w-3.5" />
-              Candidats
-            </Button>
-            <Button
-              variant={viewMode === 'kanban' ? 'default' : 'ghost'}
-              size="sm"
-              className="gap-1.5 rounded-l-none text-xs h-9"
-              onClick={() => changeView('kanban')}
-            >
-              <Kanban className="h-3.5 w-3.5" />
-              Kanban
-            </Button>
+            {/* Reset (conditional) + count — right-anchored. */}
+            {hasAnyActive && (
+              <button
+                type="button"
+                onClick={resetAll}
+                className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+              >
+                × Réinitialiser
+              </button>
+            )}
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {filtered.length === candidatures.length
+                ? `${filtered.length} résultat${filtered.length !== 1 ? 's' : ''}`
+                : `${filtered.length} / ${candidatures.length}`}
+            </span>
           </div>
-        </div>
-
-        {/* Row 2: active filter pills + Réinitialiser — only appears when
-            something is in use. Quick chips moved up to the "À traiter"
-            panel (they're triage, not display filters). */}
-        {hasAnyActive && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3">
-          {activeChipCount > 0 && (
-            <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold mr-1">Triage actif</span>
-          )}
-          {chipStuck && <FilterPill label="⏱ Bloquées > 7j" onRemove={() => setChipStuck(false)} />}
-          {chipDocsMissing && <FilterPill label="📂 Dossier incomplet" onRemove={() => setChipDocsMissing(false)} />}
-          {chipNeedsAction && <FilterPill label="🚨 Action requise" onRemove={() => setChipNeedsAction(false)} />}
-          {activePillCount > 0 && activeChipCount > 0 && <div className="h-5 w-px bg-border mx-1" />}
-          {filterPole !== 'all' && (
-            <FilterPill
-              label={`Pôle : ${POLE_LABELS[filterPole] ?? filterPole}`}
-              onRemove={() => { setFilterPole('all'); setFilterPoste('all') }}
-            />
-          )}
-          {filterPoste !== 'all' && (
-            <FilterPill
-              label={`Poste : ${postes.find(p => p.id === filterPoste)?.titre ?? filterPoste}`}
-              onRemove={() => setFilterPoste('all')}
-            />
-          )}
-          {filterStatut !== 'all' && (
-            <FilterPill
-              label={`Statut : ${STATUT_LABELS[filterStatut] ?? filterStatut}`}
-              onRemove={() => setFilterStatut('all')}
-            />
-          )}
-          {filterExperience !== 'all' && (
-            <FilterPill
-              label={`Exp. : ${EXPERIENCE_LABELS[filterExperience] ?? filterExperience}`}
-              onRemove={() => setFilterExperience('all')}
-            />
-          )}
-          {filterNotice !== 'all' && (
-            <FilterPill
-              label={`Préavis : ${NOTICE_LABELS[filterNotice] ?? filterNotice}`}
-              onRemove={() => setFilterNotice('all')}
-            />
-          )}
-          {filterSearch && (
-            <FilterPill
-              label={`Recherche : "${filterSearch}"`}
-              onRemove={() => setFilterSearch('')}
-            />
-          )}
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-7 text-[11px] px-2"
-            onClick={resetAll}
-          >
-            Réinitialiser
-          </Button>
-        </div>
-        )}
-        </>
+          )
         })()}
 
         {/* Candidatures — list or kanban */}
