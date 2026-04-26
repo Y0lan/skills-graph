@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronRight, Send, BarChart3, Loader2 } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
+import StarToggle from '@/components/recruit/star-toggle'
 
 interface ShortlistItem {
   candidatureId: string
@@ -71,6 +72,24 @@ export default function PosteShortlistPage() {
   }, [posteId])
 
   useEffect(() => { fetchShortlist() }, [fetchShortlist])
+
+  // Track which candidatures are already in the user's saved-candidates
+  // shortlist so the StarToggle on each row reflects the real state.
+  // Read once on mount; user toggles update the set locally via onChange.
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/recruitment/shortlist', { credentials: 'include' })
+        if (!res.ok) return
+        const body = await res.json() as { items: Array<{ candidatureId: string }> }
+        if (cancelled) return
+        setStarredIds(new Set(body.items.map(i => i.candidatureId)))
+      } catch { /* non-fatal — stars stay empty */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Live email preview: calls /emails/preview when the dialog is open
   // and the statut / customBody changes. Debounced so every keystroke
@@ -266,6 +285,17 @@ export default function PosteShortlistPage() {
                   <Checkbox
                     checked={selected.has(item.candidatureId)}
                     onCheckedChange={() => toggle(item.candidatureId)}
+                  />
+                  <StarToggle
+                    candidatureId={item.candidatureId}
+                    initialActive={starredIds.has(item.candidatureId)}
+                    onChange={(active) => {
+                      setStarredIds(prev => {
+                        const next = new Set(prev)
+                        if (active) next.add(item.candidatureId); else next.delete(item.candidatureId)
+                        return next
+                      })
+                    }}
                   />
                   <Link to={`/recruit/${item.candidateId}`} className="flex-1 min-w-0 flex items-center gap-4">
                     <div className="flex-1 min-w-0">
