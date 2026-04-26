@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import {
+  type PipelineStage, STAGE_STATUSES, STAGE_LABELS, STAGE_ORDER, statutMatchesStageFilter,
+} from '@/lib/pipeline-stage-filter'
 import AppHeader from '@/components/app-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -126,28 +129,8 @@ const PIPELINE_ORDER: Record<string, number> = {
 // "specifically skill_radar_complete" without either overriding the
 // other. `refuse` is not in the active funnel — terminal rejections
 // would distort stage ratios — it lives in the standalone chip.
-type PipelineStage = 'nouveaux' | 'evaluation' | 'entretiens' | 'decision'
-const STAGE_STATUSES: Record<PipelineStage, readonly string[]> = {
-  nouveaux: ['postule', 'preselectionne'],
-  evaluation: ['skill_radar_envoye', 'skill_radar_complete', 'aboro'],
-  entretiens: ['entretien_1', 'entretien_2'],
-  decision: ['proposition', 'embauche'],
-} as const
-const STAGE_LABELS: Record<PipelineStage, string> = {
-  nouveaux: 'Nouveaux',
-  evaluation: 'Évaluation',
-  entretiens: 'Entretiens',
-  decision: 'Décision',
-}
-const STAGE_ORDER: PipelineStage[] = ['nouveaux', 'evaluation', 'entretiens', 'decision']
-
-/** Pure helper — exported for unit testing. Returns true if the given
- *  statut passes the stage filter. `'all'` = no stage filter. */
-export function statutMatchesStageFilter(statut: string | null | undefined, stage: PipelineStage | 'refuses' | 'all'): boolean {
-  if (stage === 'all') return true
-  if (stage === 'refuses') return statut === 'refuse'
-  return STAGE_STATUSES[stage].includes(statut ?? '')
-}
+// Stage taxonomy + statut→stage matcher live in src/lib/pipeline-stage-filter.ts
+// so this file only exports the page component (Fast Refresh requirement).
 
 const SORT_KEYS = [
   'poste_desc', 'poste_asc',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statutMatchesStageFilter } from '../recruit-pipeline-page'
+import { statutMatchesStageFilter } from '@/lib/pipeline-stage-filter'
 
 describe('statutMatchesStageFilter', () => {
   it("returns true for every statut when stage is 'all'", () => {
