@@ -42,6 +42,10 @@ export interface RecentJournalProps {
   /** Receives the freshly-published note event from the composer so the
    *  caller can prepend it to its event state. */
   onNotePublished: (event: CandidatureEvent) => void
+  /** Optional optimistic-render hooks forwarded to QuickNoteComposer. */
+  onOptimisticPrepend?: (tempEvent: CandidatureEvent) => void
+  onReplaceTemp?: (tempId: number, real: CandidatureEvent) => void
+  onRollbackTemp?: (tempId: number) => void
   /** Target selector for the "Voir l'historique complet" anchor. */
   historyAnchorId: string
 }
@@ -49,7 +53,9 @@ export interface RecentJournalProps {
 const DEFAULT_LIMIT = 5
 
 export default function RecentJournal({
-  events, documents, candidatureId, currentUserSlug, currentUserName, onNotePublished, historyAnchorId,
+  events, documents, candidatureId, currentUserSlug, currentUserName,
+  onNotePublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp,
+  historyAnchorId,
 }: RecentJournalProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -85,6 +91,9 @@ export default function RecentJournal({
         currentUserSlug={currentUserSlug}
         currentUserName={currentUserName}
         onPublished={onNotePublished}
+        onOptimisticPrepend={onOptimisticPrepend}
+        onReplaceTemp={onReplaceTemp}
+        onRollbackTemp={onRollbackTemp}
       />
 
       {visible.length === 0 ? (

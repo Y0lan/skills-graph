@@ -218,16 +218,36 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const handleNotePublished = (event: CandidatureEvent) => {
-    // Prepend the freshly-created note event to both the flat state (used by
-    // the history/journal) and the per-candidature map (authoritative
-    // after a candidature switch).
+  // Append-only event helpers — used by the quick-note composer for the
+  // optimistic round trip. We update both the flat state (the journal +
+  // history both read from `events`) and the per-candidature map
+  // (authoritative after a candidature switch) so a switch + come-back
+  // doesn't lose the optimistic row.
+  const prependEvent = (event: CandidatureEvent) => {
     setEvents(prev => [event, ...prev])
     setCandidatureDataMap(prev => {
       const entry = prev[c.id] ?? { events: [], allowedTransitions: null, documents: [] }
       return { ...prev, [c.id]: { ...entry, events: [event, ...entry.events] } }
     })
   }
+  const replaceTempEvent = (tempId: number, real: CandidatureEvent) => {
+    setEvents(prev => prev.map(e => e.id === tempId ? real : e))
+    setCandidatureDataMap(prev => {
+      const entry = prev[c.id]
+      if (!entry) return prev
+      return { ...prev, [c.id]: { ...entry, events: entry.events.map(e => e.id === tempId ? real : e) } }
+    })
+  }
+  const rollbackTempEvent = (tempId: number) => {
+    setEvents(prev => prev.filter(e => e.id !== tempId))
+    setCandidatureDataMap(prev => {
+      const entry = prev[c.id]
+      if (!entry) return prev
+      return { ...prev, [c.id]: { ...entry, events: entry.events.filter(e => e.id !== tempId) } }
+    })
+  }
+  // Kept as a fallback for callers that don't drive the optimistic path.
+  const handleNotePublished = prependEvent
 
   return (
     <div className="space-y-6">
@@ -450,6 +470,9 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         currentUserSlug={currentUserSlug}
         currentUserName={currentUserName}
         onNotePublished={handleNotePublished}
+        onOptimisticPrepend={prependEvent}
+        onReplaceTemp={replaceTempEvent}
+        onRollbackTemp={rollbackTempEvent}
         historyAnchorId={HISTORY_ANCHOR}
       />
 

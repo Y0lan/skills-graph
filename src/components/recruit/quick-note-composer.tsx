@@ -6,6 +6,15 @@ import { Textarea } from '@/components/ui/textarea'
 import InitialsBadge from '@/components/ui/initials-badge'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
+// Negative ids stay reliably distinct from server-assigned ids (auto-
+// increment integer, always positive) and survive the eventual
+// reconciliation by being replaced with the real row.
+let tempIdSeq = 0
+function nextTempId(): number {
+  tempIdSeq -= 1
+  return tempIdSeq
+}
+
 /**
  * Inline, always-available composer for free-form markdown notes on a
  * candidature. Sits at the top of the recent journal so the recruiter
@@ -36,15 +45,51 @@ export interface QuickNoteComposerProps {
   /** Called with the new event row after a successful POST. Caller uses
    *  this to prepend the row to the event list. */
   onPublished: (event: CandidatureEvent) => void
+  /** Optional optimistic-render hooks. When supplied, the composer
+   *  prepends a temp event keyed by the negative id BEFORE the POST
+   *  fires, calls `onReplaceTemp(tempId, real)` after success, and
+   *  `onRollbackTemp(tempId)` on failure. Callers that don't need
+   *  optimism can omit both — the composer falls back to the
+   *  publish-after-success path. */
+  onOptimisticPrepend?: (tempEvent: CandidatureEvent) => void
+  onReplaceTemp?: (tempId: number, real: CandidatureEvent) => void
+  onRollbackTemp?: (tempId: number) => void
 }
 
-export default function QuickNoteComposer({ candidatureId, currentUserSlug, currentUserName, onPublished }: QuickNoteComposerProps) {
+export default function QuickNoteComposer({
+  candidatureId, currentUserSlug, currentUserName,
+  onPublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp,
+}: QuickNoteComposerProps) {
   const [value, setValue] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const submit = useCallback(async () => {
     const trimmed = value.trim()
     if (!trimmed || submitting) return
+
+    // Optimistic prepend: mint a temp event with a negative id, push it
+    // to the timeline immediately, clear the textarea, and reconcile
+    // when the server responds. Falls back to publish-after-success
+    // when the caller didn't wire the optimistic hooks.
+    const optimistic = !!(onOptimisticPrepend && onReplaceTemp && onRollbackTemp)
+    let tempId = 0
+    if (optimistic) {
+      tempId = nextTempId()
+      const tempEvent: CandidatureEvent = {
+        id: tempId,
+        type: 'note',
+        statutFrom: null,
+        statutTo: null,
+        notes: null,
+        contentMd: trimmed,
+        emailSnapshot: null,
+        createdBy: currentUserSlug,
+        createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      }
+      onOptimisticPrepend!(tempEvent)
+      setValue('')
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch(`/api/recruitment/candidatures/${encodeURIComponent(candidatureId)}/events/note`, {
@@ -57,17 +102,27 @@ export default function QuickNoteComposer({ candidatureId, currentUserSlug, curr
       if (!res.ok) {
         throw new Error(body.error || `HTTP ${res.status}`)
       }
-      // Server returns the stored row in camelCase (matches
-      // CandidatureEvent). Prepend it to the caller's event list.
-      onPublished(body as CandidatureEvent)
-      setValue('')
+      const real = body as CandidatureEvent
+      if (optimistic) {
+        onReplaceTemp!(tempId, real)
+      } else {
+        onPublished(real)
+        setValue('')
+      }
       toast.success('Note publiée')
     } catch (err) {
+      if (optimistic) {
+        onRollbackTemp!(tempId)
+        // Restore the textarea so the recruiter doesn't lose their text
+        // when the publish fails — pasting a markdown note again is
+        // exactly the kind of friction we removed.
+        setValue(trimmed)
+      }
       toast.error(err instanceof Error ? err.message : 'Erreur — note non publiée')
     } finally {
       setSubmitting(false)
     }
-  }, [value, candidatureId, onPublished, submitting])
+  }, [value, candidatureId, currentUserSlug, onPublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp, submitting])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {

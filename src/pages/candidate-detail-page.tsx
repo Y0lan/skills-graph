@@ -722,14 +722,16 @@ export default function CandidateDetailPage() {
           candidatures={candidatures}
           topSkills={topSkills}
           onToggleProfile={candidate.aiProfile ? () => setProfileExpanded(v => !v) : undefined}
+          profileExpanded={profileExpanded}
         />
 
         {/* Full LinkedIn-style profile card — lives RIGHT UNDER the
             identity strip as a disclosure so it's easy to find but
-            doesn't clutter the scan. No more duplicate "profile at top
-            AND at bottom" anti-pattern. */}
+            doesn't clutter the scan. The id matches `aria-controls` on
+            the toggle in CandidateIdentityStrip so screen readers can
+            navigate the disclosure properly. */}
         {candidate.aiProfile && profileExpanded && (
-          <div className="mb-6">
+          <div className="mb-6" id="candidate-profile-disclosure">
             <CandidateProfileCard
               candidateId={candidate.id}
               profile={candidate.aiProfile as unknown as AiProfile}

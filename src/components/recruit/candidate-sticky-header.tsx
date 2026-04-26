@@ -54,6 +54,13 @@ export default function CandidateStickyHeader({
   return (
     <div
       aria-hidden={!visible}
+      // `inert` keeps focus + screen-readers out of the bar while it's
+      // translated off-screen, so the CTA can't be tabbed into when
+      // hidden (an `aria-hidden` element with a focusable descendant is
+      // a documented a11y anti-pattern). The runtime cast is the safest
+      // way to set the boolean attribute without TS yelling on older
+      // React types.
+      {...({ inert: visible ? undefined : '' } as Record<string, string | undefined>)}
       className={`sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b transition-transform duration-200 motion-reduce:transition-none ${
         visible ? 'translate-y-0 shadow-sm' : '-translate-y-full'
       }`}
@@ -81,6 +88,7 @@ export default function CandidateStickyHeader({
               size="sm"
               onClick={() => onOpenTransition(candidature.id, primary, candidature.statut)}
               disabled={changingStatus}
+              tabIndex={visible ? 0 : -1}
               className="h-8 gap-1.5 text-xs"
             >
               <ChevronRight className="h-3.5 w-3.5" />

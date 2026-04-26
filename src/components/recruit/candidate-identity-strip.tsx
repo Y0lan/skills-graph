@@ -35,6 +35,10 @@ export interface CandidateIdentityStripProps {
   candidatures: CandidatureLike[]
   topSkills: TopSkill[]
   onToggleProfile?: () => void
+  /** Whether the detailed profile is currently visible. Drives the
+   *  toggle copy ("Voir" → "Masquer") and the `aria-expanded` state so
+   *  screen readers know whether the disclosed region is open. */
+  profileExpanded?: boolean
 }
 
 function formatYearMonth(dateStr: string | null | undefined): string {
@@ -58,6 +62,7 @@ export default function CandidateIdentityStrip({
   candidatures,
   topSkills,
   onToggleProfile,
+  profileExpanded = false,
 }: CandidateIdentityStripProps) {
   const profile = candidate.aiProfile as Partial<AiProfile> | null | undefined
   const profileRole = profile?.currentRole?.role?.value
@@ -110,9 +115,11 @@ export default function CandidateIdentityStrip({
               <button
                 type="button"
                 onClick={onToggleProfile}
+                aria-expanded={profileExpanded}
+                aria-controls="candidate-profile-disclosure"
                 className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
               >
-                Voir profil détaillé ▸
+                {profileExpanded ? 'Masquer le profil détaillé ▾' : 'Voir le profil détaillé ▸'}
               </button>
             )}
           </div>

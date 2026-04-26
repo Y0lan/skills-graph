@@ -11,7 +11,6 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { ArrowLeft, ChevronRight, Send, BarChart3, Loader2 } from 'lucide-react'
-import { STATUT_LABELS } from '@/lib/constants'
 import StarToggle from '@/components/recruit/star-toggle'
 
 interface ShortlistItem {
