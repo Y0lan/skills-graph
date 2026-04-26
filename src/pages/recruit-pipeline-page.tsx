@@ -768,26 +768,9 @@ export default function RecruitPipelinePage() {
                   </button>
                 ) : null}
               </div>
-              {/* Secondary: per-statut counts for precision users. Kept
-                  below the pills and made compact — primary interaction
-                  is the pills above and the exact-statut dropdown in the
-                  toolbar. */}
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground/80 tabular-nums mt-2">
-                {['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition', 'embauche'].map(k => {
-                  const n = stats.statusBreakdown?.[k] ?? 0
-                  if (n === 0) return null
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => { setFilterStatut(prev => prev === k ? 'all' : k); setScrollTrigger(x => x + 1) }}
-                      className={`hover:text-foreground transition-colors ${filterStatut === k ? 'text-foreground font-medium' : ''}`}
-                    >
-                      {STATUT_LABELS[k] ?? k} <span className="text-foreground font-medium">{n}</span>
-                    </button>
-                  )
-                })}
-              </div>
+              {/* Per-statut precision filter is the toolbar dropdown,
+                  not a redundant counts row. Codex audit flagged the
+                  duplicated row as noise on top of the pills. */}
             </div>
           </div>
         )}

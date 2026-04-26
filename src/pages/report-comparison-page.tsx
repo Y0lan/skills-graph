@@ -496,7 +496,10 @@ export default function ReportComparisonPage() {
               </tr>
             </thead>
             <tbody>
-              {candidates.map(b => {
+              {/* Codex audit: this is the print summary table — must
+                  reflect only the user's selected candidatures, not
+                  every candidature attached to the poste. */}
+              {selectedBundles.map(b => {
                 const { row } = b
                 return (
                   <tr key={row.id} className="border-b border-gray-200">
@@ -520,11 +523,11 @@ export default function ReportComparisonPage() {
         </div>
 
         {/* Aboro summary (existing print section) */}
-        {candidates.some(b => b.aboro) && (
+        {selectedBundles.some(b => b.aboro) && (
           <div>
             <h2 className="text-lg font-bold border-b pb-1 mb-3">Profils comportementaux</h2>
             <div className="grid grid-cols-2 gap-4">
-              {candidates.filter(b => b.aboro).map(b => (
+              {selectedBundles.filter(b => b.aboro).map(b => (
                 <div key={b.row.id} className="border rounded p-3">
                   <p className="font-medium text-sm mb-1">{b.row.candidateName}</p>
                   {b.aboro!.talents.length > 0 && (

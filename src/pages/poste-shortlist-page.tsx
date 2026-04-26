@@ -354,10 +354,14 @@ export default function PosteShortlistPage() {
                 <Select value={outreachStatut} onValueChange={(v) => setOutreachStatut(v ?? 'skill_radar_envoye')}>
                   <SelectTrigger id="outreach-statut"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="skill_radar_envoye">{STATUT_LABELS.skill_radar_envoye}</SelectItem>
-                    <SelectItem value="preselectionne">{STATUT_LABELS.preselectionne}</SelectItem>
-                    <SelectItem value="entretien_1">{STATUT_LABELS.entretien_1}</SelectItem>
-                    <SelectItem value="entretien_2">{STATUT_LABELS.entretien_2}</SelectItem>
+                    {/* Action-verb labels for the bulk send dialog —
+                        the user is choosing what to DO, not viewing
+                        a candidate's current state. STATUT_LABELS
+                        elsewhere remains past-participle ("envoyé"). */}
+                    <SelectItem value="skill_radar_envoye">Envoyer Skill Radar</SelectItem>
+                    <SelectItem value="preselectionne">Pré-sélectionner</SelectItem>
+                    <SelectItem value="entretien_1">Convoquer entretien 1</SelectItem>
+                    <SelectItem value="entretien_2">Convoquer entretien 2</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
