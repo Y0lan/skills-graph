@@ -513,12 +513,14 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
   const summary = computeSummary(events, documents)
   const deliveryMap = buildDeliveryStatusMap(events)
 
-  // Default open: current stage + previous stage
+  // Default open: ONLY the current stage. The `Journal récent` block at
+  // the top of the workspace now covers the "last 5 events" at-a-glance
+  // scan, so the full historique can start compact. Recruiters who want
+  // to read the whole trail expand stages one by one.
   const currentGroupIndex = groups.findIndex(g => g.statut === currentStatut)
   const defaultOpen: number[] = []
   if (currentGroupIndex >= 0) defaultOpen.push(currentGroupIndex)
-  if (currentGroupIndex > 0) defaultOpen.push(currentGroupIndex - 1)
-  // If refused, show refuse + previous
+  // If refused, open refuse + the exit stage
   if (currentStatut === 'refuse') {
     const refuseIdx = groups.findIndex(g => g.statut === 'refuse')
     if (refuseIdx >= 0) defaultOpen.push(refuseIdx)

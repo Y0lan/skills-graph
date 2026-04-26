@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Check, X, SkipForward, HelpCircle } from 'lucide-react'
 import { STATUT_LABELS, STATUT_COLORS, STATUT_DESCRIPTIONS, NEXT_ACTION, formatDateShort } from '@/lib/constants'
-import type { CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
+import type { CandidatureInfo, CandidatureEvent, AllowedTransitions } from '@/hooks/use-candidate-data'
 
 /** Pipeline column order — mirrors kanban-board.tsx */
 const COLUMN_ORDER = [
@@ -85,13 +85,32 @@ function getLastEvent(events: CandidatureEvent[]): string | null {
 export interface CandidatePipelineStepperProps {
   candidature: CandidatureInfo
   events: CandidatureEvent[]
+  /** Authoritative transitions from the backend. When provided, the
+   *  "Action suivante" line reflects the real state machine (vs the
+   *  static NEXT_ACTION map), so a terminal candidate or a candidature
+   *  awaiting the candidate never shows a misleading recommendation. */
+  allowedTransitions?: AllowedTransitions | null
 }
 
-export default function CandidatePipelineStepper({ candidature, events }: CandidatePipelineStepperProps) {
+export default function CandidatePipelineStepper({ candidature, events, allowedTransitions }: CandidatePipelineStepperProps) {
   const steps = computeSteps(candidature, events)
   const currentStepIndex = steps.findIndex(s => s.state === 'current' || s.state === 'refused')
   const lastEvent = getLastEvent(events)
-  const nextAction = candidature.statut !== 'refuse' ? NEXT_ACTION[candidature.statut] : null
+  // Derive the displayed "Action suivante" from allowedTransitions when the
+  // prop is supplied — that's the authoritative state machine. Fall back
+  // to the static NEXT_ACTION hint when no transitions prop is passed
+  // (callers that render the stepper in read-only contexts).
+  const forward = (allowedTransitions?.allowedTransitions ?? []).filter(s => s !== 'refuse')
+  const isTerminal = candidature.statut === 'embauche' || candidature.statut === 'refuse'
+  const nextAction: string | null = (() => {
+    if (isTerminal) return null
+    if (allowedTransitions !== undefined) {
+      if (!allowedTransitions || forward.length === 0) return null
+      const target = forward[0]
+      return `Passer à ${STATUT_LABELS[target] ?? target}`
+    }
+    return candidature.statut !== 'refuse' ? NEXT_ACTION[candidature.statut] : null
+  })()
 
   return (
     <div className="space-y-3">
@@ -184,11 +203,15 @@ export default function CandidatePipelineStepper({ candidature, events }: Candid
       {/* Last event + next action + stages legend */}
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground items-center">
         {lastEvent && (
-          <span>Dernier evenement : {lastEvent}</span>
+          <span>Dernier évènement : {lastEvent}</span>
         )}
-        {nextAction && (
+        {nextAction ? (
           <span className="text-primary font-medium">Action suivante : {nextAction}</span>
-        )}
+        ) : allowedTransitions !== undefined && isTerminal ? (
+          <span className="italic">Candidature en état terminal</span>
+        ) : allowedTransitions !== undefined && forward.length === 0 ? (
+          <span className="italic">Aucune action disponible</span>
+        ) : null}
         <Tooltip>
           <TooltipTrigger className="inline-flex items-center gap-1 text-muted-foreground/70 hover:text-foreground cursor-help ml-auto">
             <HelpCircle className="h-3.5 w-3.5" />

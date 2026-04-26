@@ -10,6 +10,8 @@ import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candi
 import CandidateIdentityStrip from '@/components/recruit/candidate-identity-strip'
 import CandidatureSwitcher from '@/components/recruit/candidature-switcher'
 import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
+import CandidateStickyHeader from '@/components/recruit/candidate-sticky-header'
+import ConfirmDialog from '@/components/recruit/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +40,8 @@ import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
 import { useNavigate } from 'react-router-dom'
+import { authClient } from '@/lib/auth-client'
+import { findMember } from '@/data/team-roster'
 
 function AiInstructionBar({
   value,
@@ -141,17 +145,50 @@ export default function CandidateDetailPage() {
   const [reextracting, setReextracting] = useState(false)
   const [revertingStatus, setRevertingStatus] = useState<string | null>(null)
   const [sendingNow, setSendingNow] = useState<string | null>(null)
-  const [profileExpanded, setProfileExpanded] = useState<boolean>(() =>
-    typeof window !== 'undefined' && localStorage.getItem('candidate-profile-expanded') === 'true'
-  )
 
-  // Persist profile-expanded state so the recruiter's choice survives
-  // tab reloads. The localStorage key is shared with any other component
-  // that might show a profile toggle.
+  // Confirm dialogs (replacement for native window.confirm — accessible,
+  // styled, focus-trapped). Each action type owns its own pending state
+  // so we don't conflate a "revert in progress" with an "unconfirmed
+  // send-now" in the same boolean.
+  const [pendingRevert, setPendingRevert] = useState<{ candidatureId: string; emailState: 'sent' | 'scheduled' | 'none' } | null>(null)
+  const [pendingSendNow, setPendingSendNow] = useState<string | null>(null)
+
+  // Profile disclosure state is stored PER candidate so the recruiter's
+  // "I want to see the full dossier" decision doesn't bleed from one
+  // person to the next. A one-time migration seeds the per-candidate key
+  // from the legacy global key so folks who had it open before the change
+  // keep their preference.
+  const profileStorageKey = candidate ? `candidate-profile-expanded:${candidate.id}` : null
+  const [profileExpanded, setProfileExpanded] = useState<boolean>(false)
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    localStorage.setItem('candidate-profile-expanded', String(profileExpanded))
-  }, [profileExpanded])
+    if (typeof window === 'undefined' || !profileStorageKey) return
+    const perCandidate = localStorage.getItem(profileStorageKey)
+    if (perCandidate === 'true' || perCandidate === 'false') {
+      setProfileExpanded(perCandidate === 'true')
+      return
+    }
+    // No per-candidate entry yet. Seed from the legacy global flag once so
+    // existing users aren't surprised by a fresh-collapse after deploy.
+    const legacy = localStorage.getItem('candidate-profile-expanded')
+    const initial = legacy === 'true'
+    setProfileExpanded(initial)
+    localStorage.setItem(profileStorageKey, String(initial))
+  }, [profileStorageKey])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !profileStorageKey) return
+    localStorage.setItem(profileStorageKey, String(profileExpanded))
+  }, [profileExpanded, profileStorageKey])
+
+  // Current recruiter identity — used by the quick-note composer to render
+  // its own avatar next to the textarea. Authoritative creator lookup is
+  // performed server-side; this is purely cosmetic.
+  const { data: session } = authClient.useSession()
+  const currentUserSlug = (session?.user?.slug as string | undefined) ?? 'unknown'
+  const currentUserName = useMemo(() => {
+    const member = findMember(currentUserSlug)
+    return member?.name ?? (session?.user?.email as string | undefined) ?? null
+  }, [currentUserSlug, session?.user?.email])
 
   // Currently selected candidature id (for multi-candidature candidates).
   // Synced to URL query ?c=<id> via useSearchParams so deep-links work
@@ -363,13 +400,18 @@ export default function CandidateDetailPage() {
     return () => window.removeEventListener('focus', onFocus)
   }, [id, setCandidatures])
 
-  const handleRevertStatus = useCallback(async (candidatureId: string, emailState: 'sent' | 'scheduled' | 'none') => {
-    const msg = emailState === 'sent'
-      ? "⚠️ L'email a DÉJÀ été envoyé au candidat.\n\nAnnuler la transition ne rappellera pas l'email — le candidat l'a déjà reçu.\n\nContinuer quand même ? (utile uniquement pour corriger l'état interne)"
-      : emailState === 'scheduled'
-        ? "Annuler la dernière transition ? L'email programmé sera annulé avant envoi, et la candidature reviendra au statut précédent."
-        : "Annuler la dernière transition ? La candidature revient au statut précédent. Aucun email n'est envoyé automatiquement."
-    if (!confirm(msg)) return
+  const handleRevertStatus = useCallback((candidatureId: string, emailState: 'sent' | 'scheduled' | 'none') => {
+    // Queue the revert in pending state so ConfirmDialog can ask the
+    // recruiter before we hit the backend. The actual revert work is in
+    // `confirmRevertStatus` below; we separate the two so the UI stays
+    // responsive while the dialog is open.
+    setPendingRevert({ candidatureId, emailState })
+  }, [])
+
+  const confirmRevertStatus = useCallback(async () => {
+    if (!pendingRevert) return
+    const { candidatureId } = pendingRevert
+    setPendingRevert(null)
     setRevertingStatus(candidatureId)
     try {
       const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/revert-status`, {
@@ -403,10 +445,16 @@ export default function CandidateDetailPage() {
     } finally {
       setRevertingStatus(null)
     }
-  }, [setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
+  }, [pendingRevert, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
-  const handleSendNow = useCallback(async (candidatureId: string) => {
-    if (!confirm("Envoyer l'email maintenant, sans attendre la fin des 10 minutes ? Cette action est irréversible — le candidat recevra l'email immédiatement.")) return
+  const handleSendNow = useCallback((candidatureId: string) => {
+    setPendingSendNow(candidatureId)
+  }, [])
+
+  const confirmSendNow = useCallback(async () => {
+    const candidatureId = pendingSendNow
+    if (!candidatureId) return
+    setPendingSendNow(null)
     setSendingNow(candidatureId)
     try {
       const res = await fetch(`/api/recruitment/candidatures/${candidatureId}/email/send-now`, {
@@ -434,7 +482,7 @@ export default function CandidateDetailPage() {
     } finally {
       setSendingNow(null)
     }
-  }, [setEvents, setCandidatureDataMap])
+  }, [pendingSendNow, setEvents, setCandidatureDataMap])
 
   // Wrap openTransitionDialog to inject candidate name & role & currentStatut
   // and the evaluationUrl for transitions that link the candidate to the
@@ -455,16 +503,27 @@ export default function CandidateDetailPage() {
     )
   }, [openTransitionDialog, candidate])
 
-  // Fetch sibling candidates for prev/next navigation
+  // Fetch sibling candidates for prev/next navigation. Side effects in a
+  // `useState` initializer are wrong in React — Strict Mode can call
+  // initializers twice, the closure captures stale state, and there is no
+  // cleanup path. This is the proper effect with an AbortController so a
+  // tab switch doesn't race with a mount unmount and call setState on a
+  // torn-down component.
   const [siblings, setSiblings] = useState<{ id: string; name: string }[]>([])
-  useState(() => {
-    fetch('/api/candidates', { credentials: 'include' })
+  useEffect(() => {
+    const ac = new AbortController()
+    fetch('/api/candidates', { credentials: 'include', signal: ac.signal })
       .then(r => r.ok ? r.json() : [])
-      .then((all: { id: string; name: string }[]) => setSiblings(all))
+      .then((all: unknown) => {
+        if (ac.signal.aborted) return
+        if (Array.isArray(all)) setSiblings(all as { id: string; name: string }[])
+      })
       .catch((err) => {
+        if ((err as Error)?.name === 'AbortError') return
         console.error('Failed to load sibling candidates:', err)
       })
-  })
+    return () => ac.abort()
+  }, [])
   const currentIndex = siblings.findIndex(c => c.id === id)
   const prevCandidate = currentIndex > 0 ? siblings[currentIndex - 1] : null
   const nextCandidate = currentIndex >= 0 && currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null
@@ -486,7 +545,7 @@ export default function CandidateDetailPage() {
   }, [id, setCandidate])
 
   // File drop handler for the transition dialog
-  const handleFileDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+  const handleFileDrop = useCallback((e: React.DragEvent<HTMLElement>) => {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
     if (file) setTransitionFile(file)
@@ -607,6 +666,19 @@ export default function CandidateDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
+      {/* Sticky compact header that slides in once the identity strip has
+          scrolled off. Primary CTA is derived from allowedTransitions so a
+          terminal candidate or one awaiting the candidate never shows a
+          dead button. Respects prefers-reduced-motion via the component. */}
+      <CandidateStickyHeader
+        candidateName={candidate.name}
+        candidature={selectedCandidature}
+        allowedTransitions={selectedTransitions}
+        changingStatus={changingStatus}
+        onOpenTransition={(candidatureId, targetStatut, currentStatut) =>
+          handleOpenTransition(candidatureId, targetStatut, false, [], currentStatut)
+        }
+      />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
         {/* ── BACK + NAVIGATION ── */}
         <div className="flex items-center justify-between mb-4">
@@ -762,6 +834,8 @@ export default function CandidateDetailPage() {
             onOpenTransition={handleOpenTransition}
             onRevert={handleRevertStatus}
             onSendNow={handleSendNow}
+            currentUserSlug={currentUserSlug}
+            currentUserName={currentUserName}
           />
         )}
 
@@ -795,6 +869,37 @@ export default function CandidateDetailPage() {
                 )}
               </AlertDialogDescription>
             </AlertDialogHeader>
+
+            {/* Mobile context header — shown ONLY below md. The aside
+                below is hidden on mobile, so without this compact header
+                the recruiter composes an email without any scores or
+                dossier indicators to anchor the decision. */}
+            {transitionDialog && (() => {
+              const tCand = candidatures.find(c => c.id === transitionDialog.candidatureId)
+              const tDocs = tCand ? (candidatureDataMap?.[tCand.id]?.documents ?? documents) : []
+              const has = (type: string) => tDocs.some(d => d.type === type && !d.deleted_at)
+              const current = transitionDialog.currentStatut ?? tCand?.statut ?? ''
+              const target = transitionDialog.targetStatut
+              return (
+                <div className="md:hidden rounded-md border bg-muted/30 px-3 py-2 text-xs space-y-1 mb-2">
+                  <p className="font-medium text-foreground truncate">{candidate.name}</p>
+                  {tCand && <p className="text-muted-foreground truncate">{tCand.posteTitre}</p>}
+                  <p className="text-muted-foreground">
+                    {STATUT_LABELS[current] ?? current} → <span className="font-medium text-foreground">{STATUT_LABELS[target] ?? target}</span>
+                  </p>
+                  {tCand && (tCand.tauxGlobal !== null || tCand.tauxPoste !== null || tCand.tauxEquipe !== null) && (
+                    <p className="tabular-nums">
+                      {tCand.tauxGlobal !== null && <>Global <span className="text-foreground font-medium">{Math.round(tCand.tauxGlobal)}%</span> · </>}
+                      {tCand.tauxPoste !== null && <>Poste <span className="text-foreground font-medium">{Math.round(tCand.tauxPoste)}%</span> · </>}
+                      {tCand.tauxEquipe !== null && <>Équipe <span className="text-foreground font-medium">{Math.round(tCand.tauxEquipe)}%</span></>}
+                    </p>
+                  )}
+                  <p className="text-muted-foreground">
+                    CV {has('cv') ? '✓' : '—'} · Lettre {has('lettre') ? '✓' : '—'} · Aboro {has('aboro') ? '✓' : '—'}
+                  </p>
+                </div>
+              )
+            })()}
 
             <div className="py-2 grid gap-5 md:grid-cols-[240px_1fr]">
               {/* LEFT COLUMN — read-only context. The recruiter can glance
@@ -1160,23 +1265,23 @@ export default function CandidateDetailPage() {
                       </Badge>
                     </div>
                   ) : (
-                    <div
+                    <label
+                      htmlFor="transition-file-input"
                       onDrop={handleFileDrop}
                       onDragOver={(e) => e.preventDefault()}
-                      className="border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
-                      onClick={() => document.getElementById('transition-file-input')?.click()}
+                      className="block border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors focus-within:ring-2 focus-within:ring-primary/50"
                     >
-                      <Upload className="h-4 w-4 mx-auto text-muted-foreground" />
+                      <Upload className="h-4 w-4 mx-auto text-muted-foreground" aria-hidden />
                       <p className="text-xs text-muted-foreground mt-1">
                         Glisser un fichier ou cliquer pour ajouter
                       </p>
                       <input
                         id="transition-file-input"
                         type="file"
-                        className="hidden"
+                        className="sr-only"
                         onChange={handleFileSelect}
                       />
-                    </div>
+                    </label>
                   )}
                 </div>
 
@@ -1233,6 +1338,38 @@ export default function CandidateDetailPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Confirm dialogs replacing native window.confirm(). Focus trap,
+            ESC close, and AA-contrast styling come from the base-ui
+            AlertDialog primitive. Copy varies by emailState so the
+            recruiter reads the exact consequence before confirming. */}
+        <ConfirmDialog
+          open={!!pendingRevert}
+          onOpenChange={(open) => { if (!open) setPendingRevert(null) }}
+          title="Annuler la dernière transition ?"
+          description={
+            pendingRevert?.emailState === 'sent'
+              ? "L'email a déjà été envoyé au candidat. L'annulation corrige uniquement l'état interne — elle ne rappelle pas l'email."
+              : pendingRevert?.emailState === 'scheduled'
+                ? "L'email programmé sera annulé avant envoi, et la candidature reviendra au statut précédent."
+                : "La candidature revient au statut précédent. Aucun email n'est envoyé automatiquement."
+          }
+          confirmLabel="Confirmer l'annulation"
+          tone={pendingRevert?.emailState === 'sent' ? 'destructive' : 'default'}
+          confirmDisabled={!!revertingStatus}
+          onConfirm={() => { void confirmRevertStatus() }}
+        />
+
+        <ConfirmDialog
+          open={!!pendingSendNow}
+          onOpenChange={(open) => { if (!open) setPendingSendNow(null) }}
+          title="Envoyer l'email maintenant ?"
+          description="Cette action est irréversible — le candidat recevra l'email immédiatement, sans attendre la fin de la fenêtre de 10 minutes."
+          confirmLabel="Envoyer maintenant"
+          tone="default"
+          confirmDisabled={!!sendingNow}
+          onConfirm={() => { void confirmSendNow() }}
+        />
 
       </div>
     </div>

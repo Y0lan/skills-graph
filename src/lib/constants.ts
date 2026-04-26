@@ -40,6 +40,30 @@ export const NEXT_ACTION: Record<string, string> = {
   embauche: 'Onboarding',
 }
 
+/** Consequence line shown under each transition button so the recruiter
+ *  knows what the click actually does. `targetStatut` is the state the
+ *  click would put the candidature into. The map intentionally covers
+ *  every forward transition plus refuse — callers fall back to the
+ *  generic string when a novel transition is added. */
+export const TRANSITION_CONSEQUENCES: Record<string, string> = {
+  preselectionne: 'Programme un email de présélection (envoyable dans 10 min)',
+  skill_radar_envoye: 'Envoie le lien d\'évaluation au candidat',
+  skill_radar_complete: 'Aucun email — marque le radar comme reçu',
+  entretien_1: 'Programme une convocation par email (envoyable dans 10 min)',
+  aboro: 'Programme la convocation Aboro avec la date choisie',
+  entretien_2: 'Programme une convocation par email (envoyable dans 10 min)',
+  proposition: 'Programme l\'email de proposition (envoyable dans 10 min)',
+  embauche: 'Programme le mail de bienvenue — action terminale',
+  refuse: 'Envoie un email de refus (obligatoire) — action terminale',
+}
+
+/** Copy the consequence line derived from a target statut. Falls back to
+ *  a generic "aucun email" phrase for statuts without a mapped
+ *  consequence — tells the recruiter the click is safe and internal-only. */
+export function transitionConsequence(targetStatut: string): string {
+  return TRANSITION_CONSEQUENCES[targetStatut] ?? 'Aucun email — transition interne'
+}
+
 export const STATUT_COLORS: Record<string, string> = {
   postule: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
   preselectionne: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300',
