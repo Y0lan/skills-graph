@@ -9,7 +9,7 @@ import { getDb } from '../lib/db.js'
 import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, cancelScheduledEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
 import { previewizeEmailHtml } from '../lib/brand.js'
-import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown } from '../lib/compatibility.js'
+import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown, calculatePosteCompatibility, calculateEquipeCompatibility } from '../lib/compatibility.js'
 import { loadEffectiveRatings, rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
 import { extractPosteRequirements, MissingApiKeyError, type PosteRequirement } from '../lib/poste-requirements-extraction.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
@@ -3405,6 +3405,132 @@ protectedRouter.delete('/shortlist/:candidatureId', mutationRateLimit, (req, res
     'DELETE FROM user_shortlists WHERE user_id = ? AND candidature_id = ?',
   ).run(user.id, req.params.candidatureId)
   res.json({ ok: true, removed: result.changes })
+})
+
+// ─── Cross-poste comparison (#6 — feature literally asked for) ──────
+// Compare candidates across different source postes against a chosen
+// TARGET poste. Honest scope: BASELINE ratings only — role-aware
+// suggestions on each candidature were generated against the SOURCE
+// poste's fiche, so reusing them in a cross-poste compare would mix
+// requirements. UI surfaces a banner saying "score sans relecture
+// role-aware" so the limitation is explicit.
+//
+// The math (calculatePosteCompatibility) accepts arbitrary posteId
+// already; the only honest restriction is which ratings we feed it.
+//
+// Returns the SAME shape as GET /postes/:posteId/comparison so the
+// existing report page renders without a fork — plus extra per-row
+// sourcePosteTitre / sourcePostePole + a `mode` flag the UI uses to
+// show the cross-poste banner and source-poste badges.
+
+protectedRouter.post('/reports/cross-poste-comparison', (req, res) => {
+  const body = req.body as { targetPosteId?: unknown; candidatureIds?: unknown }
+  if (typeof body.targetPosteId !== 'string' || !body.targetPosteId) {
+    res.status(400).json({ error: 'targetPosteId requis' })
+    return
+  }
+  if (!Array.isArray(body.candidatureIds) || body.candidatureIds.length === 0) {
+    res.status(400).json({ error: 'candidatureIds requis (array, ≥1)' })
+    return
+  }
+  const ids = body.candidatureIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+  if (ids.length === 0) {
+    res.status(400).json({ error: 'aucun candidatureId valide' })
+    return
+  }
+  if (ids.length > 50) {
+    res.status(400).json({ error: 'Trop de candidats (max 50)' })
+    return
+  }
+
+  const targetPoste = getDb().prepare(
+    'SELECT id, titre, role_id, pole FROM postes WHERE id = ?',
+  ).get(body.targetPosteId) as { id: string; titre: string; role_id: string; pole: string } | undefined
+  if (!targetPoste) {
+    res.status(404).json({ error: 'Poste cible introuvable' })
+    return
+  }
+
+  const roleCategories = getRoleCategories(targetPoste.role_id)
+  const categories = getSkillCategories()
+
+  const placeholders = ids.map(() => '?').join(',')
+  const rows = getDb().prepare(`
+    SELECT c.id, c.candidate_id, c.poste_id, c.statut, c.canal,
+      c.created_at, c.updated_at,
+      cand.name, cand.email, cand.ratings, cand.ai_suggestions,
+      cand.cv_text IS NOT NULL as has_cv,
+      cand.submitted_at as evaluation_submitted,
+      (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
+      (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
+      p_source.titre as source_poste_titre,
+      p_source.pole as source_poste_pole,
+      c.taux_soft_skills,
+      c.soft_skill_alerts
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p_source ON p_source.id = c.poste_id
+    WHERE c.id IN (${placeholders}) AND c.statut != 'refuse'
+  `).all(...ids) as Array<{
+    id: string; candidate_id: string; poste_id: string; statut: string; canal: string
+    created_at: string; updated_at: string; name: string; email: string | null
+    ratings: string | null; ai_suggestions: string | null
+    has_cv: number; evaluation_submitted: string | null
+    has_lettre: number | null; last_event_at: string | null
+    source_poste_titre: string; source_poste_pole: string
+    taux_soft_skills: number | null; soft_skill_alerts: string | null
+  }>
+
+  const enriched = rows.map(r => {
+    const ratings = safeJsonParse<Record<string, number>>(r.ratings ?? '{}', {})
+    const aiSuggestions = safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
+    // Baseline-only — role_aware_suggestions intentionally NOT
+    // included (they were generated against r.poste_id, not target).
+    const effective = { ...aiSuggestions, ...ratings }
+
+    const tauxPoste = calculatePosteCompatibility(effective, targetPoste.id)
+    const tauxEquipe = calculateEquipeCompatibility(effective, targetPoste.role_id)
+    const tauxSoft = r.taux_soft_skills
+    const tauxGlobal = calculateGlobalScore(tauxPoste, tauxEquipe, tauxSoft)
+    const gaps = computeRoleGaps(effective, categories, roleCategories)
+
+    return {
+      id: r.id,
+      candidateId: r.candidate_id,
+      posteId: r.poste_id,
+      statut: r.statut,
+      canal: r.canal,
+      candidateName: r.name,
+      candidateEmail: r.email,
+      hasCv: !!r.has_cv,
+      hasLettre: !!r.has_lettre,
+      evaluationSubmitted: !!r.evaluation_submitted,
+      tauxPoste,
+      tauxEquipe,
+      tauxSoft,
+      softSkillAlerts: safeJsonParse<{ trait: string; value: number; threshold: number; message: string }[]>(r.soft_skill_alerts, []),
+      tauxGlobal,
+      notesDirecteur: null,
+      ratings: effective,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      lastEventAt: r.last_event_at,
+      rank: 0,
+      gaps,
+      sourcePosteTitre: r.source_poste_titre,
+      sourcePostePole: r.source_poste_pole,
+    }
+  })
+
+  enriched.sort((a, b) => (b.tauxGlobal ?? 0) - (a.tauxGlobal ?? 0))
+  enriched.forEach((row, idx) => { row.rank = idx + 1 })
+
+  res.json({
+    poste: { id: targetPoste.id, titre: targetPoste.titre, roleId: targetPoste.role_id, pole: targetPoste.pole },
+    roleCategories,
+    candidatures: enriched,
+    mode: 'cross-poste-baseline',
+  })
 })
 
 // Mount protected routes

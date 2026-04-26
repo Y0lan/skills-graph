@@ -53,7 +53,15 @@ interface EnrichedCandidature {
 interface ComparisonPayload {
   poste: { id: string; titre: string; roleId: string }
   roleCategories: string[]
-  candidatures: EnrichedCandidature[]
+  candidatures: Array<EnrichedCandidature & {
+    sourcePosteTitre?: string
+    sourcePostePole?: string
+  }>
+  /** When `cross-poste-baseline`, scores were recomputed against the
+   *  target poste using baseline (ai_suggestions + ratings) only —
+   *  role-aware suggestions from the source poste are intentionally
+   *  excluded. UI surfaces a banner explaining the limitation. */
+  mode?: 'cross-poste-baseline'
 }
 
 interface CategoryInfo {
@@ -124,8 +132,20 @@ export default function ReportComparisonPage() {
     const loadData = async () => {
       setState('loading')
       try {
+        // Cross-poste mode (issue #6): when URL has `cross=1` + non-empty
+        // candidatures, POST to the cross-poste endpoint (target=posteId).
+        // Otherwise stay on the legacy per-poste GET.
+        const isCrossPoste = searchParams.get('cross') === '1'
+        const urlIdsForFetch = (searchParams.get('candidatures') ?? '').split(',').filter(Boolean)
         const [comparisonRes, catalogRes] = await Promise.all([
-          fetch(`/api/recruitment/postes/${posteId}/comparison`, { credentials: 'include' }),
+          isCrossPoste && urlIdsForFetch.length > 0
+            ? fetch('/api/recruitment/reports/cross-poste-comparison', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetPosteId: posteId, candidatureIds: urlIdsForFetch }),
+              })
+            : fetch(`/api/recruitment/postes/${posteId}/comparison`, { credentials: 'include' }),
           fetch('/api/catalog'),
         ])
 
@@ -304,21 +324,48 @@ export default function ReportComparisonPage() {
   const singleCandidate = candidates.length === 1
 
   return (
-    <div className="min-h-screen bg-white text-black print:text-black">
-      <div className="print-hide fixed top-4 right-4 z-50">
-        <Button onClick={() => window.print()} size="sm">
-          <Printer className="h-4 w-4 mr-2" />
-          Imprimer / Enregistrer PDF
-        </Button>
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 print:bg-white print:text-slate-900">
+      <div className="print-hide sticky top-0 z-40 bg-slate-50/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+            <span>Comparaison · {posteTitre}</span>
+          </div>
+          <Button onClick={() => window.print()} size="sm" variant="outline">
+            <Printer className="h-4 w-4 mr-2" />
+            Imprimer / PDF
+          </Button>
+        </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-8 py-8 space-y-6">
-        {/* Header */}
-        <div className="text-center border-b-2 border-black pb-4">
-          <h1 className="text-2xl font-bold uppercase tracking-wide">Comparaison des candidats</h1>
-          <p className="text-sm mt-1">{posteTitre} — GIE SINAPSE</p>
-          <p className="text-xs text-gray-500 mt-1">
-            {candidates.length} candidat{candidates.length !== 1 ? 's' : ''} en lice (hors refusés)
+      <div className="max-w-5xl mx-auto px-6 sm:px-8 py-8 space-y-6 print:py-4 print:px-0">
+        {/* Cross-poste banner — only when scores were recomputed against
+            a target poste using baseline ratings only. Surfaces the
+            scoring caveat so recruiters don't read the table as a
+            native fit. */}
+        {payload.mode === 'cross-poste-baseline' && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex items-start gap-3 print:bg-amber-50 print:border-amber-300">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-amber-900 dark:text-amber-200">Comparaison multi-postes</p>
+              <p className="text-amber-800 dark:text-amber-300 mt-1">
+                Les scores affichés ont été recalculés contre <strong>{posteTitre}</strong> à partir
+                des compétences de base de chaque candidat (CV + saisie manuelle). La relecture
+                role-aware d&apos;origine, propre au poste source, n&apos;est pas réutilisée — un
+                candidat issu d&apos;un autre poste n&apos;est donc pas une candidature native ici.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Header — editorial */}
+        <div className="border-b border-slate-300 dark:border-slate-700 pb-6 print:border-slate-400">
+          <p className="text-[10px] font-semibold tracking-[0.2em] text-slate-500 dark:text-slate-400 uppercase mb-2">
+            Rapport de comparaison
+          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{posteTitre}</h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+            {candidates.length} candidat{candidates.length !== 1 ? 's' : ''} en lice (hors refusés) · GIE SINAPSE
+            <span className="hidden print:inline"> · {new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
           </p>
         </div>
 
@@ -501,16 +548,25 @@ export default function ReportComparisonPage() {
                   every candidature attached to the poste. */}
               {selectedBundles.map(b => {
                 const { row } = b
+                const sourcePoste = (row as { sourcePosteTitre?: string }).sourcePosteTitre
+                const isCrossPoste = payload.mode === 'cross-poste-baseline' && sourcePoste && sourcePoste !== posteTitre
                 return (
-                  <tr key={row.id} className="border-b border-gray-200">
-                    <td className="py-2 font-mono text-xs">{row.rank}</td>
-                    <td className="py-2 font-medium">{row.candidateName}</td>
-                    <td className="py-2 text-xs">{STATUT_LABELS[row.statut] ?? row.statut}</td>
-                    <td className="py-2 text-right font-mono">{row.tauxPoste != null ? `${row.tauxPoste}%` : '—'}</td>
-                    <td className="py-2 text-right font-mono">{row.tauxEquipe != null ? `${row.tauxEquipe}%` : '—'}</td>
-                    <td className="py-2 text-right font-mono">{row.tauxSoft != null ? `${row.tauxSoft}%` : '—'}</td>
-                    <td className="py-2 text-right font-bold font-mono">{row.tauxGlobal != null ? `${row.tauxGlobal}%` : '—'}</td>
-                    <td className="py-2 text-xs">
+                  <tr key={row.id} className="border-b border-slate-200 dark:border-slate-700 print:border-slate-300">
+                    <td className="py-2.5 font-mono text-xs text-slate-500">{row.rank}</td>
+                    <td className="py-2.5">
+                      <div className="font-medium">{row.candidateName}</div>
+                      {isCrossPoste ? (
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          Source : {sourcePoste}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-2.5 text-xs">{STATUT_LABELS[row.statut] ?? row.statut}</td>
+                    <td className="py-2.5 text-right font-mono tabular-nums">{row.tauxPoste != null ? `${row.tauxPoste}%` : '—'}</td>
+                    <td className="py-2.5 text-right font-mono tabular-nums">{row.tauxEquipe != null ? `${row.tauxEquipe}%` : '—'}</td>
+                    <td className="py-2.5 text-right font-mono tabular-nums">{row.tauxSoft != null ? `${row.tauxSoft}%` : '—'}</td>
+                    <td className="py-2.5 text-right font-bold font-mono tabular-nums">{row.tauxGlobal != null ? `${row.tauxGlobal}%` : '—'}</td>
+                    <td className="py-2.5 text-xs">
                       {row.gaps.length === 0
                         ? '—'
                         : row.gaps.map(g => g.categoryLabel).join(', ')}

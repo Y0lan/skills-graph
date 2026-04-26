@@ -29,13 +29,20 @@ interface ShortlistItem {
 
 const REPORT_CAP = 4
 
+interface PosteOption { id: string; titre: string; pole: string }
+
 export default function RecruitSavedCandidatesPage() {
   const navigate = useNavigate()
   const [items, setItems] = useState<ShortlistItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Selection scoped per-poste (since the comparison report stays
-  // per-poste this session). Map of posteId → set of candidatureIds.
+  // Selection scoped per-poste (used by the per-group "Comparer" button —
+  // existing per-poste comparison endpoint).
   const [selectedByPoste, setSelectedByPoste] = useState<Record<string, Set<string>>>({})
+  // Cross-poste selection — flat set across all groups, paired with a
+  // user-picked target poste. Drives the new cross-poste comparison.
+  const [crossPosteIds, setCrossPosteIds] = useState<Set<string>>(new Set())
+  const [targetPosteId, setTargetPosteId] = useState<string>('')
+  const [allPostes, setAllPostes] = useState<PosteOption[]>([])
 
   const fetchItems = async () => {
     try {
@@ -47,6 +54,20 @@ export default function RecruitSavedCandidatesPage() {
       setError(err instanceof Error ? err.message : 'Erreur')
     }
   }
+
+  // Fetch all postes once for the target-poste picker (cross-poste compare).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/recruitment/postes', { credentials: 'include' })
+        if (!res.ok) return
+        const body = await res.json() as Array<{ id: string; titre: string; pole: string }>
+        if (!cancelled) setAllPostes(body.map(p => ({ id: p.id, titre: p.titre, pole: p.pole })))
+      } catch { /* non-fatal */ }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { fetchItems() }, [])
 
@@ -85,6 +106,25 @@ export default function RecruitSavedCandidatesPage() {
       toast.info(`Comparaison limitée à ${REPORT_CAP} candidats — les premiers sélectionnés sont retenus.`)
     }
     navigate(`/recruit/reports/comparison/${posteId}?candidatures=${ids}`)
+  }
+
+  const toggleCrossPoste = (candidatureId: string) => {
+    setCrossPosteIds(prev => {
+      const next = new Set(prev)
+      if (next.has(candidatureId)) next.delete(candidatureId); else next.add(candidatureId)
+      return next
+    })
+  }
+
+  const compareCrossPoste = () => {
+    if (crossPosteIds.size < 2 || !targetPosteId) return
+    const ids = Array.from(crossPosteIds).slice(0, REPORT_CAP).join(',')
+    if (crossPosteIds.size > REPORT_CAP) {
+      toast.info(`Comparaison limitée à ${REPORT_CAP} candidats — les premiers sélectionnés sont retenus.`)
+    }
+    // cross=1 + target poste in URL → comparison page POSTs to the
+    // cross-poste endpoint with baseline-only scoring.
+    navigate(`/recruit/reports/comparison/${targetPosteId}?cross=1&candidatures=${ids}`)
   }
 
   const removeStarred = (candidatureId: string) => {
@@ -134,10 +174,68 @@ export default function RecruitSavedCandidatesPage() {
           </div>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Marquez des candidats avec ⭐ depuis n&apos;importe où dans le recrutement
-            pour les retrouver ici. Comparaison multi-postes : bientôt disponible.
-            En attendant, comparez par poste source ci-dessous.
+            pour les retrouver ici. Comparez sur leur poste d&apos;origine ci-dessous,
+            ou sélectionnez plusieurs candidats issus de postes différents et
+            comparez-les contre un poste cible (cross-poste, ci-dessous).
           </p>
         </div>
+
+        {/* Cross-poste comparison panel — visible only when items exist.
+            Lets the recruiter pick a target poste + ≥2 starred candidates
+            from any source poste, then opens the comparison report with
+            baseline-only scoring against the target. */}
+        {items.length > 0 ? (
+          <Card className="border-primary/30">
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    Comparer sur tous les postes
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xl">
+                    Choisissez un poste cible, cochez les candidats à comparer
+                    (max {REPORT_CAP}). Les scores sont recalculés contre le
+                    poste cible à partir des compétences de base —
+                    sans relecture role-aware d&apos;origine.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    aria-label="Poste cible"
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[14rem]"
+                    value={targetPosteId}
+                    onChange={(e) => setTargetPosteId(e.target.value)}
+                  >
+                    <option value="">— Choisir un poste cible —</option>
+                    {allPostes.map(p => (
+                      <option key={p.id} value={p.id}>{p.titre} ({p.pole})</option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    disabled={!targetPosteId || crossPosteIds.size < 2}
+                    onClick={compareCrossPoste}
+                    title={
+                      !targetPosteId ? 'Choisissez un poste cible' :
+                      crossPosteIds.size < 2 ? 'Cochez au moins 2 candidats ci-dessous' :
+                      'Lancer la comparaison cross-poste'
+                    }
+                  >
+                    <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+                    Comparer cross-poste ({crossPosteIds.size})
+                  </Button>
+                </div>
+              </div>
+              {crossPosteIds.size > 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {crossPosteIds.size} candidat{crossPosteIds.size > 1 ? 's' : ''} sélectionné{crossPosteIds.size > 1 ? 's' : ''} cross-poste ·{' '}
+                  <button type="button" className="underline hover:text-foreground" onClick={() => setCrossPosteIds(new Set())}>tout désélectionner</button>
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
 
         {items.length === 0 ? (
           <Card>
@@ -178,7 +276,15 @@ export default function RecruitSavedCandidatesPage() {
                         <Checkbox
                           checked={sel.has(r.candidatureId)}
                           onCheckedChange={() => toggleSelect(g.posteId, r.candidatureId)}
-                          aria-label={`Sélectionner ${r.candidateName} pour la comparaison`}
+                          aria-label={`Sélectionner ${r.candidateName} pour la comparaison sur ${g.posteTitre}`}
+                          title="Comparer sur ce poste source"
+                        />
+                        <Checkbox
+                          checked={crossPosteIds.has(r.candidatureId)}
+                          onCheckedChange={() => toggleCrossPoste(r.candidatureId)}
+                          aria-label={`Sélectionner ${r.candidateName} pour la comparaison cross-poste`}
+                          title="Comparer cross-poste (panneau en haut)"
+                          className="border-primary/60 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                         />
                         <StarToggle
                           candidatureId={r.candidatureId}
