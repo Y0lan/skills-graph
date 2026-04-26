@@ -137,6 +137,18 @@ export default function ReportComparisonPage() {
         // Otherwise stay on the legacy per-poste GET.
         const isCrossPoste = searchParams.get('cross') === '1'
         const urlIdsForFetch = (searchParams.get('candidatures') ?? '').split(',').filter(Boolean)
+
+        // Cross-mode without candidatures = malformed deep link. Fail
+        // loudly instead of silently falling back to per-poste, which
+        // would lie about the comparison the user requested.
+        if (isCrossPoste && urlIdsForFetch.length === 0) {
+          if (!cancelled) {
+            toast.error('Lien cross-poste invalide — aucun candidat sélectionné.')
+            setState('error')
+          }
+          return
+        }
+
         const [comparisonRes, catalogRes] = await Promise.all([
           isCrossPoste && urlIdsForFetch.length > 0
             ? fetch('/api/recruitment/reports/cross-poste-comparison', {
@@ -428,7 +440,18 @@ export default function ReportComparisonPage() {
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{row.rank}</td>
                       <td className="px-3 py-2">
-                        <div className="font-medium">{row.candidateName}</div>
+                        <div className="font-medium flex items-center gap-2 flex-wrap">
+                          {row.candidateName}
+                          {/* Source-poste badge — only when the cross-poste
+                              comparison endpoint surfaced a different
+                              source-poste than the current target. Makes
+                              non-native fits visible at a glance. */}
+                          {payload.mode === 'cross-poste-baseline' && (row as { sourcePosteTitre?: string }).sourcePosteTitre && (row as { sourcePosteTitre?: string }).sourcePosteTitre !== posteTitre ? (
+                            <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-300">
+                              ← {(row as { sourcePosteTitre?: string }).sourcePosteTitre}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {STATUT_LABELS[row.statut] ?? row.statut}
                         </div>
@@ -604,8 +627,11 @@ export default function ReportComparisonPage() {
           </div>
         )}
 
-        {/* Footer */}
-        <div className="border-t-2 border-black pt-4 text-center text-xs text-gray-500">
+        {/* Report sign-off — `print-only` so it stays hidden in the
+            on-screen view and ONLY appears at the bottom of the
+            printed/PDF document. The screen sticky bar already shows
+            the title so a second footer would be noise. */}
+        <div className="print-only border-t border-slate-300 pt-3 mt-8 text-center text-[11px] text-slate-500">
           <p>Généré par Skill Radar — GIE SINAPSE</p>
           <p>Document confidentiel — {new Date().toLocaleDateString('fr-FR')}</p>
         </div>

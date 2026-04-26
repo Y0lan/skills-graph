@@ -270,22 +270,33 @@ export default function RecruitSavedCandidatesPage() {
                       Comparer ({sel.size})
                     </Button>
                   </div>
-                  <div className="divide-y rounded-md border">
-                    {g.rows.map(r => (
-                      <div key={r.candidatureId} className="flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors">
-                        <Checkbox
-                          checked={sel.has(r.candidatureId)}
-                          onCheckedChange={() => toggleSelect(g.posteId, r.candidatureId)}
-                          aria-label={`Sélectionner ${r.candidateName} pour la comparaison sur ${g.posteTitre}`}
-                          title="Comparer sur ce poste source"
-                        />
-                        <Checkbox
-                          checked={crossPosteIds.has(r.candidatureId)}
-                          onCheckedChange={() => toggleCrossPoste(r.candidatureId)}
-                          aria-label={`Sélectionner ${r.candidateName} pour la comparaison cross-poste`}
-                          title="Comparer cross-poste (panneau en haut)"
-                          className="border-primary/60 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                        />
+                  <div className="grid grid-cols-[auto_auto_1fr] sm:grid-cols-[6rem_6rem_1fr] gap-y-0 rounded-md border overflow-hidden">
+                    {/* Column header row — clarifies the two checkboxes */}
+                    <div className="contents text-[10px] font-semibold tracking-wider uppercase text-muted-foreground bg-muted/40">
+                      <div className="px-3 py-1.5 text-center border-b">Source</div>
+                      <div className="px-3 py-1.5 text-center border-b border-l">Cross-poste</div>
+                      <div className="px-3 py-1.5 border-b border-l">Candidat</div>
+                    </div>
+                    {g.rows.map((r, idx) => (
+                      <div key={r.candidatureId} className={`contents ${idx > 0 ? '' : ''}`}>
+                        <div className="px-3 py-3 flex items-center justify-center border-t hover:bg-muted/30">
+                          <Checkbox
+                            checked={sel.has(r.candidatureId)}
+                            onCheckedChange={() => toggleSelect(g.posteId, r.candidatureId)}
+                            aria-label={`Sélectionner ${r.candidateName} pour la comparaison sur ${g.posteTitre}`}
+                            title="Comparer sur ce poste source"
+                          />
+                        </div>
+                        <div className="px-3 py-3 flex items-center justify-center border-t border-l hover:bg-muted/30">
+                          <Checkbox
+                            checked={crossPosteIds.has(r.candidatureId)}
+                            onCheckedChange={() => toggleCrossPoste(r.candidatureId)}
+                            aria-label={`Sélectionner ${r.candidateName} pour la comparaison cross-poste`}
+                            title="Comparer cross-poste (panneau en haut)"
+                            className="border-primary/60 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 p-3 border-t border-l hover:bg-muted/30 transition-colors min-w-0">
                         <StarToggle
                           candidatureId={r.candidatureId}
                           initialActive
@@ -302,6 +313,7 @@ export default function RecruitSavedCandidatesPage() {
                             {' · ajouté '}{formatDateTime(r.addedAt)}
                           </div>
                         </Link>
+                        </div>
                       </div>
                     ))}
                   </div>
