@@ -53,7 +53,15 @@ interface EnrichedCandidature {
 interface ComparisonPayload {
   poste: { id: string; titre: string; roleId: string }
   roleCategories: string[]
-  candidatures: EnrichedCandidature[]
+  candidatures: Array<EnrichedCandidature & {
+    sourcePosteTitre?: string
+    sourcePostePole?: string
+  }>
+  /** When `cross-poste-baseline`, scores were recomputed against the
+   *  target poste using baseline (ai_suggestions + ratings) only —
+   *  role-aware suggestions from the source poste are intentionally
+   *  excluded. UI surfaces a banner explaining the limitation. */
+  mode?: 'cross-poste-baseline'
 }
 
 interface CategoryInfo {
@@ -124,8 +132,21 @@ export default function ReportComparisonPage() {
     const loadData = async () => {
       setState('loading')
       try {
+        // Cross-poste mode (issue #6): when URL has `cross=1` + non-empty
+        // candidatures, POST to the cross-poste endpoint. Otherwise stay
+        // on the per-poste GET. `posteId` here is the TARGET poste in
+        // cross mode.
+        const isCrossPoste = searchParams.get('cross') === '1'
+        const urlIdsForFetch = (searchParams.get('candidatures') ?? '').split(',').filter(Boolean)
         const [comparisonRes, catalogRes] = await Promise.all([
-          fetch(`/api/recruitment/postes/${posteId}/comparison`, { credentials: 'include' }),
+          isCrossPoste && urlIdsForFetch.length > 0
+            ? fetch('/api/recruitment/reports/cross-poste-comparison', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetPosteId: posteId, candidatureIds: urlIdsForFetch }),
+              })
+            : fetch(`/api/recruitment/postes/${posteId}/comparison`, { credentials: 'include' }),
           fetch('/api/catalog'),
         ])
 
