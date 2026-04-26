@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown, ClipboardCheck, PhoneCall, Check, XCircle } from 'lucide-react'
+import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown, ClipboardCheck, PhoneCall, Check, XCircle, Star } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
 import RoleManagerPanel from '@/components/recruit/role-manager-panel'
@@ -621,6 +621,18 @@ export default function RecruitPipelinePage() {
                 )}
               />
               <TooltipContent>Funnel</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={(
+                  <Link to="/recruit/shortlist" className="inline-flex">
+                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0">
+                      <Star className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                )}
+              />
+              <TooltipContent>Candidats sauvegardés</TooltipContent>
             </Tooltip>
           </div>
         </div>
