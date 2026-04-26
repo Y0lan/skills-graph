@@ -265,6 +265,33 @@ export function initDatabase(): void {
   `)
   db.exec('CREATE INDEX IF NOT EXISTS idx_aboro_profiles_candidate ON aboro_profiles(candidate_id)')
 
+  // User-scoped saved candidates (#6 narrow wedge — option D''). Star a
+  // candidature anywhere in the recruitment UI to add it here. Composite
+  // PK prevents duplicates from the same user. ON DELETE CASCADE on both
+  // FK sides cleans up shortlist entries when a user or candidature is
+  // deleted. Cross-poste comparison stays out of scope this session;
+  // the saved-candidates page navigates to the existing per-poste
+  // comparison endpoint.
+  //
+  // Guard: only create when the Better Auth `user` table is present.
+  // Older tests preSeed without auth migrations — they boot fine, just
+  // without this table, and the shortlist endpoints don't run there.
+  const hasUserTable = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='user' LIMIT 1",
+  ).get() as { 1: number } | undefined
+  if (hasUserTable) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_shortlists (
+        user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+        added_at TEXT NOT NULL DEFAULT (datetime('now')),
+        note TEXT,
+        PRIMARY KEY (user_id, candidature_id)
+      )
+    `)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_shortlists_user ON user_shortlists(user_id, added_at DESC)')
+  }
+
   // Idempotent: widen candidature_documents CHECK constraint
   // SQLite can't ALTER CHECK, so recreate table without restrictive CHECK
   const hasRestrictiveCheck = (() => {

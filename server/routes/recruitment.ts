@@ -3343,5 +3343,69 @@ recruitmentRouter.get('/pipeline-health', (_req, res) => {
   }
 })
 
+// ─── User-scoped shortlist (saved candidates) — issue #6 ─────────────
+// Star a candidature to save it across sessions. Narrow wedge — the
+// comparison report remains per-poste; cross-poste compare requires a
+// target-poste role-aware pass which is expensive and out of scope.
+
+protectedRouter.get('/shortlist', (req, res) => {
+  const user = getUser(req)
+  const rows = getDb().prepare(`
+    SELECT
+      us.candidature_id AS candidatureId,
+      us.added_at AS addedAt,
+      us.note AS note,
+      c.statut AS statut,
+      c.poste_id AS posteId,
+      p.titre AS posteTitre,
+      p.pole AS postePole,
+      c.candidate_id AS candidateId,
+      cand.name AS candidateName,
+      cand.email AS candidateEmail,
+      c.taux_compatibilite_poste AS tauxPoste,
+      c.taux_compatibilite_equipe AS tauxEquipe,
+      c.taux_soft_skills AS tauxSoft,
+      c.taux_global AS tauxGlobal
+    FROM user_shortlists us
+    JOIN candidatures c ON c.id = us.candidature_id
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE us.user_id = ?
+    ORDER BY us.added_at DESC
+  `).all(user.id)
+  res.json({ items: rows })
+})
+
+protectedRouter.post('/shortlist', mutationRateLimit, (req, res) => {
+  const user = getUser(req)
+  const body = req.body as { candidatureId?: unknown; note?: unknown }
+  if (typeof body.candidatureId !== 'string' || !body.candidatureId) {
+    res.status(400).json({ error: 'candidatureId requis' })
+    return
+  }
+  const cand = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(body.candidatureId) as { id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  // UPSERT — tolerate two tabs starring the same candidature concurrently
+  // without a uniqueness error. On conflict, update the note in case the
+  // user passed a fresh one.
+  getDb().prepare(`
+    INSERT INTO user_shortlists (user_id, candidature_id, note)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_id, candidature_id) DO UPDATE SET note = excluded.note
+  `).run(user.id, body.candidatureId, typeof body.note === 'string' ? body.note : null)
+  res.json({ ok: true })
+})
+
+protectedRouter.delete('/shortlist/:candidatureId', mutationRateLimit, (req, res) => {
+  const user = getUser(req)
+  const result = getDb().prepare(
+    'DELETE FROM user_shortlists WHERE user_id = ? AND candidature_id = ?',
+  ).run(user.id, req.params.candidatureId)
+  res.json({ ok: true, removed: result.changes })
+})
+
 // Mount protected routes
 recruitmentRouter.use('/', protectedRouter)
