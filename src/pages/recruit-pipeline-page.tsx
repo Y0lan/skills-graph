@@ -38,6 +38,8 @@ import StatusChip from '@/components/recruit/status-chip'
 import DocsChip from '@/components/recruit/docs-chip'
 import PosteDescriptionDialog from '@/components/recruit/poste-description-dialog'
 import PipelineCandidatureRow from '@/components/recruit/pipeline-candidature-row'
+import { isTestCandidateEmail } from '@/lib/test-candidate'
+import { FlaskConical } from 'lucide-react'
 
 interface Poste {
   id: string
@@ -1333,6 +1335,15 @@ export default function RecruitPipelinePage() {
                             <Link to={`/recruit/${c.id}`} className="hover:underline font-medium" onClick={(e) => e.stopPropagation()}>
                               {c.name}
                             </Link>
+                            {isTestCandidateEmail(c.email) && (
+                              <span
+                                className="ml-2 inline-flex items-center gap-0.5 rounded border border-amber-500/60 bg-amber-500/10 px-1 text-[9px] font-medium uppercase tracking-wide text-amber-700 dark:border-amber-400/60 dark:text-amber-300 align-middle"
+                                title="Candidat de test (email yopmail)"
+                              >
+                                <FlaskConical className="h-2.5 w-2.5" />
+                                TEST
+                              </span>
+                            )}
                             {c.candidatureCount > 1 && (
                               <span className="ml-2 text-[10px] text-muted-foreground tabular-nums">
                                 ({c.candidatureCount} candidatures)
@@ -1438,6 +1449,7 @@ export default function RecruitPipelinePage() {
                           preview={c.previewProfile}
                           statusChip={<StatusChip statut={c.statut} enteredStatusAt={c.enteredStatusAt} />}
                           docsChip={<DocsChip docsSlotCount={c.docsSlotCount} />}
+                          isTest={isTestCandidateEmail(c.candidateEmail)}
                         />
                       </div>
 

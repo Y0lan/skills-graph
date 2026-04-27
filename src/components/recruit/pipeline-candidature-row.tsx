@@ -1,4 +1,4 @@
-import { AlertTriangle, MapPin, Briefcase, Clock } from 'lucide-react'
+import { AlertTriangle, MapPin, Briefcase, Clock, FlaskConical } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import InitialsBadge from '@/components/ui/initials-badge'
 import SkillPill from './skill-pill'
@@ -27,6 +27,11 @@ export interface PipelineCandidatureRowProps {
   /** Extra React nodes rendered after the meta chips (status chip, docs chip) */
   statusChip?: React.ReactNode
   docsChip?: React.ReactNode
+  /** v5.1 — derived from a yopmail-style email so test candidatures
+   *  the recruiter created to step through the pipeline don't get
+   *  visually conflated with real applicants. See
+   *  src/lib/test-candidate.ts. */
+  isTest?: boolean
 }
 
 /**
@@ -46,6 +51,7 @@ export default function PipelineCandidatureRow({
   preview,
   statusChip,
   docsChip,
+  isTest = false,
 }: PipelineCandidatureRowProps) {
   const location = [preview?.city, preview?.country].filter(Boolean).join(', ')
   const roleAtCompany = preview?.currentRole && preview?.currentCompany
@@ -65,6 +71,16 @@ export default function PipelineCandidatureRow({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <span className="hover:underline font-medium text-sm truncate">{candidateName}</span>
+            {isTest && (
+              <Badge
+                variant="outline"
+                className="text-[10px] border-amber-500/60 text-amber-700 bg-amber-500/10 dark:border-amber-400/60 dark:text-amber-300"
+                title="Candidature de test (email yopmail)"
+              >
+                <FlaskConical className="h-2.5 w-2.5 mr-0.5" />
+                TEST
+              </Badge>
+            )}
             {statusChip}
             {docsChip}
           </div>
@@ -97,6 +113,16 @@ export default function PipelineCandidatureRow({
         {/* Line 1: name + status + docs + meta */}
         <div className="flex items-center gap-2 flex-wrap">
           <span className="hover:underline font-medium text-sm truncate">{candidateName}</span>
+          {isTest && (
+            <Badge
+              variant="outline"
+              className="text-[10px] border-amber-500/60 text-amber-700 bg-amber-500/10 dark:border-amber-400/60 dark:text-amber-300"
+              title="Candidature de test (email yopmail)"
+            >
+              <FlaskConical className="h-2.5 w-2.5 mr-0.5" />
+              TEST
+            </Badge>
+          )}
           {statusChip}
           {docsChip}
           {softSkillAlertCount > 0 && (
