@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { FICHE_DATE_REGEX, FICHE_DATETIME_REGEX } from './datetime'
-import type { Statut } from '../constants'
+import { FICHE_DATE_REGEX, FICHE_DATETIME_REGEX } from './datetime.js'
+import type { Statut } from '../constants.js'
 
 /**
  * Per-stage Zod schemas. Every field is `.optional()` so a candidate can
@@ -107,7 +107,14 @@ export const refuseFicheSchema = z.object({
  * The fiche schema for a given stage. `entretien_2` shares the entretien
  * shape — both receive 5-7 typed fields, validated with the same rules.
  */
-export const stageFicheSchemas = {
+/**
+ * Per-stage Zod schemas keyed by statut. Typed as
+ * `Record<Statut, z.ZodTypeAny>` so the `[stage]` indexed access works
+ * uniformly under stricter NodeNext / verbatimModuleSyntax compilers
+ * used by the server build. The exhaustiveness probe just below pins
+ * compile-time coverage of every Statut to a concrete schema (B2).
+ */
+export const stageFicheSchemas: Record<Statut, z.ZodTypeAny> = {
   postule: postuleFicheSchema,
   preselectionne: preselectionneFicheSchema,
   skill_radar_envoye: skillRadarEnvoyeFicheSchema,
@@ -118,13 +125,13 @@ export const stageFicheSchemas = {
   proposition: propositionFicheSchema,
   embauche: embaucheFicheSchema,
   refuse: refuseFicheSchema,
-} as const satisfies Record<Statut, z.ZodTypeAny>
+}
 
-export type StageFicheSchemaFor<S extends Statut> = (typeof stageFicheSchemas)[S]
-export type StageFicheData<S extends Statut> = z.infer<StageFicheSchemaFor<S>>
-export type AnyStageFicheData = {
-  [S in Statut]: StageFicheData<S>
-}[Statut]
+// Compile-time coverage probe — fails to compile if any Statut lacks a schema.
+const _STAGE_FICHE_SCHEMAS_EXHAUSTIVE: Record<Statut, z.ZodTypeAny> = stageFicheSchemas
+void _STAGE_FICHE_SCHEMAS_EXHAUSTIVE
+
+export type AnyStageFicheData = z.infer<z.ZodTypeAny>
 
 export function getStageFicheSchema(stage: string): z.ZodTypeAny | null {
   if (!(stage in stageFicheSchemas)) return null
