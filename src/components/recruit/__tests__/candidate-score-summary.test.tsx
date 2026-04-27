@@ -46,34 +46,9 @@ describe('CandidateScoreSummary', () => {
     expect(screen.getByText('En attente du scoring CV')).toBeInTheDocument() // Équipe
   })
 
-  it('renders the inline missing-action CTA when a tile is null and onMissingAction is provided', () => {
-    const onMissingAction = vi.fn()
-    render(
-      <CandidateScoreSummary
-        tauxGlobal={null}
-        tauxPoste={79}
-        tauxEquipe={null}
-        tauxSoft={null}
-        onMissingAction={onMissingAction}
-        missingActionLabel="Copier le lien Skill Radar"
-      />,
-    )
-    expect(screen.getByRole('button', { name: 'Copier le lien Skill Radar' })).toBeInTheDocument()
-  })
-
-  it('does not render the missing-action CTA when no tile is null', () => {
-    render(
-      <CandidateScoreSummary
-        tauxGlobal={82}
-        tauxPoste={79}
-        tauxEquipe={68}
-        tauxSoft={85}
-        onMissingAction={() => {}}
-        missingActionLabel="Should not render"
-      />,
-    )
-    expect(screen.queryByRole('button', { name: 'Should not render' })).not.toBeInTheDocument()
-  })
+  // v5.1.x A.5: the inline missing-action CTA was removed from this
+  // component and hoisted into the workspace command bar. The score
+  // summary is now pure presentation; covered tests deleted.
 
   it('only Poste and Équipe tiles are clickable when candidatureId is provided', () => {
     render(

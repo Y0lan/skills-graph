@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { Loader2, FolderInput } from 'lucide-react'
 import {
@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { STATUT_LABELS } from '@/lib/constants'
-import type { CandidatureDocument } from '@/hooks/use-candidate-data'
+import type { CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
 
 /** Pipeline stages a document can be attached to. We omit `refuse`
  *  because docs uploaded after a rejection are rare and don't benefit
@@ -43,18 +43,69 @@ export interface DocumentStageReassignDialogProps {
    *  PATCH succeeds, so the doc visually re-flows into the right stage
    *  group without a refetch. */
   onReassigned: (docId: string, eventId: number | null) => void
+  /** v5.1.x A.9 (issue 10 + codex R4): the candidature's events list,
+   *  used to derive the set of stages this candidate has actually
+   *  reached. Without this, the dialog showed every stage in
+   *  ASSIGNABLE_STAGES even when the candidate hadn't gone past
+   *  Présélectionné — recruiters could re-attach a doc to a future
+   *  stage that didn't exist in their history. Reverted stages stay
+   *  in the dropdown (a doc was uploaded WHILE briefly at a future
+   *  stage; the recruiter still needs that option). */
+  events: CandidatureEvent[]
+  /** Always reachable (the candidature is currently at this stage). */
+  currentStatut: string
 }
 
 export default function DocumentStageReassignDialog({
-  open, onOpenChange, doc, onReassigned,
+  open, onOpenChange, doc, onReassigned, events, currentStatut,
 }: DocumentStageReassignDialogProps) {
-  const [stage, setStage] = useState<string>('postule')
+  // Reached stages: postule (always), currentStatut (always), plus every
+  // statut_to and statut_from that ever appeared in a status_change event
+  // (codex R4 — keep reverted stages so a doc uploaded while briefly at
+  // a future stage can still be re-attached).
+  const reachedStages = useMemo(() => {
+    const reached = new Set<string>(['postule', currentStatut])
+    for (const e of events) {
+      if (e.type !== 'status_change') continue
+      if (e.statutTo) reached.add(e.statutTo)
+      if (e.statutFrom) reached.add(e.statutFrom)
+    }
+    return reached
+  }, [events, currentStatut])
+
+  const visibleStages = useMemo(
+    () => ASSIGNABLE_STAGES.filter(s => reachedStages.has(s)),
+    [reachedStages],
+  )
+
+  // Default radio: the doc's CURRENT stage (parsed from event_id →
+  // matching event's stage). Falls back to a visible-and-assignable
+  // stage. Critical (codex final review): currentStatut may be `refuse`,
+  // which is intentionally omitted from ASSIGNABLE_STAGES — never set
+  // a default that has no matching radio (would silently submit a hidden
+  // value when the recruiter clicks Déplacer).
+  const defaultStage = useMemo(() => {
+    const isVisible = (s: string) => visibleStages.includes(s)
+    if (!doc) return visibleStages[0] ?? 'postule'
+    if (doc.event_id != null) {
+      const linked = events.find(e => e.id === doc.event_id)
+      if (linked?.stage && isVisible(linked.stage)) return linked.stage
+      if (linked?.type === 'status_change' && linked.statutTo && isVisible(linked.statutTo)) {
+        return linked.statutTo
+      }
+    }
+    if (isVisible(currentStatut)) return currentStatut
+    return visibleStages[0] ?? 'postule'
+  }, [doc, events, visibleStages, currentStatut])
+
+  const [stage, setStage] = useState<string>(defaultStage)
   const [saving, setSaving] = useState(false)
 
-  // Reset selection whenever a different doc opens.
+  // Re-seed selection whenever a different doc opens (or the default
+  // recomputes, e.g. events refetched).
   useEffect(() => {
-    if (doc) setStage('postule')
-  }, [doc])
+    if (doc) setStage(defaultStage)
+  }, [doc, defaultStage])
 
   const submit = useCallback(async () => {
     if (!doc || saving) return
@@ -91,7 +142,7 @@ export default function DocumentStageReassignDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-2">
-          {ASSIGNABLE_STAGES.map(s => (
+          {visibleStages.map(s => (
             <label key={s} className="flex items-center gap-2 cursor-pointer rounded-md border px-3 py-2 hover:bg-muted/30">
               <input
                 type="radio"
@@ -103,6 +154,11 @@ export default function DocumentStageReassignDialog({
               <span className="text-sm">{STATUT_LABELS[s] ?? s}</span>
             </label>
           ))}
+          {visibleStages.length === 0 && (
+            <p className="text-sm text-muted-foreground italic px-3 py-2">
+              Aucune étape atteinte — ce candidat est encore au tout début du pipeline.
+            </p>
+          )}
         </div>
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>

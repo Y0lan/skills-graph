@@ -9,6 +9,7 @@ import ExtractionStatusBanner from '@/components/recruit/extraction-status-banne
 import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candidate-profile-card'
 import CandidateIdentityStrip from '@/components/recruit/candidate-identity-strip'
 import CandidatureSwitcher from '@/components/recruit/candidature-switcher'
+import CandidateApplicationMessage from '@/components/recruit/candidate-application-message'
 import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
 import CandidateStickyHeader from '@/components/recruit/candidate-sticky-header'
 import ConfirmDialog from '@/components/recruit/confirm-dialog'
@@ -795,6 +796,22 @@ export default function CandidateDetailPage() {
             selectedId={effectiveSelectedId ?? ''}
             isPendingRadar={(c) => isPending && c.statut === 'skill_radar_envoye'}
             onSelect={setSelectedCandidatureId}
+          />
+        )}
+
+        {/* v5.1.x A.3 — Hoisted from inside <CandidatureWorkspace>. The
+            candidate's intake message (Drupal form text) is the
+            candidate's voice. It belongs ABOVE the workspace — between
+            the identity strip and the operational cockpit — where the
+            recruiter is still framing "who this person is" rather than
+            "what to do next". `selectedCandidature.posteTitre` is in
+            scope here (post-switcher), so multi-poste candidates get
+            the message filtered to the active candidature. The
+            component renders nothing when `notes` is null. */}
+        {candidate && selectedCandidature && (
+          <CandidateApplicationMessage
+            notes={candidate.notes ?? null}
+            filterPosteTitre={selectedCandidature.posteTitre}
           />
         )}
 

@@ -27,12 +27,11 @@ export interface CandidateScoreSummaryProps {
   tauxEquipe: number | null
   tauxSoft: number | null
   candidatureId?: string
-  /** Passthrough CTA for tiles with null values when the recruiter can do
-   *  something about it (typically: copy the Skill Radar link so the
-   *  candidate's own score shows up). Rendered under the "À compléter"
-   *  hint as a subtle inline text button. */
-  onMissingAction?: () => void
-  missingActionLabel?: string
+  // v5.1.x A.5 (codex Y5): the auto-eval CTA was hoisted out of this
+  // component into the workspace command bar where the recruiter
+  // actually scans for "what to do next". Score summary is now pure
+  // presentation. Old `onMissingAction` / `missingActionLabel` props
+  // dropped — workspace.tsx no longer passes them.
 }
 
 const TILE_TOOLTIPS: Record<string, string> = {
@@ -74,7 +73,7 @@ interface ScoreTileData {
 }
 
 export default function CandidateScoreSummary({
-  tauxGlobal, tauxPoste, tauxEquipe, tauxSoft, candidatureId, onMissingAction, missingActionLabel,
+  tauxGlobal, tauxPoste, tauxEquipe, tauxSoft, candidatureId,
 }: CandidateScoreSummaryProps) {
   const [openMetric, setOpenMetric] = useState<CompatMetric | null>(null)
 
@@ -86,7 +85,6 @@ export default function CandidateScoreSummary({
   ]
 
   const verdict = verdictFromScores(tauxPoste, tauxEquipe)
-  const anyMissing = tiles.some(t => t.value == null)
 
   return (
     <div className="space-y-3">
@@ -185,16 +183,6 @@ export default function CandidateScoreSummary({
           )
         })}
       </div>
-
-      {anyMissing && onMissingAction && missingActionLabel && (
-        <button
-          type="button"
-          onClick={onMissingAction}
-          className="text-[11px] text-primary hover:underline"
-        >
-          {missingActionLabel}
-        </button>
-      )}
 
       {candidatureId && openMetric && (
         <CompatBreakdownDialog

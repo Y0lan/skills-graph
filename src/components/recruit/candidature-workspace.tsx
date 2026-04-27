@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Clock } from 'lucide-react'
+import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Clock, Copy } from 'lucide-react'
 import {
   STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime,
   transitionConsequence,
@@ -12,7 +12,10 @@ import CandidatePipelineStepper from './candidate-pipeline-stepper'
 import CandidateScoreSummary from './candidate-score-summary'
 import CandidateDocumentsPanel from './candidate-documents-panel'
 import CandidateNotesSection from './candidate-notes-section'
-import CandidateApplicationMessage from './candidate-application-message'
+// CandidateApplicationMessage hoisted to the page level (A.3) so the
+// candidate's intake message sits between IdentityStrip and the
+// candidature workspace, where the recruiter is already focused on
+// the person's voice.
 import AboroProfileSection from './aboro-profile-section'
 import CandidateHistoryByStage from './candidate-history-by-stage'
 import NoteEditDialog from './note-edit-dialog'
@@ -136,6 +139,34 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
   const isTerminal = c.statut === 'embauche' || c.statut === 'refuse'
 
   /**
+   * v5.1.x A.6 (codex Y6): the legacy 4-field "Notes d'entretien" form
+   * (forces / vigilance / recommandation / libre) was the v4 evaluation
+   * surface, superseded by per-stage fiches in v5. Hide its disclosure
+   * entirely when the JSON blob has no actual content — empty `"{}"` and
+   * empty strings shouldn't count as "data worth migrating". Combined
+   * with a stage gate (skip at postule/preselectionne where the fields
+   * never made sense), new candidates never see it at all.
+   */
+  const hasLegacyNoteContent = useMemo(() => {
+    const raw = c.notesDirecteur
+    if (!raw || !raw.trim()) return false
+    // v4 stored JSON. Pre-v4 stored plain text — CandidateNotesSection's
+    // parseNotes() falls back to treating raw text as the `libre` field
+    // for back-compat (see candidate-notes-section.tsx:21-35). Mirror
+    // that here so candidates with legacy plain-text notes can still
+    // see + migrate them. JSON shape is the modern case; raw-non-JSON
+    // is the legacy case; both count as "has content worth showing".
+    try {
+      const parsed = JSON.parse(raw) as { forces?: string; vigilance?: string; recommandation?: string; libre?: string }
+      return [parsed.forces, parsed.vigilance, parsed.recommandation, parsed.libre]
+        .some(v => typeof v === 'string' && v.trim().length > 0)
+    } catch {
+      // Not JSON → treat as legacy plain-text note (libre).
+      return true
+    }
+  }, [c.notesDirecteur])
+
+  /**
    * Revert-window detection — same logic as before. Extracted once from the
    * workspace so Journal récent can show a live preview of the email state
    * without recomputing it.
@@ -176,7 +207,21 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
     const terminalGuardFails = (lastStatusChange.statutTo === 'embauche' || lastStatusChange.statutTo === 'refuse') && emailState !== 'scheduled'
     if (terminalGuardFails) return null
 
-    return { emailState, lastStatusChangeAt: lastStatusChange.createdAt }
+    // v5.1.x A.4 + codex final-review: when the latest status_change is
+    // the intake seed (statutFrom === null, statutTo === 'postule'),
+    // the backend rejects revert with 409 "Premier événement — rien à
+    // annuler". Don't render a button that can't work. The
+    // `isInitialSentinel` guard above already drops the case where
+    // statutFrom === statutTo, but a real intake row has statutFrom=null,
+    // which falls through. Bail out here so RevertCountdown never sees
+    // a null previousStatut in production.
+    if (lastStatusChange.statutFrom == null) return null
+
+    return {
+      emailState,
+      lastStatusChangeAt: lastStatusChange.createdAt,
+      previousStatut: lastStatusChange.statutFrom,
+    }
   }, [events])
 
   const forward = (allowedTransitions?.allowedTransitions ?? []).filter(s => s !== 'refuse')
@@ -364,6 +409,14 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         </div>
       </div>
 
+      {/* ── 1.4 DOSSIER status bar (hoisted v5.1.x A.7) ──
+          Compact one-liner ("✓ CV ✓ Lettre — Rapport Aboro optionnel —
+          Gérer →") right under the header row so the recruiter sees doc
+          completeness BEFORE the command bar tells them what to do next.
+          The full <CandidateDocumentsPanel> stays anchored at
+          #DOCUMENTS_ANCHOR further down for actual upload/manage. */}
+      <DocumentSlotSummary documents={documents} onJumpToPanel={handleJumpToDocuments} />
+
       {/* ── 1.5 Command bar — prominent next-action ──
           v4.6: lifted from a junior-designer mockup. The same primary
           + refuse actions live further down next to the scores, but
@@ -385,6 +438,26 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* v5.1.x A.5 (codex Y5 + design D-copy-1): auto-eval CTA hoisted
+                from inside the score tiles into the command bar so it sits
+                next to where the recruiter actually scans for "what to do
+                next". Icon-only at <sm to avoid 3-button overflow on
+                mobile. The clipboard icon already says "copy" — label
+                drops the verb ("Lien Skill Radar") to save 6 chars. */}
+            {canCopyLink && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                title="Copier le lien du formulaire d'auto-évaluation"
+                aria-label="Copier le lien du formulaire d'auto-évaluation"
+                onClick={handleCopyLink}
+                className="gap-1.5"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Lien Skill Radar</span>
+              </Button>
+            )}
             {primary && (
               <Button
                 size="default"
@@ -469,8 +542,6 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             tauxEquipe={c.tauxEquipe}
             tauxSoft={c.tauxSoft}
             candidatureId={c.id}
-            onMissingAction={canCopyLink ? handleCopyLink : undefined}
-            missingActionLabel={canCopyLink ? "Copier le lien du formulaire d'auto-évaluation" : undefined}
           />
         </div>
 
@@ -573,6 +644,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         <RevertCountdown
           lastStatusChangeAt={revertBlock.lastStatusChangeAt}
           emailState={revertBlock.emailState}
+          previousStatut={revertBlock.previousStatut}
           disabled={busy}
           sendingNow={sendingNow === c.id}
           revertingStatus={revertingStatus === c.id}
@@ -598,38 +670,30 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         placeholder={`Note rapide pour l'étape « ${STATUT_LABELS[c.statut] ?? c.statut} »…`}
       />
 
-      {/* ── 6.5 Message du candidat à l'inscription ──
-          Read-only callout. Lives ABOVE the recruiter notes so the
-          candidate's own voice is visible at a glance and never
-          bleeds into the structured evaluation form below — the
-          previous build's `notesDirecteur ?? candidate.notes`
-          fallback was contaminating "Notes libres" with the intake
-          message. */}
-      <CandidateApplicationMessage
-        notes={candidate.notes ?? null}
-        filterPosteTitre={c.posteTitre}
-      />
+      {/* ── 7. Notes d'évaluation (legacy 4-field form, gated + collapsed) ──
+          v5.1.x A.6 (codex Y6 + design D-copy-2): only render when the
+          candidature actually has parsed legacy content AND we're at
+          a stage where filling Forces / Vigilance / Recommandation
+          made historical sense. New candidates never see this; legacy
+          candidates with empty `notesDirecteur` don't either. Summary
+          text is now a plain label, not a misleading instruction. */}
+      {hasLegacyNoteContent && !['postule', 'preselectionne'].includes(c.statut) && (
+        <details className="rounded-2xl border border-border/40 bg-muted/20">
+          <summary className="cursor-pointer select-none px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors">
+            Anciennes notes structurées
+          </summary>
+          <div className="px-1 pb-1">
+            <CandidateNotesSection
+              candidateId={candidate.id}
+              candidatureId={c.id}
+              notes={c.notesDirecteur ?? ''}
+              onNotesChange={setNotes}
+            />
+          </div>
+        </details>
+      )}
 
-      {/* ── 7. Notes d'évaluation (legacy 4-field form, collapsed) ──
-          Superseded by per-stage fiches in v5. Kept as a disclosure
-          so existing notes remain editable / migratable, but never
-          intrusive at stages where the 4 fields don't apply. */}
-      <details className="rounded-2xl border border-border/40 bg-muted/20">
-        <summary className="cursor-pointer select-none px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors">
-          Notes structurées (legacy) — déplacer vers les fiches d'étape
-        </summary>
-        <div className="px-1 pb-1">
-          <CandidateNotesSection
-            candidateId={candidate.id}
-            candidatureId={c.id}
-            notes={c.notesDirecteur ?? ''}
-            onNotesChange={setNotes}
-          />
-        </div>
-      </details>
-
-      {/* ── 8. Documents: slot summary + full panel ── */}
-      <DocumentSlotSummary documents={documents} onJumpToPanel={handleJumpToDocuments} />
+      {/* ── 8. Documents: full panel (slot summary lives at top of workspace, A.7) ── */}
       <div id={DOCUMENTS_ANCHOR} className="scroll-mt-24">
         <CandidateDocumentsPanel
           candidatureId={c.id}
@@ -787,6 +851,8 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         open={!!reassigningDoc}
         onOpenChange={(open) => { if (!open) setReassigningDoc(null) }}
         doc={reassigningDoc}
+        events={events}
+        currentStatut={c.statut}
         onReassigned={(docId, eventId) => { replaceDocumentEventId(docId, eventId); setReassigningDoc(null) }}
       />
     </div>

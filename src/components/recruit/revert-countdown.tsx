@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Clock, Mail, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { STATUT_LABELS } from '@/lib/constants'
 
 /**
  * Revert-window banner with an exact deadline. The previous copy ("{N}min
@@ -27,13 +28,26 @@ export interface RevertCountdownProps {
   revertingStatus: boolean
   onSendNow: () => void
   onRevert: () => void
+  /** v5.1.x A.4 (issue 2 + design D-copy-3): the previous label "Annuler
+   *  la transition" was too abstract — the recruiter wanted to know what
+   *  was being undone. We now render `← Revenir à «<prev stage>»`,
+   *  pulling the label from STATUT_LABELS. The workspace passes
+   *  `previousStatut` from the latest status_change.statutFrom; the
+   *  parent gates rendering of <RevertCountdown> on that being non-null
+   *  (countdown only renders within the 10-min window after a forward
+   *  transition, which always has a previous stage), so the
+   *  `'Annuler le passage'` fallback is paranoid-defensive only. */
+  previousStatut?: string | null
 }
 
 const WINDOW_MS = 10 * 60 * 1000
 
 export default function RevertCountdown({
-  lastStatusChangeAt, emailState, disabled, sendingNow, revertingStatus, onSendNow, onRevert,
+  lastStatusChangeAt, emailState, disabled, sendingNow, revertingStatus, onSendNow, onRevert, previousStatut,
 }: RevertCountdownProps) {
+  const prevLabel = previousStatut && STATUT_LABELS[previousStatut]
+    ? STATUT_LABELS[previousStatut]
+    : null
   // `nowMs` is the wall clock sampled every 30s. Re-rendering every second
   // would spin for no visual gain and drain idle-tab batteries; 30s keeps
   // the progress bar honest without churn. The React compiler flags
@@ -93,12 +107,23 @@ export default function RevertCountdown({
           <Button
             size="sm"
             variant="ghost"
-            className="gap-1.5 h-8"
+            className="gap-1.5 h-8 max-w-[18rem]"
             disabled={disabled}
             onClick={onRevert}
+            title={prevLabel ? `Revenir à ${prevLabel}` : undefined}
+            aria-label={prevLabel ? `Revenir à ${prevLabel}` : 'Annuler le passage'}
           >
-            <RotateCcw className="h-3 w-3" />
-            {revertingStatus ? 'Annulation…' : 'Annuler la transition'}
+            <RotateCcw className="h-3 w-3 shrink-0" />
+            {revertingStatus
+              ? 'Annulation…'
+              : prevLabel
+                ? (
+                  <>
+                    <span className="shrink-0">Revenir à</span>
+                    <span className="max-w-[14ch] truncate inline-block align-middle">«&nbsp;{prevLabel}&nbsp;»</span>
+                  </>
+                )
+                : 'Annuler le passage'}
           </Button>
         </div>
       </div>

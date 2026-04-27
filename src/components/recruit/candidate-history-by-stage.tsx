@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useRef, useState } from 'react'
+import { MarkdownNote } from '@/components/ui/markdown-note'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -51,36 +50,54 @@ function groupEventsByStage(
   documents: CandidatureDocument[],
 ): StageGroup[] {
   // Walk events oldest-first so we can track the candidature's active statut
-  // at the time of each event. Without this, notes/documents (which don't
-  // carry a statutTo of their own) all fall into the 'postule' bucket — so
-  // a note added during the Présélectionné stage would hide under Postulé
-  // forever. Documents are attached using the same timeline so the user sees
-  // "which docs were uploaded during which stage".
+  // at the time of each event. v5.1.x correction (codex R3 + A.1): when an
+  // event carries an explicit `stage` field (populated since v4.5 on note
+  // POSTs and PATCHes, and on every status_change), use that. Fall back to
+  // active-statut replay only for legacy events that pre-date the column —
+  // otherwise a note retroactively assigned to "entretien_1" via the
+  // composer would still get bucketed under whatever the candidate's
+  // current active statut is, which is exactly what made per-stage notes
+  // silently broken since v4.5.
   const sortedAsc = [...events].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const eventsByStage = new Map<string, CandidatureEvent[]>()
   const docsByStage = new Map<string, CandidatureDocument[]>()
+  const eventsById = new Map<number, CandidatureEvent>()
   const stageTransitions: Array<{ at: string; to: string }> = [{ at: '0000', to: 'postule' }]
 
   let activeStatut = 'postule'
   for (const e of sortedAsc) {
+    eventsById.set(e.id, e)
     if (e.type === 'status_change' && e.statutTo) {
       activeStatut = e.statutTo
       stageTransitions.push({ at: e.createdAt, to: activeStatut })
     }
-    if (!eventsByStage.has(activeStatut)) eventsByStage.set(activeStatut, [])
-    eventsByStage.get(activeStatut)!.push(e)
+    // Prefer the event's explicit `stage` field; fall back to replay for
+    // legacy rows where stage is null/undefined.
+    const eventStage = e.stage ?? activeStatut
+    if (!eventsByStage.has(eventStage)) eventsByStage.set(eventStage, [])
+    eventsByStage.get(eventStage)!.push(e)
   }
 
-  // Bucket each document into the stage that was active when it was uploaded.
-  // Documents table has no direct stage reference, so we replay the transition
-  // timeline: the active stage at `doc.created_at` is the last transition
-  // whose `at` is <= doc.created_at.
+  // Bucket each document. v5.1.x correction (codex R1 + A.1): when the
+  // document has an `event_id`, look up the linked event's `stage` and use
+  // that — this is what the v4.5 reassign-dialog PATCH writes, and without
+  // honoring it the visual move did nothing. Fall back to the time-replay
+  // heuristic for legacy documents that pre-date the FK column or where
+  // the linked event was deleted.
   for (const doc of documents) {
     if (doc.deleted_at) continue
-    let stage = 'postule'
-    for (const t of stageTransitions) {
-      if (t.at <= doc.created_at) stage = t.to
-      else break
+    let stage: string | null = null
+    if (doc.event_id != null) {
+      const linked = eventsById.get(doc.event_id)
+      if (linked?.stage) stage = linked.stage
+      else if (linked?.type === 'status_change' && linked.statutTo) stage = linked.statutTo
+    }
+    if (!stage) {
+      stage = 'postule'
+      for (const t of stageTransitions) {
+        if (t.at <= doc.created_at) stage = t.to
+        else break
+      }
     }
     if (!docsByStage.has(stage)) docsByStage.set(stage, [])
     docsByStage.get(stage)!.push(doc)
@@ -240,9 +257,7 @@ function NoteContent({ content }: { content: string }) {
   if (!isLong || expanded) {
     return (
       <div className="mt-1.5">
-        <div className="prose prose-sm dark:prose-invert max-w-none text-xs [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-        </div>
+        <MarkdownNote content={content} />
         {isLong && (
           <button
             type="button"
@@ -261,9 +276,7 @@ function NoteContent({ content }: { content: string }) {
 
   return (
     <div className="mt-1.5">
-      <div className="prose prose-sm dark:prose-invert max-w-none text-xs [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 overflow-hidden">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{truncated + '...'}</ReactMarkdown>
-      </div>
+      <MarkdownNote content={truncated + '...'} className="overflow-hidden" />
       <button
         type="button"
         onClick={() => setExpanded(true)}
@@ -591,6 +604,47 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
   // Reset loading when a new doc opens so the spinner is consistent.
   const openPreview = (d: CandidatureDocument) => { setPreviewLoading(true); setPreviewDoc(d) }
 
+  // v5.1.x A.2 (codex R2 + eng-review I1+I2): controlled accordion keyed by
+  // stable stage name, append-only on SSE/status changes.
+  //
+  // Why controlled: a teammate advancing the candidature in another tab
+  // arrives via SSE → page-level setCandidatures runs → currentStatut prop
+  // changes here. The default-uncontrolled accordion would silently keep
+  // its old open state because defaultValue is read once. We need the
+  // open set to track currentStatut additively.
+  //
+  // Append-only behavior (user-confirmed): when currentStatut changes,
+  // ADD the new statut to the open set without removing whatever the
+  // recruiter manually expanded. Olivier reading the Postulé block must
+  // not have it snapped shut when Yolan advances the candidate from
+  // another tab.
+  //
+  // CRITICAL (codex R/P1): hooks must run unconditionally on every render —
+  // they live ABOVE the early return for the empty-history case so adding
+  // history later (initial async load, SSE-created note) doesn't change
+  // the hook count between renders.
+  const [open, setOpen] = useState<string[]>(() => {
+    const out: string[] = [currentStatut]
+    if (currentStatut === 'refuse') {
+      // Refuse usually has a sibling exit stage worth showing too. We
+      // can't know the exact predecessor without the full groups array
+      // (which depends on hooks running first), so we leave the second
+      // open-stage seed to the in-render append below if needed.
+    }
+    return out
+  })
+  const lastStatut = useRef<string>(currentStatut)
+  // React-docs-sanctioned "reset state during render on prop change" idiom
+  // (https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  // The react-hooks/refs lint flags ref reads/writes during render
+  // conservatively but the idiom is supported.
+  // eslint-disable-next-line react-hooks/refs
+  if (lastStatut.current !== currentStatut) {
+    // eslint-disable-next-line react-hooks/refs
+    lastStatut.current = currentStatut
+    setOpen(prev => prev.includes(currentStatut) ? prev : [...prev, currentStatut])
+  }
+
   if (events.length === 0 && documents.length === 0) {
     return (
       <div className="text-center py-8 text-sm text-muted-foreground">
@@ -603,20 +657,6 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
   const summary = computeSummary(events, documents)
   const deliveryMap = buildDeliveryStatusMap(events)
 
-  // Default open: ONLY the current stage. The `Journal récent` block at
-  // the top of the workspace now covers the "last 5 events" at-a-glance
-  // scan, so the full historique can start compact. Recruiters who want
-  // to read the whole trail expand stages one by one.
-  const currentGroupIndex = groups.findIndex(g => g.statut === currentStatut)
-  const defaultOpen: number[] = []
-  if (currentGroupIndex >= 0) defaultOpen.push(currentGroupIndex)
-  // If refused, open refuse + the exit stage
-  if (currentStatut === 'refuse') {
-    const refuseIdx = groups.findIndex(g => g.statut === 'refuse')
-    if (refuseIdx >= 0) defaultOpen.push(refuseIdx)
-    if (refuseIdx > 0) defaultOpen.push(refuseIdx - 1)
-  }
-
   return (
     <div>
       {/* Summary */}
@@ -624,8 +664,17 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
         <p className="text-xs text-muted-foreground mb-3">{summary}</p>
       )}
 
-      <Accordion defaultValue={defaultOpen}>
-        {groups.map((group, index) => {
+      <Accordion
+        multiple
+        value={open}
+        onValueChange={(v) => setOpen(v as string[])}
+      >
+        {/* v5.1.x A.2 + issues 7+11: render reverse-pipeline order so the
+            current stage is at the top. Within each stage, events are
+            already sorted descending (line ~770). The reverse is
+            render-side only — `groupEventsByStage` keeps semantic
+            pipeline order so any future consumer reads it the same. */}
+        {[...groups].reverse().map((group) => {
           // Split events into transitions/emails (timeline) vs notes
           // (contentMd or typed note events, rendered as a quiet section).
           // visibleTimelineCount must match what EventRow actually renders —
@@ -673,7 +722,7 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
           if (totalNotes > 0) countParts.push(`${totalNotes} note${totalNotes > 1 ? 's' : ''}`)
           if (group.documents.length > 0) countParts.push(`${group.documents.length} document${group.documents.length > 1 ? 's' : ''}`)
           return (
-            <AccordionItem key={group.statut} value={index} className={isCurrent ? 'border-l-2 border-l-primary pl-1 -ml-[2px]' : undefined}>
+            <AccordionItem key={group.statut} value={group.statut} className={isCurrent ? 'border-l-2 border-l-primary pl-1 -ml-[2px]' : undefined}>
               <AccordionTrigger className="px-2 hover:no-underline">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[group.statut] ?? ''}`}>

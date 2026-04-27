@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { MarkdownNote } from '@/components/ui/markdown-note'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -240,9 +239,7 @@ export default function CandidateStatusBar({
                           {expandable && isExpanded && (
                             <div className="ml-6 pl-3 border-l-2 border-muted mt-1 mb-2 space-y-2">
                               {e.contentMd && (
-                                <div className="prose prose-sm dark:prose-invert max-w-none text-xs [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{e.contentMd}</ReactMarkdown>
-                                </div>
+                                <MarkdownNote content={e.contentMd} variant="compact" />
                               )}
                               {e.emailSnapshot && (
                                 <EmailSnapshotSection snapshot={e.emailSnapshot} />
