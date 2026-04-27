@@ -61,20 +61,24 @@ export default function PoleScoreboard({ members, poleFilter, onSelectPole }: Po
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {stats.map(s => {
-        const isActive = poleFilter === s.pole || (poleFilter === null && s.pole === '__transverse' && false)
-        const Tag = onSelectPole ? 'button' : 'div'
+        const isActive = poleFilter === s.pole
         const color = POLE_HEX[s.pole] ?? POLE_HEX.__transverse
+        // Transverse has no server-side filter — keep it informational
+        // (no-op click) so we don't reset the filter when the user clicks it.
+        const isClickable = onSelectPole && s.pole !== '__transverse'
+        const Tag = isClickable ? 'button' : 'div'
         return (
           <Tag
             key={s.pole}
-            type={onSelectPole ? 'button' : undefined}
-            onClick={onSelectPole ? () => onSelectPole(s.pole === '__transverse' ? 'all' : s.pole) : undefined}
+            type={isClickable ? 'button' : undefined}
+            onClick={isClickable ? () => onSelectPole!(s.pole) : undefined}
             className={cn(
               'rounded-lg border p-4 text-left transition-colors min-w-0',
-              onSelectPole && 'hover:bg-muted/40 cursor-pointer',
+              isClickable && 'hover:bg-muted/40 cursor-pointer',
               isActive && 'ring-2 ring-primary',
             )}
             style={{ borderLeftColor: color, borderLeftWidth: 4 }}
+            title={isClickable ? undefined : 'Aperçu — pas de filtre serveur'}
           >
             <p className="text-xs font-medium text-muted-foreground truncate">{s.label}</p>
             <p className="text-2xl font-bold tabular-nums mt-1">

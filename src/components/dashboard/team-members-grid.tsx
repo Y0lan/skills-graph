@@ -84,6 +84,13 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
 
   const hasActiveFilter = searchQuery || filterTeam !== 'all' || filterPole !== 'all'
 
+  // Derive the visible expansion: hide it when the expanded member is no
+  // longer in the filtered set, otherwise it silently reopens later when
+  // filters clear. Pure derivation — no useEffect → no cascading render.
+  const visibleExpandedSlug = expandedSlug && filtered.some(m => m.slug === expandedSlug)
+    ? expandedSlug
+    : null
+
   return (
     <Card>
       <CardHeader>
@@ -175,21 +182,32 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
             <tbody>
               {filtered.map(member => {
                 const hasSubmitted = member.submittedAt !== null
-                const expanded = expandedSlug === member.slug
+                const expanded = visibleExpandedSlug === member.slug
                 const score = memberOverallAvg(member)
                 const lastTouchAt = member.lastActivityAt ?? member.submittedAt
                 return (
                   <Fragment key={member.slug}>
                     <tr
                       className={cn(
-                        'border-t cursor-pointer transition-colors',
-                        hasSubmitted ? 'hover:bg-muted/30' : 'opacity-50',
+                        'border-t transition-colors',
+                        hasSubmitted ? 'cursor-pointer hover:bg-muted/30' : 'opacity-50',
                         expanded && 'bg-muted/30',
                       )}
-                      onClick={() => setExpandedSlug(expanded ? null : member.slug)}
+                      onClick={hasSubmitted ? () => setExpandedSlug(expanded ? null : member.slug) : undefined}
+                      onKeyDown={hasSubmitted ? e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          // Ignore key events bubbled from the inline link.
+                          if ((e.target as HTMLElement).tagName === 'A') return
+                          e.preventDefault()
+                          setExpandedSlug(expanded ? null : member.slug)
+                        }
+                      } : undefined}
+                      tabIndex={hasSubmitted ? 0 : -1}
+                      aria-expanded={expanded}
+                      aria-label={`${member.name} — ${expanded ? 'masquer' : 'afficher'} le détail`}
                     >
                       <td className="px-2 py-2 text-muted-foreground">
-                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
@@ -288,13 +306,17 @@ function ExpandedRow({ member, skillCategories, poleCategoryIds }: ExpandedRowPr
       value: member.categoryAverages[cat.id] ?? 0,
       fullMark: 5,
     }))
+  // When poleCategoryIds is passed, every poleCategory is included even
+  // if the member rated none — gate on at least one positive value to
+  // avoid rendering an empty origin-pinned polygon.
+  const radarHasSignal = radarData.length >= 3 && radarData.some(d => d.value > 0)
 
   return (
     <tr>
       <td colSpan={8} className="bg-muted/15 border-t border-b">
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 p-4">
           <div className="min-w-0">
-            {radarData.length >= 3 ? (
+            {radarHasSignal ? (
               <VisxRadarChart data={radarData} height={320} />
             ) : (
               <p className="text-sm text-muted-foreground italic py-12 text-center">

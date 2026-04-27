@@ -97,6 +97,12 @@ export default function DashboardPage() {
   const { data: memberAggregate, loading: memberLoading } = useMemberAggregate(slug)
   const [poleFilter, setPoleFilter] = useState<string | null>(member?.pole ?? null)
   const { data: teamAggregate, loading: teamLoading } = useTeamAggregate(poleFilter)
+  // Unfiltered team data — fed to the pôle scoreboard so it always shows
+  // all 4 pôles regardless of the current filter. When no pole filter is
+  // active this resolves to the same dataset as `teamAggregate` (the hook
+  // dedupe is upstream of caching, so this is a second request — small
+  // payload, not a perf concern, runs in parallel).
+  const { data: fullTeamAggregate } = useTeamAggregate(null)
 
   const [activeTab, setActiveTab] = useState(slug ? 'profil' : 'equipe')
   const [expertCategoryHint, setExpertCategoryHint] = useState<string | null>(null)
@@ -256,13 +262,14 @@ export default function DashboardPage() {
                       {teamAggregate && hasTeamData && (
                         <>
                           <PoleScoreboard
-                            members={teamAggregate.members}
+                            members={fullTeamAggregate?.members ?? teamAggregate.members}
                             poleFilter={poleFilter}
                             onSelectPole={(p) => setPoleFilter(p === 'all' ? null : p)}
                           />
                           <SkillsAtRisk
                             members={teamAggregate.members}
                             categories={teamAggregate.categories}
+                            categoryTargets={teamAggregate.categoryTargets}
                             poleFilter={poleFilter}
                             onFindExpert={(categoryId) => {
                               setExpertCategoryHint(categoryId)

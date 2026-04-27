@@ -7,6 +7,8 @@ import type { TeamCategoryAggregateResponse, TeamMemberAggregateResponse } from 
 interface SkillsAtRiskProps {
   members: TeamMemberAggregateResponse[]
   categories: TeamCategoryAggregateResponse[]
+  /** Per-category target rank (lives on TeamAggregateResponse.categoryTargets). */
+  categoryTargets: Record<string, number>
   /** Pôle filter to scope which members count as experts. Null/all = whole team. */
   poleFilter?: string | null
   /** Threshold above which a rating counts as "expert". Default 4 (out of 5). */
@@ -25,6 +27,7 @@ interface SkillsAtRiskProps {
 export default function SkillsAtRisk({
   members,
   categories,
+  categoryTargets,
   poleFilter,
   expertThreshold = 4,
   onFindExpert,
@@ -38,10 +41,11 @@ export default function SkillsAtRisk({
         const expertCount = scoped.filter(
           m => (m.categoryAverages[cat.categoryId] ?? 0) >= expertThreshold,
         ).length
+        const targetRank = categoryTargets[cat.categoryId] ?? 0
         return {
           categoryId: cat.categoryId,
           categoryLabel: cat.categoryLabel,
-          targetRank: cat.targetRank,
+          targetRank,
           teamAvgRank: cat.teamAvgRank,
           expertCount,
         }
@@ -51,7 +55,7 @@ export default function SkillsAtRisk({
         if (a.expertCount !== b.expertCount) return a.expertCount - b.expertCount
         return b.targetRank - a.targetRank
       })
-  }, [members, categories, poleFilter, expertThreshold])
+  }, [members, categories, categoryTargets, poleFilter, expertThreshold])
 
   if (risks.length === 0) return null
 

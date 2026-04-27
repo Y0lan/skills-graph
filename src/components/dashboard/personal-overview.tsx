@@ -227,18 +227,21 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   // 5-6 axes, legible) vs 'all' (the full 18-axis view, on demand).
   // Members with no home pôle (e.g. transverse / direction) skip the
   // restriction since there's nothing meaningful to focus on.
+  //
+  // Init key bug: pole mappings are fetched async, so we can't gate the
+  // initial state on them — that'd default everyone to 'all' and the user
+  // would have to manually click "Recentrer". Instead, default to 'pole'
+  // whenever a member HAS a home pôle (a synchronous check), and let
+  // displayCategoriesUnsorted gracefully degrade to all categories until
+  // the mapping arrives a moment later.
   const poleMappings = usePoleMappings()
   const homePoleCategoryIds = useMemo(() => {
     if (!currentMemberPole || !poleMappings) return null
     const ids = poleMappings[currentMemberPole] ?? []
     return ids.length > 0 ? new Set(ids) : null
   }, [currentMemberPole, poleMappings])
-  const canFocusOnPole = homePoleCategoryIds !== null
-  const [radarScope, setRadarScope] = useState<'pole' | 'all'>(canFocusOnPole ? 'pole' : 'all')
-  // If we discover late that the user has no home pôle, fall back to 'all'.
-  useEffect(() => {
-    if (!canFocusOnPole && radarScope === 'pole') setRadarScope('all')
-  }, [canFocusOnPole, radarScope])
+  const hasHomePole = currentMemberPole !== null
+  const [radarScope, setRadarScope] = useState<'pole' | 'all'>(hasHomePole ? 'pole' : 'all')
 
   // Categories the radar will display, sorted by pole so each pole's
   // exclusive categories cluster together (matches the Équipe tab pattern).
@@ -667,7 +670,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                   </div>
                 ))}
               </div>
-              {canFocusOnPole && (
+              {hasHomePole && (
                 <Button
                   variant="ghost"
                   size="sm"
