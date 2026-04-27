@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Copy, Clock } from 'lucide-react'
+import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Clock } from 'lucide-react'
 import {
   STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime,
   transitionConsequence,
@@ -12,6 +12,7 @@ import CandidatePipelineStepper from './candidate-pipeline-stepper'
 import CandidateScoreSummary from './candidate-score-summary'
 import CandidateDocumentsPanel from './candidate-documents-panel'
 import CandidateNotesSection from './candidate-notes-section'
+import CandidateApplicationMessage from './candidate-application-message'
 import AboroProfileSection from './aboro-profile-section'
 import CandidateHistoryByStage from './candidate-history-by-stage'
 import ScheduledEmailBanner from './scheduled-email-banner'
@@ -94,7 +95,6 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
     documents,
     setDocuments,
     setCandidatureDataMap,
-    notes,
     setNotes,
     aboroProfile,
     setAboroProfile,
@@ -286,18 +286,11 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         </span>
 
         <div className="flex items-center gap-1 ml-auto">
-          {canCopyLink && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyLink}
-              className="gap-1.5 h-7 text-xs"
-              title="Copier le lien d'évaluation Skill Radar"
-            >
-              <Copy className="h-3 w-3" />
-              Copier le lien
-            </Button>
-          )}
+          {/* Skill Radar link copy lives next to the score tiles instead
+              of here — that's where the recruiter learns "scores are
+              missing" and acts on it. Keeping a duplicate generic
+              button on the header just gave two paths for the same
+              action without contextual framing. */}
           {submitted && (
             <Button
               variant="outline"
@@ -351,7 +344,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             tauxSoft={c.tauxSoft}
             candidatureId={c.id}
             onMissingAction={canCopyLink ? handleCopyLink : undefined}
-            missingActionLabel={canCopyLink ? 'Copier le lien Skill Radar pour compléter les scores' : undefined}
+            missingActionLabel={canCopyLink ? "Copier le lien du formulaire d'auto-évaluation" : undefined}
           />
         </div>
 
@@ -476,11 +469,26 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         historyAnchorId={HISTORY_ANCHOR}
       />
 
-      {/* ── 7. Notes structurées (always available) ── */}
+      {/* ── 6.5 Message du candidat à l'inscription ──
+          Read-only callout. Lives ABOVE the recruiter notes so the
+          candidate's own voice is visible at a glance and never
+          bleeds into the structured evaluation form below — the
+          previous build's `notesDirecteur ?? candidate.notes`
+          fallback was contaminating "Notes libres" with the intake
+          message. */}
+      <CandidateApplicationMessage
+        notes={candidate.notes ?? null}
+        filterPosteTitre={c.posteTitre}
+      />
+
+      {/* ── 7. Notes d'évaluation (recruiter-only, structured) ──
+          Reads strictly from candidatures.notes_directeur — no
+          fallback to the candidate's intake notes. Empty fields stay
+          empty until the recruiter fills them. */}
       <CandidateNotesSection
         candidateId={candidate.id}
         candidatureId={c.id}
-        notes={c.notesDirecteur ?? notes}
+        notes={c.notesDirecteur ?? ''}
         onNotesChange={setNotes}
       />
 
@@ -505,18 +513,8 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             <h3 className="mt-3 text-sm font-medium">En attente de l'évaluation</h3>
             <p className="mt-1 text-xs text-muted-foreground">
               Radar, analyse IA et écarts sont disponibles après soumission du Skill Radar.
+              {canCopyLink && ' Le lien d\'auto-évaluation se trouve sous les scores.'}
             </p>
-            {canCopyLink && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopyLink}
-                className="mt-3 gap-1.5"
-              >
-                <Copy className="h-3 w-3" />
-                Copier le lien pour relancer le candidat
-              </Button>
-            )}
           </CardContent>
         </Card>
       ) : (

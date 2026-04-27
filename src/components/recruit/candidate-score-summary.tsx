@@ -84,12 +84,15 @@ export default function CandidateScoreSummary({
           <Badge className={`text-[10px] ${verdict.color}`}>{verdict.label}</Badge>
         )}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-stretch">
         {tiles.map(t => {
           const canOpen = t.clickable && t.value != null
           const tile = (
-            <div className="rounded-md border border-border/60 bg-card px-3 py-2.5 text-left">
-              <div className="flex items-center justify-between gap-1 mb-1">
+            <div className="h-full flex flex-col gap-1.5 rounded-md border border-border/60 bg-card px-3 py-2.5 text-left">
+              {/* Header — label + tooltip, fixed at the top of every
+                  tile so the row reads cleanly across filled / empty
+                  states. */}
+              <div className="flex items-center justify-between gap-1">
                 <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-medium">
                   {t.label}
                 </p>
@@ -100,42 +103,54 @@ export default function CandidateScoreSummary({
                   <TooltipContent className="max-w-[240px] text-xs">{TILE_TOOLTIPS[t.label]}</TooltipContent>
                 </Tooltip>
               </div>
+
+              {/* Big number — same baseline whether filled (`xx%`) or
+                  empty (em dash). Fixed line-height keeps height
+                  identical to the percent variant. */}
               {t.value != null ? (
-                <>
-                  <p
-                    className={`text-xl font-semibold tabular-nums ${scoreColor(t.value)}`}
-                    style={{ fontFamily: "'Raleway Variable', sans-serif" }}
-                  >
-                    {Math.round(t.value)}%
-                  </p>
-                  <div className="mt-1.5 h-1 w-full rounded-full bg-muted overflow-hidden">
+                <p
+                  className={`text-xl font-semibold tabular-nums leading-none ${scoreColor(t.value)}`}
+                  style={{ fontFamily: "'Raleway Variable', sans-serif" }}
+                >
+                  {Math.round(t.value)}%
+                </p>
+              ) : (
+                <p
+                  className="text-xl font-semibold tabular-nums leading-none text-muted-foreground/50"
+                  style={{ fontFamily: "'Raleway Variable', sans-serif" }}
+                >
+                  —
+                </p>
+              )}
+
+              {/* Footer — pushed to the bottom of the tile via
+                  mt-auto so all tiles end at the same Y, no matter
+                  whether the row is the bar or the hint text. The
+                  hint clamps to 2 lines so a longer string wraps
+                  inside the same envelope instead of stretching the
+                  tile. */}
+              <div className="mt-auto">
+                {t.value != null ? (
+                  <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
                     <div
                       className={`h-full rounded-full ${scoreBarColor(t.value)}`}
                       style={{ width: `${Math.min(100, Math.max(0, t.value))}%` }}
                     />
                   </div>
-                </>
-              ) : (
-                <>
-                  <p
-                    className="text-xl font-semibold tabular-nums text-muted-foreground/50"
-                    style={{ fontFamily: "'Raleway Variable', sans-serif" }}
-                  >
-                    —
-                  </p>
-                  <p className="text-[10px] text-muted-foreground/80 mt-1.5">
+                ) : (
+                  <p className="text-[10px] leading-tight text-muted-foreground/80 line-clamp-2 min-h-[20px]">
                     {MISSING_HINT[t.label]}
                   </p>
-                </>
-              )}
+                )}
+              </div>
             </div>
           )
-          if (!canOpen) return <div key={t.label}>{tile}</div>
+          if (!canOpen) return <div key={t.label} className="h-full">{tile}</div>
           return (
             <button
               key={t.label}
               type="button"
-              className="text-left block w-full hover:ring-1 hover:ring-primary/40 rounded-md transition-shadow"
+              className="text-left block w-full h-full hover:ring-1 hover:ring-primary/40 rounded-md transition-shadow"
               aria-label={`Voir le détail du score ${t.label} ${Math.round(t.value ?? 0)}%`}
               onClick={() => setOpenMetric(LABEL_TO_METRIC[t.label])}
             >

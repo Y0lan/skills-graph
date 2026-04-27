@@ -407,17 +407,29 @@ function EventRow({
 
       {/* Transition notes — the free-text field from the transition dialog
           lands here as status_change.notes. Rendered as a bordered card
-          under the event line so multi-line notes are actually readable
-          (used to be a squished inline <span>). */}
-      {event.type === 'status_change' && event.notes && (
-        <div className="mt-2 ml-7 rounded-md border bg-muted/20 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
-            <MessageSquare className="h-3 w-3" />
-            Note de transition
-          </p>
-          <NoteContent content={event.notes} />
-        </div>
-      )}
+          under the event line so multi-line notes are actually readable.
+          Special case: the intake-service writes the candidate's own
+          "Message complémentaire" into the seed status_change.notes when
+          the Drupal webhook fires (createdBy='drupal-webhook'). That text
+          is the CANDIDATE'S voice, not a recruiter note — label it
+          accordingly so the historique doesn't look like the recruiter
+          wrote it. */}
+      {event.type === 'status_change' && event.notes && (() => {
+        const isCandidateMessage = event.createdBy === 'drupal-webhook'
+        return (
+          <div
+            className={`mt-2 ml-7 rounded-md border px-3 py-2 ${
+              isCandidateMessage ? 'bg-primary/5 border-primary/30' : 'bg-muted/20'
+            }`}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
+              <MessageSquare className="h-3 w-3" />
+              {isCandidateMessage ? 'Message du candidat' : 'Note de transition'}
+            </p>
+            <NoteContent content={event.notes} />
+          </div>
+        )
+      })()}
 
       {/* Markdown content */}
       {event.contentMd && <NoteContent content={event.contentMd} />}

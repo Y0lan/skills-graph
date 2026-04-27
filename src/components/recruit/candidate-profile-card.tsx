@@ -111,6 +111,12 @@ export interface CandidateProfileCardProps {
   profile: AiProfile | null
   /** Pre-ranked top skills from caller (role-aware if present, else baseline). Capped at 5. */
   topSkills?: Array<{ skillId: string; skillLabel: string; rating: number }>
+  /** When the card is rendered nested under a parent surface that already
+   *  shows the avatar + name + role (the candidate-detail-page identity
+   *  strip), pass `compact` to skip the duplicate hero row and the
+   *  redundant top-skills strip. The "main + sidebar" content stays
+   *  intact — that's the unique value of opening this disclosure. */
+  compact?: boolean
 }
 
 /**
@@ -193,6 +199,7 @@ function hydrateProfile(raw: AiProfile): AiProfile {
 export default function CandidateProfileCard({
   profile: rawProfile,
   topSkills = [],
+  compact = false,
 }: CandidateProfileCardProps) {
   if (!rawProfile) {
     return (
@@ -290,7 +297,12 @@ export default function CandidateProfileCard({
   return (
     <Card>
       <CardContent className="p-5 sm:p-6 space-y-5">
-        {/* ── HERO ── */}
+        {/* ── HERO ──
+            Hidden in compact mode (when this card is rendered as a
+            disclosure under the page-level identity strip). Avoiding
+            the avatar+name+role duplication the user flagged in the
+            second-pass design review. */}
+        {!compact && (
         <div className="flex flex-col sm:flex-row sm:items-start gap-4 pb-5 border-b">
           <InitialsBadge name={name} size="lg" />
           <div className="flex-1 min-w-0">
@@ -432,9 +444,12 @@ export default function CandidateProfileCard({
             ) : null}
           </div>
         </div>
+        )}
 
-        {/* ── TOP SKILLS STRIP ── */}
-        {topSkills.length > 0 ? (
+        {/* ── TOP SKILLS STRIP ──
+            Skipped in compact mode — the page-level identity strip
+            already shows the same chips above this disclosure. */}
+        {!compact && topSkills.length > 0 ? (
           <div className="flex items-center gap-2 flex-wrap pb-1">
             <span className="text-xs font-medium uppercase text-muted-foreground shrink-0">
               Top compétences

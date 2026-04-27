@@ -222,12 +222,31 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
   // In category-average fallback, weight is always 1 so the Requis/
   // Apprécié distinction is meaningless — suppress the badge.
   const isFallback = data.formula === 'category-average'
+
+  // Sort: 100% first (top of list), then descending fulfillment. Within
+  // ties, Requis-weighted items come ahead of Apprécié so the "what
+  // matters most for the poste" narrative stays readable. Recruiter
+  // feedback: "afficher les 100% en haut et les moins bien notés de
+  // plus en plus bas".
+  const sorted = data.items.slice().sort((a, b) => {
+    const fa = a.fulfillmentPct ?? (a.targetLevel > 0 ? Math.min(100, (a.candidateLevel / a.targetLevel) * 100) : 0)
+    const fb = b.fulfillmentPct ?? (b.targetLevel > 0 ? Math.min(100, (b.candidateLevel / b.targetLevel) * 100) : 0)
+    if (fb !== fa) return fb - fa
+    return (b.weight ?? 1) - (a.weight ?? 1)
+  })
+
   return (
     <div className="space-y-1.5 min-w-0">
-      {data.items.map((item, i) => {
+      {sorted.map((item, i) => {
         const label = item.skillLabel ?? item.categoryLabel ?? '?'
         const fulfillment = item.fulfillmentPct
           ?? (item.targetLevel > 0 ? Math.min(100, (item.candidateLevel / item.targetLevel) * 100) : 0)
+        // Over-fulfilled (candidate above target) caps at 100% but the
+        // raw delta is recruiter-relevant: "+1 above bar" reads cleaner
+        // than "4/3" which looks like a broken fraction.
+        const overshoot = item.candidateLevel > item.targetLevel
+          ? item.candidateLevel - item.targetLevel
+          : 0
         const barColor = fulfillment >= 100
           ? 'bg-emerald-500'
           : fulfillment >= 60 ? 'bg-amber-500' : 'bg-rose-500'
@@ -247,7 +266,9 @@ function PosteBreakdownView({ data }: { data: PosteBreakdown }) {
                 {badge}
               </span>
               <span className="tabular-nums text-muted-foreground shrink-0">
-                {item.candidateLevel}/{item.targetLevel} · {Math.round(fulfillment)}%
+                Candidat {item.candidateLevel} · Requis {item.targetLevel}
+                {overshoot > 0 && <span className="text-emerald-600 dark:text-emerald-400"> · +{overshoot}</span>}
+                <span className="ml-1.5 font-medium text-foreground">{Math.round(fulfillment)}%</span>
               </span>
             </div>
             <div className="h-1.5 rounded bg-muted overflow-hidden">
@@ -267,57 +288,51 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
   if (data.items.length === 0 && (!data.gapAnalysis || data.gapAnalysis.length === 0) && (!data.bonusSkills || data.bonusSkills.length === 0)) {
     return <p className="text-sm text-muted-foreground py-4 text-center">Aucune catégorie à comparer.</p>
   }
-  const labels: Record<EquipeItem['direction'], { label: string; color: string }> = {
-    fills_gap: { label: 'Comble un gap', color: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' },
-    matches: { label: 'Renforce', color: 'bg-sky-500/15 text-sky-700 dark:text-sky-400' },
-    below_team: { label: 'Sous l’équipe', color: 'bg-amber-500/15 text-amber-700 dark:text-amber-500' },
-  }
-  const sortedGaps = (data.gapAnalysis ?? []).slice().sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
   const bonusByCategory = new Map<string, BonusSkillEntry[]>()
   for (const b of data.bonusSkills ?? []) {
     const list = bonusByCategory.get(b.categoryLabel) ?? []
     list.push(b)
     bonusByCategory.set(b.categoryLabel, list)
   }
+
+  // Merge per-category direction (from data.items) with gap numbers
+  // (from data.gapAnalysis). The previous design rendered these as TWO
+  // separate sections — same categories, different angles — so the
+  // recruiter had to mentally join them. Now: one row per category, a
+  // dual-marker bar (candidate filled bar + team marker line + numeric
+  // gap), plus a directional badge derived from the gap sign so the
+  // verdict is obvious at a glance.
+  const directionByCategory = new Map<string, EquipeItem['direction']>()
+  for (const it of data.items) directionByCategory.set(it.categoryId, it.direction)
+  const merged = (data.gapAnalysis ?? [])
+    .slice()
+    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
+    .map(g => ({
+      ...g,
+      direction: directionByCategory.get(g.categoryId)
+        ?? (g.gap > 0.2 ? 'fills_gap' as const : g.gap < -0.2 ? 'below_team' as const : 'matches' as const),
+    }))
+
   return (
     <div className="space-y-4 min-w-0">
-      <div className="space-y-2 min-w-0">
-        {data.items.map(item => (
-          <div key={item.categoryId} className="rounded-md border p-2.5 space-y-1.5 min-w-0">
-            <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-              <span className="font-medium truncate min-w-0">{item.categoryLabel}</span>
-              <Badge className={`text-[10px] shrink-0 ${labels[item.direction].color}`}>
-                {labels[item.direction].label}
-              </Badge>
-            </div>
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground tabular-nums">
-              <div>Candidat : <span className="text-foreground font-medium">{item.candidateAvg}/5</span></div>
-              <div>Équipe : <span className="text-foreground font-medium">{item.teamAvg}/5</span></div>
-              <div>Score : <span className="text-foreground font-medium">{item.contribution}</span></div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {sortedGaps.length > 0 ? (
-        <div className="min-w-0">
-          <h4 className="text-xs font-medium uppercase text-muted-foreground mb-2">Écart avec l'équipe</h4>
-          <div className="space-y-1 min-w-0">
-            {sortedGaps.map(g => (
-              <div key={g.categoryId} className="rounded border p-2 text-xs space-y-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 min-w-0">
-                  <span className="font-medium truncate min-w-0">{g.categoryLabel}</span>
-                  <Badge variant={g.gap >= 0 ? 'default' : 'secondary'} className="text-[10px] tabular-nums shrink-0">
-                    {g.gap >= 0 ? '+' : ''}{g.gap.toFixed(1)}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 tabular-nums text-muted-foreground">
-                  <span>Candidat {g.candidateAvg.toFixed(1)}/5</span>
-                  <span>Équipe {g.teamAvg.toFixed(1)}/5</span>
-                </div>
-              </div>
+      {merged.length > 0 ? (
+        <div>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            Pour chaque catégorie&nbsp;: la barre montre le niveau du candidat (couleur), la ligne verticale montre la moyenne de l'équipe.
+            L'écart à droite indique de combien le candidat est au-dessus (+) ou en-dessous (−) de l'équipe.
+          </p>
+          <ul className="space-y-3 min-w-0">
+            {merged.map(g => (
+              <DualMarkerRow
+                key={g.categoryId}
+                label={g.categoryLabel}
+                candidate={g.candidateAvg}
+                team={g.teamAvg}
+                gap={g.gap}
+                direction={g.direction}
+              />
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
 
@@ -348,6 +363,76 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
         </div>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Single row of the team breakdown: category label on top, dual-marker bar
+ * (candidate fill + team marker line) in the middle, gap badge on the right,
+ * fine-print numeric values underneath. The visual + the numeric tell the
+ * same story so a recruiter can pick up the gap at a glance and verify the
+ * exact figures one beat later.
+ *
+ * Scale: 0–5 (everywhere the rating system uses 0–5). The bar is rendered
+ * as a percentage of 5 to keep it independent of fixed pixel widths.
+ */
+function DualMarkerRow({
+  label, candidate, team, gap, direction,
+}: {
+  label: string
+  candidate: number
+  team: number
+  gap: number
+  direction: EquipeItem['direction']
+}) {
+  const max = 5
+  const candPct = Math.max(0, Math.min(100, (candidate / max) * 100))
+  const teamPct = Math.max(0, Math.min(100, (team / max) * 100))
+  const fillColor = gap > 0.2
+    ? 'bg-emerald-500/70'
+    : gap < -0.2 ? 'bg-amber-500/70' : 'bg-sky-500/60'
+  const directionLabel = direction === 'fills_gap'
+    ? { text: 'Comble un gap', color: 'text-emerald-700 dark:text-emerald-400' }
+    : direction === 'below_team'
+      ? { text: 'Sous l\'équipe', color: 'text-amber-700 dark:text-amber-500' }
+      : { text: 'Au niveau de l\'équipe', color: 'text-sky-700 dark:text-sky-400' }
+  return (
+    <li className="space-y-1.5 min-w-0">
+      <div className="flex items-center justify-between gap-2 min-w-0 text-sm">
+        <span className="font-medium truncate min-w-0">{label}</span>
+        <span className={`shrink-0 text-xs ${directionLabel.color}`}>{directionLabel.text}</span>
+      </div>
+      <div
+        className="relative h-2 rounded-full bg-muted overflow-hidden"
+        role="img"
+        aria-label={`Candidat ${candidate.toFixed(1)} sur 5, équipe ${team.toFixed(1)} sur 5, écart ${gap >= 0 ? '+' : ''}${gap.toFixed(1)}`}
+      >
+        {/* Candidate fill — coloured by sign of gap so the recruiter
+            picks up "above team" / "below team" peripherally without
+            reading numbers. */}
+        <div
+          className={`absolute inset-y-0 left-0 ${fillColor}`}
+          style={{ width: `${candPct}%` }}
+        />
+        {/* Team marker — a 2px vertical line on top of the fill so it's
+            visible whether the candidate is above or below. */}
+        <div
+          className="absolute inset-y-[-2px] w-[2px] bg-foreground/70 dark:bg-foreground/85 pointer-events-none"
+          style={{ left: `calc(${teamPct}% - 1px)` }}
+          aria-hidden
+        />
+      </div>
+      <div className="flex items-baseline justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
+        <span>
+          Candidat <span className="text-foreground font-medium">{candidate.toFixed(1)}/{max}</span>
+          <span className="mx-2">·</span>
+          Équipe <span className="text-foreground font-medium">{team.toFixed(1)}/{max}</span>
+        </span>
+        <span className={`font-mono font-medium ${gap > 0.2 ? 'text-emerald-600 dark:text-emerald-400' : gap < -0.2 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+          {gap >= 0 ? '+' : ''}{gap.toFixed(1)}
+        </span>
+      </div>
+    </li>
   )
 }
 
