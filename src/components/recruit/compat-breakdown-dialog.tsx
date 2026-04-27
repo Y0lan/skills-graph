@@ -304,14 +304,25 @@ function EquipeBreakdownView({ data }: { data: EquipeBreakdown }) {
   // verdict is obvious at a glance.
   const directionByCategory = new Map<string, EquipeItem['direction']>()
   for (const it of data.items) directionByCategory.set(it.categoryId, it.direction)
+  // v4.6.1: sort BEST → WORST (recruiter wants the strong areas at the
+  // top, the weak ones at the bottom — same convention as the poste
+  // breakdown).
+  // Direction also handles the "everyone is at 0" edge case: when
+  // BOTH candidate and team levels are 0, the gap is 0 but it isn't
+  // a "fills_gap" — neither side has the skill. Tag it as 'matches'
+  // (which renders as "Au niveau de l'équipe") so the row doesn't
+  // misleadingly read "Comble un gap" with a +0.0.
   const merged = (data.gapAnalysis ?? [])
     .slice()
-    .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))
-    .map(g => ({
-      ...g,
-      direction: directionByCategory.get(g.categoryId)
-        ?? (g.gap > 0.2 ? 'fills_gap' as const : g.gap < -0.2 ? 'below_team' as const : 'matches' as const),
-    }))
+    .sort((a, b) => b.gap - a.gap)
+    .map(g => {
+      const directionFromAPI = directionByCategory.get(g.categoryId)
+      const bothZero = g.candidateAvg === 0 && g.teamAvg === 0
+      const direction: EquipeItem['direction'] = bothZero
+        ? 'matches'
+        : directionFromAPI ?? (g.gap > 0.2 ? 'fills_gap' : g.gap < -0.2 ? 'below_team' : 'matches')
+      return { ...g, direction }
+    })
 
   return (
     <div className="space-y-4 min-w-0">
@@ -388,14 +399,21 @@ function DualMarkerRow({
   const max = 5
   const candPct = Math.max(0, Math.min(100, (candidate / max) * 100))
   const teamPct = Math.max(0, Math.min(100, (team / max) * 100))
+  // v4.6.1: when both candidate AND team are at zero, the gap is 0 by
+  // arithmetic but the right human story is "neither side has this
+  // skill" — not a "match", not a "gap to fill". Surface that
+  // explicitly so the recruiter doesn't misread the row.
+  const bothZero = candidate === 0 && team === 0
   const fillColor = gap > 0.2
     ? 'bg-emerald-500/70'
     : gap < -0.2 ? 'bg-amber-500/70' : 'bg-sky-500/60'
-  const directionLabel = direction === 'fills_gap'
-    ? { text: 'Comble un gap', color: 'text-emerald-700 dark:text-emerald-400' }
-    : direction === 'below_team'
-      ? { text: 'Sous l\'équipe', color: 'text-amber-700 dark:text-amber-500' }
-      : { text: 'Au niveau de l\'équipe', color: 'text-sky-700 dark:text-sky-400' }
+  const directionLabel = bothZero
+    ? { text: 'Personne ne maîtrise', color: 'text-muted-foreground' }
+    : direction === 'fills_gap'
+      ? { text: 'Comble un gap', color: 'text-emerald-700 dark:text-emerald-400' }
+      : direction === 'below_team'
+        ? { text: 'Sous l\'équipe', color: 'text-amber-700 dark:text-amber-500' }
+        : { text: 'Au niveau de l\'équipe', color: 'text-sky-700 dark:text-sky-400' }
   return (
     <li className="space-y-1.5 min-w-0">
       <div className="flex items-center justify-between gap-2 min-w-0 text-sm">
