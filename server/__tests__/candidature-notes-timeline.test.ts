@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -23,6 +23,13 @@ process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || 're_test_dummy'
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 vi.mock('resend', () => ({
   Resend: class { emails = { send: vi.fn().mockResolvedValue({ data: { id: 'x' }, error: null }) } },
+}))
+
+// Skip rate limits in tests — we fire many requests in quick succession
+// against the same mutation endpoints, which would otherwise 429.
+vi.mock('express-rate-limit', () => ({
+  default: () => (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  rateLimit: () => (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }))
 
 // Stub the auth gate so we can exercise the route without booting full auth.
@@ -96,16 +103,20 @@ function seedCandidatureFixture(): string {
   return candidatureId
 }
 
-describe('POST /api/recruitment/candidatures/:id/events/note', () => {
-  beforeAll(() => {
-    preSeed()
-    initDatabase()
-  })
+// Single boot of preSeed + initDatabase shared across both describes —
+// the in-memory better-sqlite3 connection lives inside lib/db.js's
+// module state, so closing it in one suite's afterAll would leave the
+// next suite trying to open a destroyed handle. Instead we boot once
+// at module scope and clean up via a single afterAll at the bottom.
+preSeed()
+initDatabase()
 
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
-    fs.rmSync(tmpDir, { recursive: true, force: true })
-  })
+afterAll(() => {
+  try { getDb().close() } catch { /* ignore */ }
+  fs.rmSync(tmpDir, { recursive: true, force: true })
+})
+
+describe('POST /api/recruitment/candidatures/:id/events/note', () => {
 
   it('appends a note event and returns the fresh row', async () => {
     const app = await buildApp()
@@ -192,5 +203,185 @@ describe('POST /api/recruitment/candidatures/:id/events/note', () => {
       .send({ contentMd: 'hello' })
     expect(res.status).toBe(404)
     expect(res.body.error).toBe('Candidature introuvable')
+  })
+
+  // ─── v4.5: stage column + edit-in-place ──────────────────
+
+  it('defaults stage to the candidature\'s current statut on insert', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    // Bump the candidature to preselectionne so the default stage isn't postule.
+    getDb().prepare('UPDATE candidatures SET statut = ? WHERE id = ?').run('preselectionne', id)
+    const res = await supertest(app)
+      .post(`/api/recruitment/candidatures/${id}/events/note`)
+      .send({ contentMd: 'Sans override de stage' })
+    expect(res.status).toBe(200)
+    expect(res.body.stage).toBe('preselectionne')
+  })
+
+  it('honors an explicit stage override (retroactive note)', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    // Candidature is in 'postule'; recruiter retroactively pins a note to 'entretien_1'.
+    const res = await supertest(app)
+      .post(`/api/recruitment/candidatures/${id}/events/note`)
+      .send({ contentMd: 'Note rétroactive', stage: 'entretien_1' })
+    expect(res.status).toBe(200)
+    expect(res.body.stage).toBe('entretien_1')
+  })
+
+  it('returns updatedAt = null on a freshly-inserted note', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    const res = await supertest(app)
+      .post(`/api/recruitment/candidatures/${id}/events/note`)
+      .send({ contentMd: 'Pas encore édité' })
+    expect(res.body.updatedAt).toBeNull()
+  })
+
+  it('PATCH /events/note/:id edits in place and stamps updatedAt', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    const created = await supertest(app)
+      .post(`/api/recruitment/candidatures/${id}/events/note`)
+      .send({ contentMd: 'Original' })
+    expect(created.status).toBe(200)
+    const eventId = created.body.id as number
+
+    const edited = await supertest(app)
+      .patch(`/api/recruitment/candidatures/${id}/events/note/${eventId}`)
+      .send({ contentMd: 'Édité' })
+    expect(edited.status).toBe(200)
+    expect(edited.body.id).toBe(eventId)
+    expect(edited.body.contentMd).toBe('Édité')
+    expect(edited.body.updatedAt).not.toBeNull()
+    expect(typeof edited.body.updatedAt).toBe('string')
+
+    // DB-level check: there's still ONE row (no chain), with updated content_md.
+    const rows = getDb().prepare(`SELECT id, content_md, updated_at FROM candidature_events WHERE candidature_id = ? AND type = 'note'`).all(id) as { id: number; content_md: string; updated_at: string | null }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].content_md).toBe('Édité')
+    expect(rows[0].updated_at).not.toBeNull()
+  })
+
+  it('PATCH /events/note/:id rejects edits to events that aren\'t notes', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    // Insert a status_change directly so we have a non-note event to target.
+    const inserted = getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, statut_to, stage, created_by)
+      VALUES (?, 'status_change', 'postule', 'postule', ?)
+      RETURNING id
+    `).get(id, 'yolan.test') as { id: number }
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidatures/${id}/events/note/${inserted.id}`)
+      .send({ contentMd: 'Tentative invalide' })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('Seules les notes peuvent être éditées')
+  })
+
+  it('PATCH /events/note/:id 404s when event belongs to another candidature', async () => {
+    const app = await buildApp()
+    const idA = seedCandidatureFixture()
+    const idB = seedCandidatureFixture()
+    const created = await supertest(app)
+      .post(`/api/recruitment/candidatures/${idA}/events/note`)
+      .send({ contentMd: 'Note de A' })
+    const eventId = created.body.id as number
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidatures/${idB}/events/note/${eventId}`)
+      .send({ contentMd: 'Tentative cross-candidature' })
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('PATCH /api/recruitment/candidature-documents/:id/event', () => {
+
+  it('reassigns a document by stage by resolving the canonical event_id', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    // Seed a status_change to entretien_1 so the stage has a target event.
+    const target = getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, stage, created_by)
+      VALUES (?, 'status_change', 'postule', 'entretien_1', 'entretien_1', 'yolan.test')
+      RETURNING id
+    `).get(id) as { id: number }
+
+    const docId = `doc-${Math.random().toString(36).slice(2, 10)}`
+    getDb().prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, 'cv', 'cv.pdf', 'gs://bucket/cv.pdf', 'yolan.test')
+    `).run(docId, id)
+
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidature-documents/${docId}/event`)
+      .send({ stage: 'entretien_1' })
+    expect(res.status).toBe(200)
+    expect(res.body.eventId).toBe(target.id)
+
+    const row = getDb().prepare(`SELECT event_id FROM candidature_documents WHERE id = ?`).get(docId) as { event_id: number | null }
+    expect(row.event_id).toBe(target.id)
+  })
+
+  it('detaches the document (event_id=NULL) when no event exists for the requested stage', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    const docId = `doc-${Math.random().toString(36).slice(2, 10)}`
+    getDb().prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, 'cv', 'cv.pdf', 'gs://bucket/cv.pdf', 'yolan.test')
+    `).run(docId, id)
+
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidature-documents/${docId}/event`)
+      .send({ stage: 'aboro' })  // candidature has no event for this stage
+    expect(res.status).toBe(200)
+    expect(res.body.eventId).toBeNull()
+  })
+
+  it('rejects a payload with neither stage nor eventId', async () => {
+    const app = await buildApp()
+    const id = seedCandidatureFixture()
+    const docId = `doc-${Math.random().toString(36).slice(2, 10)}`
+    getDb().prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, 'cv', 'cv.pdf', 'gs://bucket/cv.pdf', 'yolan.test')
+    `).run(docId, id)
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidature-documents/${docId}/event`)
+      .send({})
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('stage ou eventId requis')
+  })
+
+  it('returns 404 for an unknown document id', async () => {
+    const app = await buildApp()
+    const res = await supertest(app)
+      .patch('/api/recruitment/candidature-documents/does-not-exist/event')
+      .send({ stage: 'postule' })
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBe('Document introuvable')
+  })
+
+  it('rejects an explicit eventId that belongs to another candidature', async () => {
+    const app = await buildApp()
+    const idA = seedCandidatureFixture()
+    const idB = seedCandidatureFixture()
+    const stranger = getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, statut_to, stage, created_by)
+      VALUES (?, 'status_change', 'preselectionne', 'preselectionne', 'yolan.test')
+      RETURNING id
+    `).get(idA) as { id: number }
+
+    const docId = `doc-${Math.random().toString(36).slice(2, 10)}`
+    getDb().prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, 'cv', 'cv.pdf', 'gs://bucket/cv.pdf', 'yolan.test')
+    `).run(docId, idB)
+    const res = await supertest(app)
+      .patch(`/api/recruitment/candidature-documents/${docId}/event`)
+      .send({ eventId: stranger.id })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('eventId hors candidature')
   })
 })

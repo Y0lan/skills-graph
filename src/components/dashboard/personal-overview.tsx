@@ -257,10 +257,18 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   // if pole mappings haven't loaded yet, and are no-ops in the empty-state
   // path below.
   const displayCategoriesUnsorted = useMemo(() => {
+    // 'all' mode is the user's explicit ask to see every category, so it
+    // must override BOTH the pôle restriction AND the compare-mode shared
+    // filter. Otherwise the toggle silently no-ops when comparing with
+    // someone from the same pôle (pole ⊂ shared → identical chart).
+    // The "Comparaison sur :" status line below the chart still clarifies
+    // which subset is meaningfully compared, and the overlay polygon
+    // shows 0 for categories the other person didn't rate.
+    if (radarScope === 'all') return categories
     const base = sharedCategoryIds
       ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
       : categories
-    if (radarScope === 'all' || !homePoleCategoryIds) return base
+    if (!homePoleCategoryIds) return base
     const focused = base.filter(c => homePoleCategoryIds.has(c.categoryId))
     return focused.length > 0 ? focused : base
   }, [sharedCategoryIds, categories, radarScope, homePoleCategoryIds])
