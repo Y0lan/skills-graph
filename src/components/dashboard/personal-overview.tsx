@@ -13,6 +13,7 @@ import { useChartView } from '@/hooks/use-chart-view'
 import { useSkillHistory } from '@/hooks/use-skill-history'
 import { shortLabel, cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
 import { POLE_LABELS } from '@/lib/constants'
+import { usePoleLayout } from '@/lib/pole-segments'
 import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
@@ -222,6 +223,24 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     teamMembers?.find(m => m.slug === compareSlug)?.pole !==
     teamMembers?.find(m => m.slug === memberId)?.pole
 
+  // Categories the radar will display, sorted by pole so each pole's
+  // exclusive categories cluster together (matches the Équipe tab pattern).
+  // Hooks must run unconditionally — they fall back to the original order
+  // if pole mappings haven't loaded yet, and are no-ops in the empty-state
+  // path below.
+  const displayCategoriesUnsorted = sharedCategoryIds
+    ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
+    : categories
+  const { order: poleOrder, segments } = usePoleLayout(
+    displayCategoriesUnsorted.map(c => c.categoryId),
+  )
+  const displayCategories = useMemo(() => {
+    const byId = new Map(displayCategoriesUnsorted.map(c => [c.categoryId, c]))
+    return poleOrder
+      .map(id => byId.get(id))
+      .filter((c): c is NonNullable<typeof c> => c !== undefined)
+  }, [displayCategoriesUnsorted, poleOrder])
+
   // Empty state: no ratings at all
   if (!hasRatings) {
     return (
@@ -272,11 +291,6 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   const compareTarget = compareSlug
     ? teamMembers?.find(m => m.slug === compareSlug)
     : null
-
-  // Filter categories to shared ones when comparing
-  const displayCategories = sharedCategoryIds
-    ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
-    : categories
 
   const data = displayCategories.map((cat) => ({
     label: shortLabel(cat.categoryLabel),
@@ -561,9 +575,23 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           </div>
         ) : view === 'radar' ? (
           <>
+            {segments && (
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-3">
+                {segments.map(seg => (
+                  <div key={seg.label} className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: seg.color }}
+                    />
+                    <span className="text-muted-foreground">{seg.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <VisxRadarChart
               data={data}
               overlay={overlayData}
+              segments={segments}
               height={400}
               primaryLabel={isOwnProfile ? 'Moi' : memberName}
               overlayLabel={overlayLabel}
