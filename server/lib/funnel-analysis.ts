@@ -145,8 +145,23 @@ export function buildFunnel(opts: BuildFunnelOpts = {}): FunnelData {
     return Math.round(sorted[idx] * 10) / 10
   }
 
+  // d3-sankey rejects both self-loops AND cycles. Status reverts (e.g.
+  // a recruiter undoing a transition: preselectionne → postule) create
+  // backward edges which combined with later forward edges form a
+  // cycle and crash the layout. Drop any link where target isn't
+  // strictly later in STATUS_ORDER than source. Reverts remain in the
+  // event log; they just don't contribute to the funnel viz.
+  const orderIndex: Record<string, number> = Object.fromEntries(
+    STATUS_ORDER.map((s, i) => [s, i]),
+  )
   const links: FunnelLink[] = eventRows
-    .filter(r => r.statut_from !== r.statut_to) // d3-sankey rejects self-loops
+    .filter(r => {
+      if (r.statut_from === r.statut_to) return false // self-loop
+      const fromIdx = orderIndex[r.statut_from] ?? -1
+      const toIdx = orderIndex[r.statut_to] ?? -1
+      if (fromIdx === -1 || toIdx === -1) return false // unknown status
+      return toIdx > fromIdx // forward only — drop reverts
+    })
     .map(r => {
       const durations = (linkDurationsDays.get(`${r.statut_from}→${r.statut_to}`) ?? []).slice().sort((a, b) => a - b)
       return {

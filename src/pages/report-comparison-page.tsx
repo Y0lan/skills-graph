@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import VisxRadarChart from '@/components/visx-radar-chart'
-import type { RadarDataPoint } from '@/components/visx-radar-chart'
+import type { RadarDataPoint, RadarSeries } from '@/components/visx-radar-chart'
 import { GapChip } from '@/components/gap-chip'
 import type { GapSeverity } from '@/components/gap-chip'
 import { STATUT_LABELS } from '@/lib/constants'
@@ -523,23 +523,63 @@ export default function ReportComparisonPage() {
           )}
         </div>
 
-        {/* Radar overlay (role-aware axes) */}
+        {/* Radar overlay (role-aware axes) — supports up to MAX_OVERLAY
+            candidates via primary + overlay + extraSeries. Each candidate
+            gets a distinct chart-N color token + different dash pattern
+            for the case where colors look close (e.g. dark mode). */}
         {selectedBundles.length > 0 && categories.length > 0 && (
           <div className="mb-8 flex justify-center">
             <div className="w-[500px]">
-              <VisxRadarChart
-                data={selectedBundles[0]?.radarData ?? []}
-                overlay={selectedBundles[1]?.radarData}
-                primaryLabel={selectedBundles[0]?.row.candidateName}
-                overlayLabel={selectedBundles[1]?.row.candidateName}
-                height={350}
-                showExport={false}
-              />
-              {selectedBundles.length > 2 && (
-                <p className="text-xs text-gray-500 text-center mt-1">
-                  Radar affiche les 2 premiers sélectionnés ({selectedBundles.length} cochés — décoche pour changer la comparaison).
-                </p>
-              )}
+              {(() => {
+                // Color tokens cycle through chart-1..chart-5; the
+                // primary uses chart-1 (solid), overlay chart-3 (dashed),
+                // extras get chart-2, chart-4, chart-5.
+                const candidateColors = [
+                  'var(--color-chart-1)',
+                  'var(--color-chart-3)',
+                  'var(--color-chart-2)',
+                  'var(--color-chart-4)',
+                  'var(--color-chart-5)',
+                ]
+                const extraSeries: RadarSeries[] = selectedBundles.slice(2).map((b, idx) => ({
+                  data: b.radarData,
+                  label: b.row.candidateName,
+                  color: candidateColors[(idx + 2) % candidateColors.length],
+                }))
+                return (
+                  <>
+                    <VisxRadarChart
+                      data={selectedBundles[0]?.radarData ?? []}
+                      overlay={selectedBundles[1]?.radarData}
+                      primaryLabel={selectedBundles[0]?.row.candidateName}
+                      overlayLabel={selectedBundles[1]?.row.candidateName}
+                      extraSeries={extraSeries}
+                      height={350}
+                      showExport={false}
+                    />
+                    {/* Legend with the same swatches/dashes used on the
+                        polygons so the recruiter can map a candidate to
+                        their line at a glance. */}
+                    {selectedBundles.length > 1 && (
+                      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 text-xs">
+                        {selectedBundles.map((b, idx) => {
+                          const dashPatterns = [undefined, '5 5', '2 4', '8 4', '4 1 4 1']
+                          const color = candidateColors[idx % candidateColors.length]
+                          const dash = dashPatterns[idx % dashPatterns.length]
+                          return (
+                            <span key={b.row.id} className="inline-flex items-center gap-1.5">
+                              <svg width={20} height={6} aria-hidden>
+                                <line x1={0} y1={3} x2={20} y2={3} stroke={color} strokeWidth={2.5} strokeDasharray={dash} />
+                              </svg>
+                              <span className="text-slate-700 dark:text-slate-300 truncate max-w-[14ch]">{b.row.candidateName}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
               {!roleHasCategories && (
                 <p className="text-xs text-amber-700 dark:text-amber-400 text-center mt-1">
                   Axes : toutes catégories (rôle non configuré)

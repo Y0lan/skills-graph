@@ -27,6 +27,16 @@ export interface RadarSegment {
   label: string
 }
 
+/** Extra data series rendered in addition to `data` + (optional) `overlay`.
+ *  Used by the comparison report to show 3-4 candidates simultaneously
+ *  with distinct, perceptually-distinct colors. Each entry's `color` is a
+ *  CSS color string (typically a `var(--color-chart-N)` token). */
+export interface RadarSeries {
+  data: RadarDataPoint[]
+  label: string
+  color: string
+}
+
 interface RadarChartProps {
   data: RadarDataPoint[]
   overlay?: RadarDataPoint[]
@@ -38,6 +48,9 @@ interface RadarChartProps {
   showExport?: boolean
   /** Optional colored background segments (for pole grouping) */
   segments?: RadarSegment[]
+  /** Additional data series rendered as extra polygons. Used in the
+   *  comparison report to show >2 candidates without crowding. */
+  extraSeries?: RadarSeries[]
 }
 
 interface TooltipData {
@@ -86,6 +99,7 @@ export default function VisxRadarChart({
   showOverlayToggle = false,
   showExport = false,
   segments,
+  extraSeries,
 }: RadarChartProps) {
   const [overlayVisible, setOverlayVisible] = useState(true)
   const chartContainerRef = useRef<HTMLDivElement>(null)
@@ -184,6 +198,7 @@ export default function VisxRadarChart({
             <RadarSvg
               data={data}
               overlay={hasOverlay && overlayVisible ? overlay : undefined}
+              extraSeries={extraSeries}
               width={parentWidth}
               height={height}
               compact={compact}
@@ -235,6 +250,7 @@ export default function VisxRadarChart({
 function RadarSvg({
   data,
   overlay,
+  extraSeries,
   width,
   height,
   compact,
@@ -244,6 +260,7 @@ function RadarSvg({
 }: {
   data: RadarDataPoint[]
   overlay?: RadarDataPoint[]
+  extraSeries?: RadarSeries[]
   width: number
   height: number
   compact: boolean
@@ -402,6 +419,37 @@ function RadarSvg({
           strokeLinejoin="round"
         />
       )}
+
+      {/* Extra series — additional candidate polygons rendered with the
+          caller-provided color tokens. Each series gets a slightly
+          different stroke pattern so even with similar hues the lines
+          stay distinguishable. */}
+      {extraSeries?.map((series, idx) => {
+        const points = series.data
+          .map((d, i) => {
+            const angle = angleSlice * i
+            const r = radiusScale(Math.min(d.value, MAX_VALUE))
+            return polarToCartesian(angle, r)
+          })
+          .map(p => `${cx + p.x},${cy + p.y}`)
+          .join(' ')
+        // Cycle dash patterns for visual differentiation when colors are
+        // close: solid (idx 0 — handled by primary), 5 5, 2 4, 8 4, 4 1 4.
+        const dashPatterns = ['5 5', '2 4', '8 4', '4 1 4 1']
+        const dash = dashPatterns[idx % dashPatterns.length]
+        return (
+          <polygon
+            key={`extra-${idx}`}
+            points={points}
+            fill={series.color}
+            fillOpacity={0.18}
+            stroke={series.color}
+            strokeWidth={2}
+            strokeDasharray={dash}
+            strokeLinejoin="round"
+          />
+        )
+      })}
 
       {/* Data point dots + hover targets */}
       {data.map((d, i) => {

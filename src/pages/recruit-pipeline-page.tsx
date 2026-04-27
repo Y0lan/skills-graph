@@ -248,12 +248,16 @@ export default function RecruitPipelinePage() {
   const [showRoleManager, setShowRoleManager] = useState(false)
   const [customRoleCount, setCustomRoleCount] = useState(0)
   const [postesOpen, setPostesOpen] = useState(() => localStorage.getItem('pipeline-postes-open') === 'true')
+  // Default sort = "best candidate first" by global score. Recruiter
+  // feedback: opening the candidates view sorted by Plus récent meant
+  // a low-fit candidate sat at the top until you found the dropdown.
+  const DEFAULT_SORT: SortKey = 'global_desc'
   const [sortBy, setSortBy] = useState<SortKey>(() => {
     const raw = localStorage.getItem('pipeline-sort')
     // Backward compat: the first sort release used `fit_*` for the (then-
     // single) poste-score axis. Keep stored prefs working without a reset.
     const migrated = raw === 'fit_desc' ? 'poste_desc' : raw === 'fit_asc' ? 'poste_asc' : raw
-    return migrated && (SORT_KEYS as readonly string[]).includes(migrated) ? (migrated as SortKey) : 'poste_desc'
+    return migrated && (SORT_KEYS as readonly string[]).includes(migrated) ? (migrated as SortKey) : DEFAULT_SORT
   })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [downloadingZip, setDownloadingZip] = useState(false)
@@ -1110,6 +1114,27 @@ export default function RecruitPipelinePage() {
                 <SelectItem value="date_asc">{SORT_LABELS.date_asc}</SelectItem>
               </SelectContent>
             </Select>
+            {sortBy !== DEFAULT_SORT ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={(
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setSortBy(DEFAULT_SORT)
+                        localStorage.setItem('pipeline-sort', DEFAULT_SORT)
+                      }}
+                      aria-label="Réinitialiser le tri (meilleur candidat en premier)"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                />
+                <TooltipContent>Réinitialiser le tri (meilleur candidat en premier)</TooltipContent>
+              </Tooltip>
+            ) : null}
 
             {/* View toggle — icons only, tooltips on hover. */}
             <div className="inline-flex rounded-md border border-border ml-auto">
