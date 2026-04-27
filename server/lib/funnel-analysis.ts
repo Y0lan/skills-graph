@@ -233,3 +233,156 @@ export function buildFunnel(opts: BuildFunnelOpts = {}): FunnelData {
     insight,
   }
 }
+
+export interface FunnelFlowCandidate {
+  candidature_id: string
+  candidate_id: string
+  full_name: string | null
+  poste_titre: string | null
+  pole: string | null
+  days_in_source: number
+  /** SLA flag derived from P90: > P90 = double-warn, > P50 = warn. */
+  sla: 'ok' | 'warn' | 'over'
+  /** ISO date the candidate exited the source stage (= entered target). */
+  transitioned_at: string
+}
+
+export interface FunnelFlowData {
+  source: string
+  target: string
+  source_label: string
+  target_label: string
+  total: number
+  p50_days: number | null
+  p90_days: number | null
+  candidates: FunnelFlowCandidate[]
+}
+
+export interface BuildFunnelFlowOpts extends BuildFunnelOpts {
+  source: string
+  target: string
+}
+
+/**
+ * Drill-down for a single Sankey link. Returns the candidates whose CURRENT
+ * stage is `target` AND who entered it via a transition from `source`,
+ * with each candidate's time spent in `source` before that transition.
+ *
+ * SLA flag is computed against the link's own P50/P90 (same dataset as the
+ * funnel viz), so the panel and the chart stay consistent.
+ */
+export function buildFunnelFlow(opts: BuildFunnelFlowOpts): FunnelFlowData {
+  const { source, target, days, pole } = opts
+  const db = getDb()
+
+  const candidatureFilters: string[] = []
+  const candidatureParams: (string | number)[] = []
+  if (typeof days === 'number' && days > 0) {
+    candidatureFilters.push("c.created_at >= datetime('now', ?)")
+    candidatureParams.push(`-${days} days`)
+  }
+  if (pole && pole !== 'all') {
+    candidatureFilters.push('p.pole = ?')
+    candidatureParams.push(pole)
+  }
+  const whereSql = candidatureFilters.length > 0 ? `WHERE ${candidatureFilters.join(' AND ')}` : ''
+
+  const candidatures = db.prepare(`
+    SELECT c.id, c.statut, c.created_at, c.candidate_id, c.poste_id,
+           p.titre as poste_titre, p.pole as pole,
+           ca.name as full_name
+    FROM candidatures c
+    JOIN postes p ON p.id = c.poste_id
+    LEFT JOIN candidates ca ON ca.id = c.candidate_id
+    ${whereSql}
+  `).all(...candidatureParams) as {
+    id: string; statut: string; created_at: string; candidate_id: string; poste_id: string;
+    poste_titre: string | null; pole: string | null; full_name: string | null
+  }[]
+
+  if (candidatures.length === 0) {
+    return {
+      source, target,
+      source_label: STATUT_LABELS[source] ?? source,
+      target_label: STATUT_LABELS[target] ?? target,
+      total: 0, p50_days: null, p90_days: null,
+      candidates: [],
+    }
+  }
+
+  const idToCandidature = new Map(candidatures.map(c => [c.id, c]))
+  const candidatureIds = candidatures.map(c => c.id)
+  const placeholders = candidatureIds.map(() => '?').join(',')
+
+  const allEvents = db.prepare(`
+    SELECT candidature_id, statut_from, statut_to, created_at
+    FROM candidature_events
+    WHERE type = 'status_change'
+      AND statut_to IS NOT NULL
+      AND candidature_id IN (${placeholders})
+    ORDER BY candidature_id, created_at ASC
+  `).all(...candidatureIds) as { candidature_id: string; statut_from: string | null; statut_to: string; created_at: string }[]
+
+  // Walk per-candidature; record (candidate, time_in_source, transitioned_at)
+  // for every from→to traversal matching our (source, target) link.
+  const matches: { candidature_id: string; durationDays: number; transitionedAt: string }[] = []
+  let currentCandidate: string | null = null
+  let stageEnteredAt: Date | null = null
+  let currentStage: string | null = null
+
+  for (const ev of allEvents) {
+    if (ev.candidature_id !== currentCandidate) {
+      currentCandidate = ev.candidature_id
+      const createdAt = idToCandidature.get(currentCandidate)?.created_at
+      stageEnteredAt = createdAt ? new Date(createdAt + 'Z') : null
+      currentStage = 'postule'
+    }
+    if (currentStage === source && ev.statut_from === source && ev.statut_to === target && stageEnteredAt) {
+      const exitTime = new Date(ev.created_at + 'Z')
+      const durationDays = Math.max(0, (exitTime.getTime() - stageEnteredAt.getTime()) / (1000 * 60 * 60 * 24))
+      matches.push({
+        candidature_id: ev.candidature_id,
+        durationDays: Math.round(durationDays * 10) / 10,
+        transitionedAt: ev.created_at,
+      })
+    }
+    currentStage = ev.statut_to
+    stageEnteredAt = new Date(ev.created_at + 'Z')
+  }
+
+  function percentile(sorted: number[], p: number): number {
+    if (sorted.length === 0) return 0
+    const idx = Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))
+    return Math.round(sorted[idx] * 10) / 10
+  }
+  const sortedDurations = matches.map(m => m.durationDays).slice().sort((a, b) => a - b)
+  const p50 = sortedDurations.length > 0 ? percentile(sortedDurations, 0.5) : null
+  const p90 = sortedDurations.length > 0 ? percentile(sortedDurations, 0.9) : null
+
+  const candidates: FunnelFlowCandidate[] = matches.map(m => {
+    const c = idToCandidature.get(m.candidature_id)
+    let sla: 'ok' | 'warn' | 'over' = 'ok'
+    if (p90 !== null && m.durationDays > p90) sla = 'over'
+    else if (p50 !== null && m.durationDays > p50 * 1.5) sla = 'warn'
+    return {
+      candidature_id: m.candidature_id,
+      candidate_id: c?.candidate_id ?? '',
+      full_name: c?.full_name ?? null,
+      poste_titre: c?.poste_titre ?? null,
+      pole: c?.pole ?? null,
+      days_in_source: m.durationDays,
+      sla,
+      transitioned_at: m.transitionedAt,
+    }
+  }).sort((a, b) => b.days_in_source - a.days_in_source) // slowest first — surfaces problems
+
+  return {
+    source, target,
+    source_label: STATUT_LABELS[source] ?? source,
+    target_label: STATUT_LABELS[target] ?? target,
+    total: matches.length,
+    p50_days: p50,
+    p90_days: p90,
+    candidates,
+  }
+}

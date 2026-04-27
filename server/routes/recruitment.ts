@@ -18,7 +18,7 @@ import { isGcsPath, downloadFromGcs } from '../lib/gcs.js'
 import { computeRoleGaps } from '../lib/gap-analysis.js'
 import { getSkillCategories } from '../lib/catalog.js'
 import { getRoleCategories } from '../lib/db.js'
-import { buildFunnel } from '../lib/funnel-analysis.js'
+import { buildFunnel, buildFunnelFlow, STATUS_ORDER } from '../lib/funnel-analysis.js'
 import { getAboroProfile, saveManualAboroProfile } from '../lib/aboro-service.js'
 import { processIntake } from '../lib/intake-service.js'
 import { processCvForCandidate } from '../lib/cv-pipeline.js'
@@ -466,6 +466,25 @@ protectedRouter.get('/funnel', (req, res) => {
   const days = typeof daysRaw === 'string' && /^\d+$/.test(daysRaw) ? Number(daysRaw) : null
   const pole = typeof poleRaw === 'string' ? poleRaw : null
   res.json(buildFunnel({ days, pole }))
+})
+
+// Drill-down for a single Sankey link. Returns the candidates whose current
+// stage is `to` AND who transitioned via `from`, with time spent in `from`.
+// GET /api/recruitment/funnel/flow?from=postule&to=preselectionne&days=90&pole=all
+protectedRouter.get('/funnel/flow', (req, res) => {
+  const { from, to } = req.query
+  if (typeof from !== 'string' || typeof to !== 'string') {
+    return res.status(400).json({ error: 'from and to are required' })
+  }
+  const validStatuses = new Set<string>(STATUS_ORDER)
+  if (!validStatuses.has(from) || !validStatuses.has(to)) {
+    return res.status(400).json({ error: 'invalid status' })
+  }
+  const daysRaw = req.query.days
+  const poleRaw = req.query.pole
+  const days = typeof daysRaw === 'string' && /^\d+$/.test(daysRaw) ? Number(daysRaw) : null
+  const pole = typeof poleRaw === 'string' ? poleRaw : null
+  res.json(buildFunnelFlow({ source: from, target: to, days, pole }))
 })
 
 // Item 20 P2: compare two cohorts (e.g. "last 30d" vs "previous 30d", or

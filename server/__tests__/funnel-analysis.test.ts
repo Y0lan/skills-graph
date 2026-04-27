@@ -11,7 +11,7 @@ vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
 const dbModule = await import('../lib/db.js')
 const { initDatabase, getDb, DB_PATH } = dbModule
-const { buildFunnel } = await import('../lib/funnel-analysis.js')
+const { buildFunnel, buildFunnelFlow } = await import('../lib/funnel-analysis.js')
 
 function preSeedCategories() {
   const db = new Database(DB_PATH)
@@ -201,6 +201,69 @@ describe('buildFunnel', () => {
     const postule = data.nodes.find(n => n.id === 'postule')
     expect(postule?.label).toBeTruthy()
     expect(postule?.label).not.toBe('postule') // i.e. it was translated
+  })
+})
+
+describe('buildFunnelFlow', () => {
+  it('returns the candidates that traversed a specific link with their time-in-source', () => {
+    const posteId = seedRolePoste()
+    // Two candidates went postule → preselectionne, one stayed in postule.
+    seedCandidature({ id: 'c1', posteId, statut: 'preselectionne' })
+    seedCandidature({ id: 'c2', posteId, statut: 'preselectionne' })
+    seedCandidature({ id: 'c3', posteId, statut: 'postule' })
+    addEvent('c1', 'postule', 'preselectionne')
+    addEvent('c2', 'postule', 'preselectionne')
+
+    const flow = buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
+    expect(flow.total).toBe(2)
+    expect(flow.candidates.map(c => c.candidature_id).sort()).toEqual(['c1', 'c2'])
+    expect(flow.source_label).toBeTruthy()
+    expect(flow.target_label).toBeTruthy()
+    // Each candidate should carry a real (>= 0) day count.
+    for (const c of flow.candidates) {
+      expect(c.days_in_source).toBeGreaterThanOrEqual(0)
+      expect(['ok', 'warn', 'over']).toContain(c.sla)
+    }
+  })
+
+  it('returns empty when nobody walked the requested link', () => {
+    const posteId = seedRolePoste()
+    seedCandidature({ id: 'c1', posteId, statut: 'preselectionne' })
+    addEvent('c1', 'postule', 'preselectionne')
+
+    const flow = buildFunnelFlow({ source: 'postule', target: 'embauche' })
+    expect(flow.total).toBe(0)
+    expect(flow.candidates).toEqual([])
+  })
+
+  it('respects pole and days filters', () => {
+    const javaId = seedRolePoste({ posteId: 'p-java', pole: 'java_modernisation' })
+    const legacyId = seedRolePoste({ roleId: 'r2', posteId: 'p-legacy', pole: 'legacy' })
+    seedCandidature({ id: 'c-java', posteId: javaId, statut: 'preselectionne' })
+    seedCandidature({ id: 'c-legacy', posteId: legacyId, statut: 'preselectionne' })
+    addEvent('c-java', 'postule', 'preselectionne')
+    addEvent('c-legacy', 'postule', 'preselectionne')
+
+    const javaOnly = buildFunnelFlow({ source: 'postule', target: 'preselectionne', pole: 'java_modernisation' })
+    expect(javaOnly.candidates.map(c => c.candidature_id)).toEqual(['c-java'])
+  })
+
+  it('flags candidates above P90 as over-SLA', () => {
+    const posteId = seedRolePoste()
+    // Seed many fast transitions + one slow one. P90 threshold should fire.
+    for (let i = 0; i < 9; i++) {
+      seedCandidature({ id: `fast-${i}`, posteId, statut: 'preselectionne' })
+      // candidature.created_at = now; event also "now" → ~0 days in source
+      addEvent(`fast-${i}`, 'postule', 'preselectionne')
+    }
+    seedCandidature({ id: 'slow', posteId, statut: 'preselectionne', createdAt: "datetime('now', '-30 days')" })
+    getDb().prepare("UPDATE candidatures SET created_at = datetime('now', '-30 days') WHERE id = 'slow'").run()
+    addEvent('slow', 'postule', 'preselectionne')
+
+    const flow = buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
+    const slow = flow.candidates.find(c => c.candidature_id === 'slow')
+    expect(slow?.sla).toBe('over')
+    expect(slow?.days_in_source).toBeGreaterThan(20)
   })
 })
 
