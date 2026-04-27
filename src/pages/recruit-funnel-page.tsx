@@ -218,12 +218,18 @@ function SankeyChart({ width, height, data }: SankeyChartProps) {
     const nodes = data.nodes
       .filter(n => usedNodeIds.has(n.id))
       .map(n => ({ id: n.id, name: n.label, count: n.count }))
-    const idToIndex = new Map(nodes.map((n, i) => [n.id, i]))
+    const idById = new Set(nodes.map(n => n.id))
+    // d3-sankey is configured with `.nodeId(d => d.id)` below, so it
+    // resolves link source/target by looking them up in `nodes` via
+    // the same key. Pass STRING ids — converting to numeric indices
+    // here made d3-sankey throw "missing: 0" (it called find(nodeById, 0)
+    // but every node id is a string), and the catch labeled the failure
+    // as a cycle even though the graph was a clean DAG.
     const links = data.links
-      .filter(l => idToIndex.has(l.source) && idToIndex.has(l.target))
+      .filter(l => idById.has(l.source) && idById.has(l.target))
       .map(l => ({
-        source: idToIndex.get(l.source)!,
-        target: idToIndex.get(l.target)!,
+        source: l.source,
+        target: l.target,
         value: l.value,
         sourceId: l.source,
         targetId: l.target,

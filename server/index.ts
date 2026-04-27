@@ -184,11 +184,30 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
   }
 })
 
-// Serve static files in production
+// Serve static files in production. Hashed asset chunks (Vite bakes the
+// content hash into the filename) are safe to cache aggressively because
+// a new build produces a new filename. But `index.html` references the
+// CURRENT chunk hashes — caching it serves stale chunk references after
+// a deploy, which manifests as users seeing yesterday's UI behavior.
+// Cache index.html with `no-cache` so the browser revalidates on every
+// load, while leaving fingerprinted assets immutable.
 const distPath = path.join(process.cwd(), 'dist')
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath))
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+      } else if (/\.(js|css|woff2?|png|jpe?g|svg|webp)$/.test(filePath)) {
+        // Hashed asset — fine to cache for a long time.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      }
+    },
+  }))
   app.get('{*path}', (_req, res) => {
+    // SPA fallback also receives the no-cache treatment so a freshly
+    // deployed build is picked up by tabs that were idle through the
+    // deploy.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
     res.sendFile(path.join(distPath, 'index.html'))
   })
 }
