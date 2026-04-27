@@ -17,6 +17,9 @@ import AboroProfileSection from './aboro-profile-section'
 import CandidateHistoryByStage from './candidate-history-by-stage'
 import NoteEditDialog from './note-edit-dialog'
 import DocumentStageReassignDialog from './document-stage-reassign-dialog'
+import CandidateLastEditIndicator from './candidate-last-edit-indicator'
+import TimelineFilterChips from './timeline-filter-chips'
+import { useTimelineFilter } from '@/hooks/use-timeline-filter'
 import ScheduledEmailBanner from './scheduled-email-banner'
 import FitReport from './fit-report'
 import MultiPosteCard from './multi-poste-card'
@@ -256,6 +259,11 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
   // state so the historique can be a pure presentational layer.
   const [editingNote, setEditingNote] = useState<CandidatureEvent | null>(null)
   const [reassigningDoc, setReassigningDoc] = useState<CandidatureDocument | null>(null)
+  // v4.6: client-side filter for the historique timeline. Persisted
+  // per-candidature in localStorage via the helper hook, so the
+  // recruiter's choice survives tab reloads (matches the eval-
+  // disclosure pattern shipped in v4).
+  const [timelineFilter, setTimelineFilter] = useTimelineFilter(c.id)
   const replaceEvent = (real: CandidatureEvent) => {
     setEvents(prev => prev.map(e => e.id === real.id ? real : e))
     setCandidatureDataMap(prev => {
@@ -309,6 +317,12 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
         </span>
 
+        {/* v4.6: passive presence — "Modifié il y a 12 min par Franck".
+            Free win since updated_at is now on every event. Replaces
+            the ~800 LOC multi-user presence item that was originally
+            in v6 but didn't earn its cost for a 10-recruiter team. */}
+        <CandidateLastEditIndicator events={events} />
+
         <div className="flex items-center gap-1 ml-auto">
           {/* Skill Radar link copy lives next to the score tiles instead
               of here — that's where the recruiter learns "scores are
@@ -328,6 +342,54 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           )}
         </div>
       </div>
+
+      {/* ── 1.5 Command bar — prominent next-action ──
+          v4.6: lifted from a junior-designer mockup. The same primary
+          + refuse actions live further down next to the scores, but
+          surfacing them at the top removes the "scroll to find what
+          to do" friction the founder flagged. The CTA is derived from
+          `allowedTransitions[0]` so a terminal candidature or one
+          waiting on the candidate doesn't display a dead button.
+          Refuse renders only when `allowedTransitions` includes it. */}
+      {!isTerminal && (primary || hasRefuse) && (
+        <div className="rounded-md border bg-card p-3 flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+              Prochaine action recommandée
+            </p>
+            <p className="text-sm text-foreground mt-0.5">
+              {primary
+                ? <>Faire avancer vers <span className="font-semibold">{STATUT_LABELS[primary] ?? primary}</span></>
+                : <span className="italic text-muted-foreground">Aucune avance possible — uniquement refus disponible</span>}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {primary && (
+              <Button
+                size="default"
+                onClick={() => onOpenTransition(c.id, primary, false, [], c.statut)}
+                disabled={changingStatus}
+                className="gap-2"
+              >
+                <ChevronRight className="h-4 w-4" />
+                {STATUT_LABELS[primary] ?? primary}
+              </Button>
+            )}
+            {hasRefuse && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onOpenTransition(c.id, 'refuse', false, [], c.statut)}
+                disabled={changingStatus}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3 w-3 mr-1" />
+                Refuser
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── 2. Alerts band ─────────────────────────── */}
       <ScheduledEmailBanner
@@ -650,9 +712,19 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           The composer pins each note to its stage so retroactive notes
           attach to the right step in the pipeline. */}
       <div id={HISTORY_ANCHOR} className="pt-4 border-t scroll-mt-24">
-        <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">
-          Historique complet
-        </p>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+            Historique complet
+          </p>
+          {/* v4.6: filter chips. Pure client-side narrowing, persisted
+              per-candidature so the recruiter's preference survives
+              tab reloads. Composer + manual notes keep working under
+              every filter so capture isn't blocked by view. */}
+          <TimelineFilterChips
+            value={timelineFilter}
+            onChange={setTimelineFilter}
+          />
+        </div>
         <CandidateHistoryByStage
           events={events}
           documents={documents}
@@ -668,6 +740,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           }}
           onEditNote={setEditingNote}
           onReassignDoc={setReassigningDoc}
+          filter={timelineFilter}
         />
       </div>
 

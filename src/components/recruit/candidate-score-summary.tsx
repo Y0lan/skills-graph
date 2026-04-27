@@ -49,6 +49,18 @@ const MISSING_HINT: Record<string, string> = {
   Soft: 'Skill Radar non soumis',
 }
 
+/** v4.6: per-tile sub-line shown UNDER the percentage when filled.
+ *  The designer mockup pairs each tile with one calm sentence ("pondéré
+ *  poste + équipe + soft" / "fit avec le besoin Lead Designer" / etc.)
+ *  so the recruiter doesn't need a tooltip to understand what each
+ *  number means. Keeping it short — tabular-nums grid stays readable. */
+const TILE_DESCRIPTION: Record<string, string> = {
+  Global: 'pondéré poste + équipe + soft',
+  Poste: 'fit avec les exigences du poste',
+  Équipe: 'complémentarité avec l\'équipe',
+  Soft: 'comportemental — issu de l\'Aboro',
+}
+
 const LABEL_TO_METRIC: Record<string, CompatMetric> = {
   Poste: 'poste',
   Équipe: 'equipe',
@@ -84,7 +96,7 @@ export default function CandidateScoreSummary({
           <Badge className={`text-[10px] ${verdict.color}`}>{verdict.label}</Badge>
         )}
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
         {tiles.map(t => {
           const canOpen = t.clickable && t.value != null
           const tile = (
@@ -106,20 +118,34 @@ export default function CandidateScoreSummary({
 
               {/* Big number — same baseline whether filled (`xx%`) or
                   empty (em dash). Fixed line-height keeps height
-                  identical to the percent variant. */}
+                  identical to the percent variant.
+                  v4.6: bumped from text-xl to text-3xl now that the
+                  grid is 2×2 (was 4×1) — each tile has more room and
+                  the percentage should anchor visually. */}
               {t.value != null ? (
                 <p
-                  className={`text-xl font-semibold tabular-nums leading-none ${scoreColor(t.value)}`}
+                  className={`text-3xl font-semibold tabular-nums leading-none ${scoreColor(t.value)}`}
                   style={{ fontFamily: "'Raleway Variable', sans-serif" }}
                 >
                   {Math.round(t.value)}%
                 </p>
               ) : (
                 <p
-                  className="text-xl font-semibold tabular-nums leading-none text-muted-foreground"
+                  className="text-3xl font-semibold tabular-nums leading-none text-muted-foreground"
                   style={{ fontFamily: "'Raleway Variable', sans-serif" }}
                 >
                   —
+                </p>
+              )}
+
+              {/* v4.6: sub-line description visible at all times when
+                  filled. Calmly explains what the number is, so the
+                  recruiter doesn't need to hover the info icon. Hidden
+                  when null because MISSING_HINT already lives at the
+                  bottom for that case. */}
+              {t.value != null && (
+                <p className="text-[11px] text-muted-foreground leading-tight">
+                  {TILE_DESCRIPTION[t.label]}
                 </p>
               )}
 

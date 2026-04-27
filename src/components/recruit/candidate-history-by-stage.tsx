@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2, Pencil, FolderInput } from 'lucide-react'
 import QuickNoteComposer from './quick-note-composer'
+import { eventCategory, type EventCategory } from '@/lib/recruitment-events'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
@@ -550,6 +551,15 @@ export type OnEditNote = (event: CandidatureEvent) => void
  *  stage-reassign dialog and PATCHes `event_id`. */
 export type OnReassignDoc = (doc: CandidatureDocument) => void
 
+/** v4.6: client-side filter that hides events outside the chosen
+ *  category. 'all' passes everything through; other values match the
+ *  EventCategory taxonomy (`eventCategory()` in
+ *  `src/lib/recruitment-events.ts`). Notes always pass through (the
+ *  composer + manual notes sit inside the per-stage block and a hard
+ *  filter to "transitions" would hide the recruiter's own writing,
+ *  which we never want). */
+export type HistoryFilter = 'all' | EventCategory
+
 export interface CandidateHistoryByStageProps {
   events: CandidatureEvent[]
   documents?: CandidatureDocument[]
@@ -561,9 +571,13 @@ export interface CandidateHistoryByStageProps {
   onEditNote?: OnEditNote
   /** Folder-arrow reassign hook on document cards. */
   onReassignDoc?: OnReassignDoc
+  /** v4.6: filter category for the rendered timeline. Defaults to 'all'.
+   *  Composer + manual notes always remain visible so the recruiter
+   *  can still capture from inside a filtered view. */
+  filter?: HistoryFilter
 }
 
-export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc }: CandidateHistoryByStageProps) {
+export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc, filter = 'all' }: CandidateHistoryByStageProps) {
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   // Reset loading when a new doc opens so the spinner is consistent.
@@ -609,10 +623,26 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
           // visibleTimelineCount must match what EventRow actually renders —
           // it drops deliverability signals AND document-upload notes,
           // both of which would otherwise inflate the count pill.
-          const timelineEvents = group.events.filter(e => !(e.type === 'note' && e.contentMd))
+          //
+          // v4.6: respect the filter chips. 'all' passes through; a
+          // category filter narrows the timeline to that bucket. Notes
+          // are filtered separately below — when the filter is 'notes'
+          // we hide the transitions/emails timeline entirely; when it's
+          // 'transitions' / 'emails' / 'documents' we hide the notes
+          // section. EventCategory matching uses the shared `eventCategory`
+          // helper so the chip-vs-row mapping stays consistent.
+          const passesFilter = (e: CandidatureEvent): boolean => {
+            if (filter === 'all') return true
+            return eventCategory(e) === filter
+          }
+          const timelineEvents = group.events
+            .filter(e => !(e.type === 'note' && e.contentMd))
+            .filter(passesFilter)
           const isDeliverability = (t: string) => t === 'email_open' || t === 'email_failed' || t === 'email_clicked' || t === 'email_delivered' || t === 'email_complained' || t === 'email_delay'
           const isRedundantUpload = (e: CandidatureEvent) => e.type === 'document' && (e.notes ?? '').startsWith('Document uploadé:')
-          const noteEvents = group.events.filter(e => e.type === 'note' && e.contentMd)
+          const noteEvents = group.events
+            .filter(e => e.type === 'note' && e.contentMd)
+            .filter(e => filter === 'all' || filter === 'notes' || eventCategory(e) === filter)
           const visibleTimelineCount = timelineEvents.filter(e =>
             !isDeliverability(e.type) && !isRedundantUpload(e)
           ).length

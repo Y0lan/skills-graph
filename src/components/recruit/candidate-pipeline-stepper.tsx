@@ -203,11 +203,20 @@ export default function CandidatePipelineStepper({ candidature, events, allowedT
           })}
         </div>
 
-        {/* Labels under circles */}
+        {/* Labels under circles.
+            v4.6: prefix each label with its 1-based stage number
+            (`01 02 03…`), inspired by the junior-designer mockup we
+            got after v4.5. The number gives the recruiter a stable
+            "where am I in the procession" anchor independent of the
+            (translatable) French label, and reads more like a process
+            map than a flat row of strings. */}
         <div className="flex items-start gap-0 mt-1.5">
-          {steps.map((step) => (
+          {steps.map((step, i) => (
             <div key={step.statut} className="flex-1 min-w-0 text-center px-0.5">
-              <p className={`text-[10px] leading-tight truncate ${
+              <p className="text-[9px] tabular-nums text-muted-foreground/70 leading-none">
+                {String(i + 1).padStart(2, '0')}
+              </p>
+              <p className={`text-[10px] leading-tight truncate mt-0.5 ${
                 step.state === 'current' ? 'font-semibold text-foreground' : 'text-muted-foreground'
               }`}>
                 {STATUT_LABELS[step.statut] ?? step.statut}
