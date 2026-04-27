@@ -740,7 +740,17 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
         {hasRatings && teamMembers && teamCategories && (
           <SkillDetailAccordion
             memberId={memberId}
-            categories={categories}
+            categories={
+              // Mirror the radar's focus: when in pôle scope we don't want
+              // the accordion to surface 16 "Non évalué" lines from pôles
+              // the user doesn't belong to. The toggle above stays the
+              // single source of truth for "show me everything vs only my
+              // pôle". `displayCategories` is already pole-sorted; for
+              // pôle-scope it's the filtered list, for 'all' it's everything.
+              radarScope === 'pole' && homePoleCategoryIds
+                ? categories.filter(c => homePoleCategoryIds.has(c.categoryId))
+                : categories
+            }
             teamMembers={teamMembers}
             teamCategories={teamCategories}
             comparedMember={compareSlug && compareTarget ? {
