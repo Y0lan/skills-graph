@@ -124,8 +124,8 @@ export async function processIntake(
       `).run(candidatureId, existingCandidate.id, poste_vise, resolvedCanal, submission_id?.trim() || null)
 
       getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, statut_to, notes, created_by)
-        VALUES (?, 'status_change', 'postule', ?, 'drupal-webhook')
+        INSERT INTO candidature_events (candidature_id, type, statut_to, stage, notes, created_by)
+        VALUES (?, 'status_change', 'postule', 'postule', ?, 'drupal-webhook')
       `).run(candidatureId, message?.trim() || null)
 
       return { ok: true, candidatureId, candidateId: existingCandidate.id, updated: false }

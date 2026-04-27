@@ -989,10 +989,13 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         eventNotes = `${eventNotes ? eventNotes + '\n' : ''}[Email non envoyé — raison: ${skipEmailReason.trim()}]`
       }
 
+      // `stage` mirrors `statut_to` for status_change events so the
+      // historique can group by stage without re-walking transitions.
+      // See plan v4.5 #2 / D1.
       const inserted = getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
-        VALUES (?, 'status_change', ?, ?, ?, ?)
-      `).run(req.params.id, current.statut, statut, eventNotes, user.slug || 'unknown')
+        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, stage, notes, created_by)
+        VALUES (?, 'status_change', ?, ?, ?, ?, ?)
+      `).run(req.params.id, current.statut, statut, statut, eventNotes, user.slug || 'unknown')
       statusEventId = Number(inserted.lastInsertRowid)
     })()
 
@@ -1246,6 +1249,82 @@ protectedRouter.post('/candidatures/:id/notes', mutationRateLimit, (req, res) =>
  * stay in sync; today the window-focus refresh is enough.
  */
 protectedRouter.post('/candidatures/:id/events/note', mutationRateLimit, (req, res) => {
+  const body = req.body as { contentMd?: unknown; stage?: unknown }
+  const raw = body.contentMd
+  if (typeof raw !== 'string') {
+    res.status(400).json({ error: 'contentMd requis' })
+    return
+  }
+  const trimmed = raw.trim()
+  if (trimmed.length === 0) {
+    res.status(400).json({ error: 'La note ne peut pas être vide' })
+    return
+  }
+  if (trimmed.length > 5000) {
+    res.status(400).json({ error: 'Note trop longue (5000 caractères max)' })
+    return
+  }
+
+  // Look up the candidature once — for existence + to default `stage` to
+  // the current statut when the caller didn't pass one. Recruiter can
+  // override the stage to retroactively attach the note to an earlier
+  // step in the pipeline.
+  const cand = getDb().prepare('SELECT id, statut FROM candidatures WHERE id = ?').get(req.params.id) as { id: string; statut: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  const stage = typeof body.stage === 'string' && body.stage.trim().length > 0
+    ? body.stage.trim()
+    : cand.statut
+
+  const user = getUser(req)
+  const row = getDb().prepare(`
+    INSERT INTO candidature_events (candidature_id, type, content_md, stage, created_by)
+    VALUES (?, 'note', ?, ?, ?)
+    RETURNING id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+  `).get(req.params.id, trimmed, stage, user.slug || 'unknown') as {
+    id: number
+    type: string
+    statut_from: string | null
+    statut_to: string | null
+    notes: string | null
+    content_md: string | null
+    email_snapshot: string | null
+    stage: string | null
+    updated_at: string | null
+    created_by: string
+    created_at: string
+  }
+
+  res.json({
+    id: row.id,
+    type: row.type,
+    statutFrom: row.statut_from,
+    statutTo: row.statut_to,
+    notes: row.notes,
+    contentMd: row.content_md,
+    emailSnapshot: row.email_snapshot,
+    stage: row.stage,
+    updatedAt: row.updated_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  })
+})
+
+/**
+ * Edit a previously-published note in place. Internal tool with ~10
+ * trusted recruiters → any lead can edit any note. The row's `updated_at`
+ * column flips from NULL → datetime('now') so the UI can surface a
+ * "Modifié il y a 3 min par Franck" indicator. We do NOT chain versions
+ * via replaces_event_id — see plan v4.5 D1 rationale.
+ */
+protectedRouter.patch('/candidatures/:id/events/note/:eventId', mutationRateLimit, (req, res) => {
+  const eventId = Number(req.params.eventId)
+  if (!Number.isFinite(eventId) || eventId <= 0) {
+    res.status(400).json({ error: 'eventId invalide' })
+    return
+  }
   const raw = (req.body as { contentMd?: unknown }).contentMd
   if (typeof raw !== 'string') {
     res.status(400).json({ error: 'contentMd requis' })
@@ -1261,18 +1340,24 @@ protectedRouter.post('/candidatures/:id/events/note', mutationRateLimit, (req, r
     return
   }
 
-  const exists = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id)
-  if (!exists) {
-    res.status(404).json({ error: 'Candidature introuvable' })
+  const existing = getDb().prepare(`
+    SELECT id, type, candidature_id FROM candidature_events WHERE id = ?
+  `).get(eventId) as { id: number; type: string; candidature_id: string } | undefined
+  if (!existing || existing.candidature_id !== req.params.id) {
+    res.status(404).json({ error: 'Note introuvable' })
+    return
+  }
+  if (existing.type !== 'note') {
+    res.status(400).json({ error: 'Seules les notes peuvent être éditées' })
     return
   }
 
-  const user = getUser(req)
   const row = getDb().prepare(`
-    INSERT INTO candidature_events (candidature_id, type, content_md, created_by)
-    VALUES (?, 'note', ?, ?)
-    RETURNING id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
-  `).get(req.params.id, trimmed, user.slug || 'unknown') as {
+    UPDATE candidature_events
+       SET content_md = ?, updated_at = datetime('now')
+     WHERE id = ?
+    RETURNING id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+  `).get(trimmed, eventId) as {
     id: number
     type: string
     statut_from: string | null
@@ -1280,6 +1365,8 @@ protectedRouter.post('/candidatures/:id/events/note', mutationRateLimit, (req, r
     notes: string | null
     content_md: string | null
     email_snapshot: string | null
+    stage: string | null
+    updated_at: string | null
     created_by: string
     created_at: string
   }
@@ -1292,9 +1379,68 @@ protectedRouter.post('/candidatures/:id/events/note', mutationRateLimit, (req, r
     notes: row.notes,
     contentMd: row.content_md,
     emailSnapshot: row.email_snapshot,
+    stage: row.stage,
+    updatedAt: row.updated_at,
     createdBy: row.created_by,
     createdAt: row.created_at,
   })
+})
+
+/**
+ * Reassign a document to a different stage by repointing its `event_id`
+ * FK. The recruiter chose "Déplacer vers une autre étape" on a doc card.
+ * Server picks the most recent status_change event matching the requested
+ * stage on the same candidature; if none exists, the document is detached
+ * (event_id = NULL) and the UI falls back to its time-window heuristic.
+ *
+ * Caller may pass either `eventId` directly (precise) OR `stage` (server
+ * resolves the canonical event_id). Stage path is the common UI case.
+ */
+protectedRouter.patch('/candidature-documents/:id/event', mutationRateLimit, (req, res) => {
+  const docId = req.params.id
+  const body = req.body as { stage?: unknown; eventId?: unknown }
+  const stageInput = typeof body.stage === 'string' ? body.stage.trim() : ''
+  const eventIdInput = typeof body.eventId === 'number' && Number.isFinite(body.eventId) ? body.eventId : null
+
+  const doc = getDb().prepare(`
+    SELECT id, candidature_id FROM candidature_documents WHERE id = ?
+  `).get(docId) as { id: string; candidature_id: string } | undefined
+  if (!doc) {
+    res.status(404).json({ error: 'Document introuvable' })
+    return
+  }
+
+  let resolvedEventId: number | null = eventIdInput
+  if (resolvedEventId === null && stageInput) {
+    const ev = getDb().prepare(`
+      SELECT id FROM candidature_events
+       WHERE candidature_id = ? AND type = 'status_change' AND statut_to = ?
+    ORDER BY created_at DESC, id DESC LIMIT 1
+    `).get(doc.candidature_id, stageInput) as { id: number } | undefined
+    resolvedEventId = ev?.id ?? null
+  }
+  if (resolvedEventId === null && !stageInput && eventIdInput === null) {
+    res.status(400).json({ error: 'stage ou eventId requis' })
+    return
+  }
+
+  // If the recruiter explicitly passed an eventId, sanity-check it
+  // belongs to the same candidature.
+  if (eventIdInput !== null) {
+    const ev = getDb().prepare(`
+      SELECT id, candidature_id FROM candidature_events WHERE id = ?
+    `).get(eventIdInput) as { id: number; candidature_id: string } | undefined
+    if (!ev || ev.candidature_id !== doc.candidature_id) {
+      res.status(400).json({ error: 'eventId hors candidature' })
+      return
+    }
+  }
+
+  getDb().prepare(`
+    UPDATE candidature_documents SET event_id = ? WHERE id = ?
+  `).run(resolvedEventId, docId)
+
+  res.json({ ok: true, eventId: resolvedEventId })
 })
 
 // Recalculate compatibility for a candidature
@@ -2324,9 +2470,9 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async
       if (result.changes === 0) throw new Error('REVERT_CONFLICT')
 
       getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, notes, created_by)
-        VALUES (?, 'status_change', ?, ?, ?, ?)
-      `).run(req.params.id, current.statut, lastEvent.statut_from, `Annulation de la transition ${lastEvent.statut_from} → ${current.statut}`, user.slug || 'unknown')
+        INSERT INTO candidature_events (candidature_id, type, statut_from, statut_to, stage, notes, created_by)
+        VALUES (?, 'status_change', ?, ?, ?, ?, ?)
+      `).run(req.params.id, current.statut, lastEvent.statut_from, lastEvent.statut_from, `Annulation de la transition ${lastEvent.statut_from} → ${current.statut}`, user.slug || 'unknown')
 
       // Record cancellation for every scheduled email we aborted. Subject
       // + body are carried forward so the emails-card can still render the

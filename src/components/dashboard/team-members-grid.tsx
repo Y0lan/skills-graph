@@ -84,11 +84,13 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
 
   const hasActiveFilter = searchQuery || filterTeam !== 'all' || filterPole !== 'all'
 
-  // Any filter or sort change collapses an open row. Two reasons: (1) the
+  // Any filter change collapses an open row. Two reasons: (1) the
   // expanded row may scroll out of the filtered set; (2) keeping it open
   // after the filter clears would silently re-show it, which felt like a
   // ghost-state bug in QA. Wrap the setters so we never have to remember
-  // to clear `expandedSlug` at every callsite.
+  // to clear `expandedSlug` at every callsite. Sort changes are deliberately
+  // NOT cleared — the row stays expanded and just rides to its new position,
+  // which matches user expectation after a sort toggle.
   const onSearchChange = (v: string) => { setExpandedSlug(null); setSearchQuery(v) }
   const onFilterTeamChange = (v: string) => { setExpandedSlug(null); setFilterTeam(v) }
   const onFilterPoleChange = (v: string) => { setExpandedSlug(null); setFilterPole(v) }

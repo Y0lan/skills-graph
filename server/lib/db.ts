@@ -376,6 +376,42 @@ export function initDatabase(): void {
   // Idempotent: add content_md and email_snapshot if table has new CHECK but missing columns
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN content_md TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE candidature_events ADD COLUMN email_snapshot TEXT') } catch { /* already exists */ }
+  // v4.5: per-stage notes + edit-in-place
+  try { db.exec('ALTER TABLE candidature_events ADD COLUMN stage TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE candidature_events ADD COLUMN updated_at TEXT') } catch { /* already exists */ }
+
+  // v4.5 defensive backfill: events created before the `stage` column existed
+  // have stage=NULL, which breaks the per-stage history grouping. Walk each
+  // candidature's status_change history once and assign every prior event the
+  // statut active at its created_at. Idempotent — only touches rows where
+  // stage IS NULL.
+  try {
+    const candWithNullStage = db.prepare(`
+      SELECT DISTINCT candidature_id FROM candidature_events WHERE stage IS NULL
+    `).all() as { candidature_id: string }[]
+    if (candWithNullStage.length > 0) {
+      const txn = db.transaction(() => {
+        const update = db.prepare(`UPDATE candidature_events SET stage = ? WHERE id = ?`)
+        for (const { candidature_id } of candWithNullStage) {
+          // Walk this candidature's events oldest→newest; the active stage
+          // at each event is the latest statut_to seen up to that point.
+          const events = db.prepare(`
+            SELECT id, type, statut_to, created_at FROM candidature_events
+            WHERE candidature_id = ? AND stage IS NULL
+            ORDER BY created_at ASC, id ASC
+          `).all(candidature_id) as { id: number; type: string; statut_to: string | null; created_at: string }[]
+          let activeStage = 'postule'
+          for (const e of events) {
+            if (e.type === 'status_change' && e.statut_to) activeStage = e.statut_to
+            update.run(activeStage, e.id)
+          }
+        }
+      })
+      txn()
+    }
+  } catch (err) {
+    console.error('[db] stage backfill failed (non-fatal):', err)
+  }
 
   // Idempotent migration: widen CHECK to add email_clicked / email_delivered / email_complained / email_delay.
   // Wrapped in an explicit transaction so a pod crash between DROP and RENAME
