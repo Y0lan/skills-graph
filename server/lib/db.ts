@@ -550,33 +550,44 @@ export function initDatabase(): void {
   })()
 
   if (missingStageDataChangedType) {
+    // CRITICAL: turn FK enforcement OFF for the table-rebuild dance.
+    // candidature_documents.event_id references candidature_events(id) since
+    // v4.5; without this PRAGMA, DROP TABLE candidature_events fires the FK
+    // and crashes the boot. SQLite forbids changing this pragma inside a
+    // transaction, so it has to bracket the migrate() call. Mirrors the
+    // candidate_assets rebuild pattern further below.
     db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    const migrate = db.transaction(() => {
-      db.exec(`
-        CREATE TABLE candidature_events_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-          type TEXT NOT NULL DEFAULT 'status_change'
-            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed')),
-          statut_from TEXT,
-          statut_to TEXT,
-          notes TEXT,
-          content_md TEXT,
-          email_snapshot TEXT,
-          stage TEXT,
-          updated_at TEXT,
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
-          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
-          FROM candidature_events;
-        DROP TABLE candidature_events;
-        ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      `)
-    })
-    migrate()
-    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+    db.exec('PRAGMA foreign_keys=OFF')
+    try {
+      const migrate = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE candidature_events_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+            type TEXT NOT NULL DEFAULT 'status_change'
+              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed')),
+            statut_from TEXT,
+            statut_to TEXT,
+            notes TEXT,
+            content_md TEXT,
+            email_snapshot TEXT,
+            stage TEXT,
+            updated_at TEXT,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
+            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+            FROM candidature_events;
+          DROP TABLE candidature_events;
+          ALTER TABLE candidature_events_new RENAME TO candidature_events;
+        `)
+      })
+      migrate()
+      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+    } finally {
+      db.exec('PRAGMA foreign_keys=ON')
+    }
   }
 
   // ─── Idempotent backfill: canonical display_filename + candidate name ─
