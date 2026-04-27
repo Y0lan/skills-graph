@@ -84,9 +84,20 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
 
   const hasActiveFilter = searchQuery || filterTeam !== 'all' || filterPole !== 'all'
 
+  // Any filter or sort change collapses an open row. Two reasons: (1) the
+  // expanded row may scroll out of the filtered set; (2) keeping it open
+  // after the filter clears would silently re-show it, which felt like a
+  // ghost-state bug in QA. Wrap the setters so we never have to remember
+  // to clear `expandedSlug` at every callsite.
+  const onSearchChange = (v: string) => { setExpandedSlug(null); setSearchQuery(v) }
+  const onFilterTeamChange = (v: string) => { setExpandedSlug(null); setFilterTeam(v) }
+  const onFilterPoleChange = (v: string) => { setExpandedSlug(null); setFilterPole(v) }
+  const onResetFilters = () => {
+    setExpandedSlug(null); setSearchQuery(''); setFilterTeam('all'); setFilterPole('all')
+  }
   // Derive the visible expansion: hide it when the expanded member is no
-  // longer in the filtered set, otherwise it silently reopens later when
-  // filters clear. Pure derivation — no useEffect → no cascading render.
+  // longer in the filtered set (e.g. mid-typing in search). Pure derivation
+  // — no setState in render → no cascading render.
   const visibleExpandedSlug = expandedSlug && filtered.some(m => m.slug === expandedSlug)
     ? expandedSlug
     : null
@@ -104,11 +115,11 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
             <Input
               placeholder="Rechercher par nom..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => onSearchChange(e.target.value)}
               className="pl-9"
             />
           </div>
-          <Select value={filterTeam} onValueChange={v => setFilterTeam(v ?? 'all')}>
+          <Select value={filterTeam} onValueChange={v => onFilterTeamChange(v ?? 'all')}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Toutes les équipes">
                 {filterTeam === 'all' ? 'Toutes les équipes' : `Équipe : ${filterTeam}`}
@@ -120,7 +131,7 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
             </SelectContent>
           </Select>
           {uniquePoles.length > 0 && (
-            <Select value={filterPole} onValueChange={v => setFilterPole(v ?? 'all')}>
+            <Select value={filterPole} onValueChange={v => onFilterPoleChange(v ?? 'all')}>
               <SelectTrigger className="w-48">
                 <SelectValue placeholder="Tous les pôles">
                   {filterPole === 'all' ? 'Tous les pôles' : `Pôle : ${POLE_LABELS[filterPole] ?? filterPole}`}
@@ -151,7 +162,7 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
             <span className="text-xs">{sortKey === 'score' ? (sortDir === 'desc' ? 'haut→bas' : 'bas→haut') : (sortDir === 'asc' ? 'A→Z' : 'Z→A')}</span>
           </Button>
           {hasActiveFilter && (
-            <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setFilterTeam('all'); setFilterPole('all') }}>
+            <Button variant="ghost" size="sm" onClick={onResetFilters}>
               <X className="mr-1 h-3 w-3" /> Réinitialiser
             </Button>
           )}

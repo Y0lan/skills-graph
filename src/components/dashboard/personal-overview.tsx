@@ -79,6 +79,14 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
   // Client-side cache for comparison summaries (survives re-renders, cleared on profile change)
   const comparisonCache = useRef<Map<string, string>>(new Map())
 
+  // Radar focus state — declared here (not deep in the file) so the
+  // member-change reset below can reset it together with the other
+  // per-member state. Default: focus on home pôle when one is known
+  // (falls back to 'all' if not). The list of axes degrades gracefully
+  // until pole mappings load.
+  const initialRadarScope: 'pole' | 'all' = currentMemberPole ? 'pole' : 'all'
+  const [radarScope, setRadarScope] = useState<'pole' | 'all'>(initialRadarScope)
+
   // Reset state when profile changes
   const [prevMemberId, setPrevMemberId] = useState(memberId)
   if (memberId !== prevMemberId) {
@@ -88,6 +96,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     setComparisonSummary(null)
     setCompareAggregate(null)
     setProfileSummary(aggregate.profileSummary)
+    setRadarScope(currentMemberPole ? 'pole' : 'all')
     comparisonCache.current.clear() // eslint-disable-line react-hooks/refs
   }
 
@@ -241,7 +250,6 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     return ids.length > 0 ? new Set(ids) : null
   }, [currentMemberPole, poleMappings])
   const hasHomePole = currentMemberPole !== null
-  const [radarScope, setRadarScope] = useState<'pole' | 'all'>(hasHomePole ? 'pole' : 'all')
 
   // Categories the radar will display, sorted by pole so each pole's
   // exclusive categories cluster together (matches the Équipe tab pattern).
