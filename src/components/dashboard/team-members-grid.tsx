@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, Search, ArrowUpDown, X } from 'lucide-react'
+import { ArrowUp, ArrowDown, Search, ArrowUpDown, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,21 +19,40 @@ interface TeamMembersGridProps {
   poleCategoryIds?: string[]
 }
 
+type SortKey = 'name' | 'role' | 'team' | 'score'
+
+const SORT_LABELS: Record<SortKey, string> = {
+  name: 'Nom',
+  role: 'Rôle',
+  team: 'Équipe',
+  score: 'Score',
+}
+
+/** Mean of the member's non-zero category averages — used for the table's
+ * "Score" column AND the score-based sort. Hidden 0 categories means a
+ * member who hasn't rated themselves doesn't drag their own average down. */
+function memberOverallAvg(member: TeamMemberAggregateResponse): number {
+  const scores = Object.values(member.categoryAverages).filter(v => v > 0)
+  if (scores.length === 0) return 0
+  return scores.reduce((a, b) => a + b, 0) / scores.length
+}
+
 export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMembersGridProps) {
   const { categories: skillCategories } = useCatalog()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [filterTeam, setFilterTeam] = useState('all')
   const [filterPole, setFilterPole] = useState('all')
-  const [sortKey, setSortKey] = useState<'name' | 'role' | 'team'>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sortKey, setSortKey] = useState<SortKey>('score')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [expandedSlug, setExpandedSlug] = useState<string | null>(null)
 
   const uniqueTeams = useMemo(() => [...new Set(members.map(m => m.team))].sort(), [members])
   const uniquePoles = useMemo(() => [...new Set(members.map(m => m.pole).filter(Boolean) as string[])].sort(), [members])
 
-  const toggleSort = (key: typeof sortKey) => {
+  const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir('asc') }
+    else { setSortKey(key); setSortDir(key === 'score' ? 'desc' : 'asc') }
   }
 
   const filtered = useMemo(() => {
@@ -56,6 +75,7 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
           cmp = aIdx - bIdx
           break
         }
+        case 'score': cmp = memberOverallAvg(a) - memberOverallAvg(b); break
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
@@ -83,7 +103,9 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
           </div>
           <Select value={filterTeam} onValueChange={v => setFilterTeam(v ?? 'all')}>
             <SelectTrigger className="w-48">
-              <SelectValue placeholder="Toutes les équipes" />
+              <SelectValue placeholder="Toutes les équipes">
+                {filterTeam === 'all' ? 'Toutes les équipes' : `Équipe : ${filterTeam}`}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Toutes les équipes</SelectItem>
@@ -93,7 +115,9 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
           {uniquePoles.length > 0 && (
             <Select value={filterPole} onValueChange={v => setFilterPole(v ?? 'all')}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Tous les pôles" />
+                <SelectValue placeholder="Tous les pôles">
+                  {filterPole === 'all' ? 'Tous les pôles' : `Pôle : ${POLE_LABELS[filterPole] ?? filterPole}`}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous les pôles</SelectItem>
@@ -101,21 +125,24 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
               </SelectContent>
             </Select>
           )}
-          <Button variant="ghost" size="sm" onClick={() => toggleSort(sortKey)} className="flex items-center gap-1">
-            <ArrowUpDown className="h-3 w-3" />
-            {sortKey === 'name' ? 'Nom' : sortKey === 'role' ? 'Rôle' : 'Équipe'}
-            <span className="text-xs text-muted-foreground">({sortDir === 'asc' ? 'A-Z' : 'Z-A'})</span>
-          </Button>
-          <Select value={sortKey} onValueChange={v => { setSortKey(v as typeof sortKey); setSortDir('asc') }}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Trier par" />
+          <Select value={sortKey} onValueChange={v => toggleSort(v as SortKey)}>
+            <SelectTrigger className="w-44">
+              <ArrowUpDown className="h-3 w-3 shrink-0" />
+              <SelectValue placeholder="Trier par">
+                Trier par {SORT_LABELS[sortKey]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="score">Score</SelectItem>
               <SelectItem value="name">Nom</SelectItem>
               <SelectItem value="role">Rôle</SelectItem>
               <SelectItem value="team">Équipe</SelectItem>
             </SelectContent>
           </Select>
+          <Button variant="ghost" size="sm" onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')} className="flex items-center gap-1" aria-label={`Inverser le tri (${sortDir === 'asc' ? 'asc' : 'desc'})`}>
+            {sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+            <span className="text-xs">{sortKey === 'score' ? (sortDir === 'desc' ? 'haut→bas' : 'bas→haut') : (sortDir === 'asc' ? 'A→Z' : 'Z→A')}</span>
+          </Button>
           {hasActiveFilter && (
             <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setFilterTeam('all'); setFilterPole('all') }}>
               <X className="mr-1 h-3 w-3" /> Réinitialiser
@@ -128,115 +155,199 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
           {filtered.length === members.length
             ? `${members.length} membre${members.length !== 1 ? 's' : ''}`
             : `${filtered.length} / ${members.length} membre${members.length !== 1 ? 's' : ''}`}
+          <span className="ml-3 text-xs">Cliquez une ligne pour voir le radar et le détail.</span>
         </p>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((member) => {
-            const hasSubmitted = member.submittedAt !== null
-            const radarData = hasSubmitted
-              ? skillCategories
-                  .filter((cat) => poleCategoryIds
-                    ? poleCategoryIds.includes(cat.id)
-                    : (member.categoryAverages[cat.id] ?? 0) > 0
-                  )
-                  .map((cat) => ({
-                    label: cat.label.split(/[&(]/)[0].trim(),
-                    value: member.categoryAverages[cat.id] ?? 0,
-                    fullMark: 5,
-                  }))
-              : []
-
-            // Top 3 strengths with category metadata
-            const strengthBadges = hasSubmitted
-              ? member.topStrengths.slice(0, 3).map((s) => {
-                  const catMeta = skillCategories.find((c) => c.id === s.categoryId)
-                  return {
-                    categoryId: s.categoryId,
-                    shortLabel: catMeta?.label.split(/[&(]/)[0].trim() ?? '',
-                    avg: s.avg,
-                  }
-                })
-              : []
-
-            return (
-              <Card
-                key={member.slug}
-                className={`transition-opacity ${!hasSubmitted ? 'opacity-40' : ''}`}
-              >
-                <CardContent className="flex flex-col items-center gap-2 pt-4">
-                  {hasSubmitted && radarData.length >= 3 && (
-                    <VisxRadarChart data={radarData} height={180} compact />
-                  )}
-                  <MemberAvatar
-                    slug={member.slug}
-                    name={member.name}
-                    size={28}
-                    href={`/dashboard/${member.slug}`}
-                  />
-                  <div className="text-center">
-                    <Link
-                      to={`/dashboard/${member.slug}`}
-                      className="font-semibold hover:text-primary hover:underline"
+        <div className="rounded-md border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr className="text-left">
+                <th className="w-8 px-2 py-2" />
+                <th className="px-3 py-2 font-medium">Membre</th>
+                <th className="px-3 py-2 font-medium hidden md:table-cell">Rôle</th>
+                <th className="px-3 py-2 font-medium hidden lg:table-cell">Équipe</th>
+                <th className="px-3 py-2 font-medium text-right">Score</th>
+                <th className="px-3 py-2 font-medium text-right hidden md:table-cell">Δ</th>
+                <th className="px-3 py-2 font-medium hidden lg:table-cell">Mis à jour</th>
+                <th className="px-3 py-2 font-medium hidden xl:table-cell">Top forces</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(member => {
+                const hasSubmitted = member.submittedAt !== null
+                const expanded = expandedSlug === member.slug
+                const score = memberOverallAvg(member)
+                const lastTouchAt = member.lastActivityAt ?? member.submittedAt
+                return (
+                  <Fragment key={member.slug}>
+                    <tr
+                      className={cn(
+                        'border-t cursor-pointer transition-colors',
+                        hasSubmitted ? 'hover:bg-muted/30' : 'opacity-50',
+                        expanded && 'bg-muted/30',
+                      )}
+                      onClick={() => setExpandedSlug(expanded ? null : member.slug)}
                     >
-                      {member.name}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">{member.role}</p>
-                    <p className="mt-0.5 text-xs font-medium text-primary/70">{member.team}</p>
-                    <div className="flex items-center justify-center gap-2 mt-0.5">
-                      {member.progressionDelta > 0.05 && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          <ArrowUp className="h-2.5 w-2.5" />+{member.progressionDelta.toFixed(1)}
-                        </span>
-                      )}
-                      {member.progressionDelta < -0.05 && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                          <ArrowDown className="h-2.5 w-2.5" />{member.progressionDelta.toFixed(1)}
-                        </span>
-                      )}
-                      {(member.lastActivityAt || member.submittedAt) && (
-                        <span className={cn('text-[10px]', freshnessColor(daysSince(member.lastActivityAt ?? member.submittedAt!)))}>
-                          {humanFreshness(daysSince(member.lastActivityAt ?? member.submittedAt!))}
-                        </span>
-                      )}
-                    </div>
-                    {!hasSubmitted && (
-                      <Badge variant="outline" className="mt-1 text-xs">
-                        En attente
-                      </Badge>
-                    )}
-                    {hasSubmitted && (strengthBadges.length > 0 || member.topGaps.length > 0) && (
-                      <div className="mt-2 flex flex-wrap justify-center gap-1">
-                        {/* Strength badges (positive first) */}
-                        {strengthBadges.map((s) => (
-                          <Badge
-                            key={`str-${s.categoryId}`}
-                            className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs"
-                            title={s.shortLabel}
+                      <td className="px-2 py-2 text-muted-foreground">
+                        {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <MemberAvatar slug={member.slug} name={member.name} size={24} />
+                          <Link
+                            to={`/dashboard/${member.slug}`}
+                            className="font-medium hover:text-primary hover:underline"
+                            onClick={e => e.stopPropagation()}
                           >
-                            {s.shortLabel} {s.avg.toFixed(1)}
-                          </Badge>
-                        ))}
-                        {/* Gap badges */}
-                        {member.topGaps.slice(0, 3).map((g) => {
-                          const gapMeta = skillCategories.find((c) => c.id === g.categoryId)
-                          return (
-                            <Badge
-                              key={`gap-${g.categoryId}`}
-                              className="bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 text-xs"
-                            >
-                              {gapMeta?.label.split(/[&(]/)[0].trim() ?? g.categoryId} -{g.gap.toFixed(1)}
-                            </Badge>
-                          )
-                        })}
-                      </div>
+                            {member.name}
+                          </Link>
+                          {!hasSubmitted && <Badge variant="outline" className="text-[10px]">En attente</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground hidden md:table-cell">{member.role}</td>
+                      <td className="px-3 py-2 hidden lg:table-cell">
+                        <span className="text-primary/80">{member.team}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                        {score > 0 ? score.toFixed(1) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums hidden md:table-cell">
+                        {member.progressionDelta > 0.05 && (
+                          <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                            <ArrowUp className="h-3 w-3" />+{member.progressionDelta.toFixed(1)}
+                          </span>
+                        )}
+                        {member.progressionDelta < -0.05 && (
+                          <span className="inline-flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+                            <ArrowDown className="h-3 w-3" />{member.progressionDelta.toFixed(1)}
+                          </span>
+                        )}
+                        {Math.abs(member.progressionDelta) <= 0.05 && (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 hidden lg:table-cell">
+                        {lastTouchAt
+                          ? <span className={freshnessColor(daysSince(lastTouchAt))}>{humanFreshness(daysSince(lastTouchAt))}</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-3 py-2 hidden xl:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {member.topStrengths.slice(0, 3).map(s => {
+                            const meta = skillCategories.find(c => c.id === s.categoryId)
+                            return (
+                              <Badge
+                                key={s.categoryId}
+                                className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-medium"
+                              >
+                                {meta?.label.split(/[&(]/)[0].trim() ?? s.categoryId} {s.avg.toFixed(1)}
+                              </Badge>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded && hasSubmitted && (
+                      <ExpandedRow
+                        member={member}
+                        skillCategories={skillCategories}
+                        poleCategoryIds={poleCategoryIds}
+                      />
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+                  </Fragment>
+                )
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                    Aucun membre ne correspond à ces filtres.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+interface ExpandedRowProps {
+  member: TeamMemberAggregateResponse
+  skillCategories: { id: string; label: string }[]
+  poleCategoryIds?: string[]
+}
+
+function ExpandedRow({ member, skillCategories, poleCategoryIds }: ExpandedRowProps) {
+  const radarData = skillCategories
+    .filter(cat => poleCategoryIds
+      ? poleCategoryIds.includes(cat.id)
+      : (member.categoryAverages[cat.id] ?? 0) > 0)
+    .map(cat => ({
+      label: cat.label.split(/[&(]/)[0].trim(),
+      value: member.categoryAverages[cat.id] ?? 0,
+      fullMark: 5,
+    }))
+
+  return (
+    <tr>
+      <td colSpan={8} className="bg-muted/15 border-t border-b">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 p-4">
+          <div className="min-w-0">
+            {radarData.length >= 3 ? (
+              <VisxRadarChart data={radarData} height={320} />
+            ) : (
+              <p className="text-sm text-muted-foreground italic py-12 text-center">
+                Pas assez de catégories évaluées pour afficher le radar.
+              </p>
+            )}
+          </div>
+          <div className="space-y-4">
+            <section>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Forces</h4>
+              {member.topStrengths.length === 0
+                ? <p className="text-sm text-muted-foreground italic">Aucune force identifiée.</p>
+                : (
+                  <ul className="space-y-1">
+                    {member.topStrengths.slice(0, 5).map(s => {
+                      const meta = skillCategories.find(c => c.id === s.categoryId)
+                      return (
+                        <li key={s.categoryId} className="flex items-center justify-between gap-3 text-sm">
+                          <span>{meta?.label ?? s.categoryId}</span>
+                          <span className="tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">{s.avg.toFixed(1)}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+            </section>
+            <section>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Écarts vs cible</h4>
+              {member.topGaps.length === 0
+                ? <p className="text-sm text-muted-foreground italic">Aucun écart identifié.</p>
+                : (
+                  <ul className="space-y-1">
+                    {member.topGaps.slice(0, 5).map(g => {
+                      const meta = skillCategories.find(c => c.id === g.categoryId)
+                      return (
+                        <li key={g.categoryId} className="flex items-center justify-between gap-3 text-sm">
+                          <span>{meta?.label ?? g.categoryId}</span>
+                          <span className="tabular-nums font-semibold text-red-600 dark:text-red-400">-{g.gap.toFixed(1)}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+            </section>
+            <Link
+              to={`/dashboard/${member.slug}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              Voir le profil complet →
+            </Link>
+          </div>
+        </div>
+      </td>
+    </tr>
   )
 }

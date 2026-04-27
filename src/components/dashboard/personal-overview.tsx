@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react'
+import { Loader2, Sparkles, MessageSquare, ArrowUp, ArrowDown, Trophy, Target } from 'lucide-react'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,7 +13,7 @@ import { useChartView } from '@/hooks/use-chart-view'
 import { useSkillHistory } from '@/hooks/use-skill-history'
 import { shortLabel, cn, daysSince, freshnessColor, humanFreshness } from '@/lib/utils'
 import { POLE_LABELS } from '@/lib/constants'
-import { usePoleLayout } from '@/lib/pole-segments'
+import { usePoleLayout, usePoleMappings } from '@/lib/pole-segments'
 import type { MemberAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import SkillDetailAccordion from '@/components/dashboard/skill-detail-accordion'
@@ -223,14 +223,36 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     teamMembers?.find(m => m.slug === compareSlug)?.pole !==
     teamMembers?.find(m => m.slug === memberId)?.pole
 
+  // Radar focus: 'pole' (default — only the user's home-pôle categories,
+  // 5-6 axes, legible) vs 'all' (the full 18-axis view, on demand).
+  // Members with no home pôle (e.g. transverse / direction) skip the
+  // restriction since there's nothing meaningful to focus on.
+  const poleMappings = usePoleMappings()
+  const homePoleCategoryIds = useMemo(() => {
+    if (!currentMemberPole || !poleMappings) return null
+    const ids = poleMappings[currentMemberPole] ?? []
+    return ids.length > 0 ? new Set(ids) : null
+  }, [currentMemberPole, poleMappings])
+  const canFocusOnPole = homePoleCategoryIds !== null
+  const [radarScope, setRadarScope] = useState<'pole' | 'all'>(canFocusOnPole ? 'pole' : 'all')
+  // If we discover late that the user has no home pôle, fall back to 'all'.
+  useEffect(() => {
+    if (!canFocusOnPole && radarScope === 'pole') setRadarScope('all')
+  }, [canFocusOnPole, radarScope])
+
   // Categories the radar will display, sorted by pole so each pole's
   // exclusive categories cluster together (matches the Équipe tab pattern).
   // Hooks must run unconditionally — they fall back to the original order
   // if pole mappings haven't loaded yet, and are no-ops in the empty-state
   // path below.
-  const displayCategoriesUnsorted = sharedCategoryIds
-    ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
-    : categories
+  const displayCategoriesUnsorted = useMemo(() => {
+    const base = sharedCategoryIds
+      ? categories.filter(cat => sharedCategoryIds.includes(cat.categoryId))
+      : categories
+    if (radarScope === 'all' || !homePoleCategoryIds) return base
+    const focused = base.filter(c => homePoleCategoryIds.has(c.categoryId))
+    return focused.length > 0 ? focused : base
+  }, [sharedCategoryIds, categories, radarScope, homePoleCategoryIds])
   const { order: poleOrder, segments } = usePoleLayout(
     displayCategoriesUnsorted.map(c => c.categoryId),
   )
@@ -418,36 +440,94 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Summary block: pill badges + AI narrative — hidden when side-by-side is active */}
+        {/* Forces / Écarts side-by-side cards — primary signal of "where am I?
+            and what should I work on?". Replaces the old chip-soup summary
+            block. The AI synthèse and form-completion CTA live below. */}
         {!compareSlug && ((displayStrengths && displayStrengths.length > 0) || displayGaps.length > 0) && (
-          <div className="rounded-md border bg-muted/50 px-4 py-3 text-sm space-y-2">
-            <div className="flex flex-wrap gap-1.5">
-              {displayStrengths.map(s => (
-                <Badge key={s.categoryId} className="bg-primary/20 text-[#1B6179] dark:text-primary border border-primary/30">
-                  {shortLabel(s.categoryLabel)}
-                </Badge>
-              ))}
-              {displayGaps.map(g => (
-                <Badge key={g.categoryId} className="bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30">
-                  {shortLabel(g.categoryLabel)}
-                </Badge>
-              ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/15 dark:border-emerald-900/50 p-4 space-y-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Trophy className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">Mes forces</h3>
+              </div>
+              {displayStrengths.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">Pas encore de forces identifiées — complétez plus d'évaluations.</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {displayStrengths.slice(0, 5).map(s => (
+                    <li key={s.categoryId} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate text-foreground/90">{s.categoryLabel}</span>
+                      <span className="tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
+                        {s.avgRank.toFixed(1)}
+                        <span className="text-[10px] text-muted-foreground ml-0.5">/5</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
+
+            <div className="rounded-lg border border-red-500/30 bg-red-50/40 dark:bg-red-950/15 dark:border-red-900/50 p-4 space-y-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className="h-4 w-4 text-red-600 dark:text-red-400 shrink-0" />
+                <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">Mes écarts prioritaires</h3>
+              </div>
+              {displayGaps.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">Pas d'écart majeur vs cible. 🎉</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {displayGaps.slice(0, 5).map(g => (
+                    <li key={g.categoryId} className="flex items-center justify-between gap-2 text-sm">
+                      <span
+                        className="truncate text-foreground/90"
+                        title={`Actuel ${g.avgRank.toFixed(1)} · Cible ${g.targetRank}`}
+                      >
+                        {g.categoryLabel}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className="tabular-nums font-semibold text-red-700 dark:text-red-400"
+                          title={`Actuel ${g.avgRank.toFixed(1)} · Cible ${g.targetRank}`}
+                        >
+                          -{g.gap.toFixed(1)}
+                        </span>
+                        {onFindExpert && (
+                          <button
+                            onClick={() => onFindExpert(g.categoryId)}
+                            className="text-xs text-primary hover:underline whitespace-nowrap font-medium"
+                            aria-label={`Trouver un expert pour ${g.categoryLabel}`}
+                          >
+                            expert →
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI synthèse / completion CTA — separated from the cards above so the
+            forces/gaps signal stays uncluttered. */}
+        {!compareSlug && (profileSummary || (isOwnProfile && (submittedAt || !submittedAt))) && (
+          <div className="rounded-md border bg-muted/40 px-4 py-3 text-sm">
             {profileSummary ? (
-              <p className="text-muted-foreground italic mt-3">{profileSummary}</p>
+              <p className="text-muted-foreground italic">{profileSummary}</p>
             ) : isOwnProfile && submittedAt ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleGenerateSummary}
                 disabled={summaryLoading}
-                className="mt-3 gap-1.5"
+                className="gap-1.5"
               >
                 {summaryLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                 Générer ma synthèse
               </Button>
             ) : isOwnProfile && !submittedAt ? (
-              <p className="text-muted-foreground text-xs mt-3">
+              <p className="text-muted-foreground text-xs">
                 Terminez votre évaluation pour générer une synthèse.{' '}
                 <Link to={`/form/${memberId}`} className="text-primary hover:underline">Reprendre →</Link>
               </p>
@@ -575,9 +655,9 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           </div>
         ) : view === 'radar' ? (
           <>
-            {segments && (
-              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mb-3">
-                {segments.map(seg => (
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                {segments && segments.map(seg => (
                   <div key={seg.label} className="flex items-center gap-1.5 text-xs">
                     <span
                       className="inline-block h-2.5 w-2.5 rounded-full"
@@ -587,7 +667,19 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                   </div>
                 ))}
               </div>
-            )}
+              {canFocusOnPole && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setRadarScope(s => s === 'pole' ? 'all' : 'pole')}
+                  className="text-xs"
+                >
+                  {radarScope === 'pole'
+                    ? `Voir toutes les catégories (${categories.length})`
+                    : `Recentrer sur ${POLE_LABELS[currentMemberPole!] ?? 'mon pôle'}`}
+                </Button>
+              )}
+            </div>
             <VisxRadarChart
               data={data}
               overlay={overlayData}
@@ -624,43 +716,6 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
               </p>
             )}
           </>
-        )}
-
-        {displayGaps.length > 0 && (
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Principaux écarts vs cible
-            </h3>
-            <div className="space-y-2">
-              {displayGaps.map((gap) => (
-                <div
-                  key={gap.categoryId}
-                  className="flex items-center justify-between rounded-md border px-3 py-2"
-                >
-                  <span className="text-sm font-medium">{gap.categoryLabel}</span>
-                  <div className="flex items-center gap-3 text-sm">
-                    <span className="text-muted-foreground">
-                      Actuel : <span className="font-semibold tabular-nums">{gap.avgRank.toFixed(1)}</span>
-                    </span>
-                    <span className="text-muted-foreground">
-                      Cible : <span className="font-semibold tabular-nums">{gap.targetRank}</span>
-                    </span>
-                    <span className="font-semibold tabular-nums text-red-500">
-                      -{gap.gap.toFixed(1)}
-                    </span>
-                    {onFindExpert && (
-                      <button
-                        onClick={() => onFindExpert(gap.categoryId)}
-                        className="text-xs text-primary hover:underline whitespace-nowrap"
-                      >
-                        Trouver un expert →
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         )}
 
         {hasRatings && teamMembers && teamCategories && (

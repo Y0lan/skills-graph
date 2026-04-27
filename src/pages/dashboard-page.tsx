@@ -14,6 +14,8 @@ import type { MemberAggregateResponse, TeamAggregateResponse } from '@/lib/types
 
 const PersonalOverview = lazy(() => import('@/components/dashboard/personal-overview'))
 const TeamOverview = lazy(() => import('@/components/dashboard/team-overview'))
+const PoleScoreboard = lazy(() => import('@/components/dashboard/pole-scoreboard'))
+const SkillsAtRisk = lazy(() => import('@/components/dashboard/skills-at-risk'))
 const CategorySummaryCards = lazy(() => import('@/components/dashboard/category-summary-cards'))
 const CategoryDeepDive = lazy(() => import('@/components/dashboard/category-deep-dive'))
 const SkillsGapTable = lazy(() => import('@/components/dashboard/skills-gap-table'))
@@ -253,12 +255,35 @@ export default function DashboardPage() {
                     <Suspense fallback={tabFallback}>
                       {teamAggregate && hasTeamData && (
                         <>
-                          <TeamOverview
-                            categories={teamAggregate.categories}
-                            teamSize={teamAggregate.teamSize}
-                            submittedCount={teamAggregate.submittedCount}
+                          <PoleScoreboard
+                            members={teamAggregate.members}
                             poleFilter={poleFilter}
+                            onSelectPole={(p) => setPoleFilter(p === 'all' ? null : p)}
                           />
+                          <SkillsAtRisk
+                            members={teamAggregate.members}
+                            categories={teamAggregate.categories}
+                            poleFilter={poleFilter}
+                            onFindExpert={(categoryId) => {
+                              setExpertCategoryHint(categoryId)
+                              setActiveTab('expert')
+                            }}
+                          />
+                          <details className="rounded-lg border bg-card group">
+                            <summary className="cursor-pointer px-4 py-3 text-sm font-medium select-none flex items-center justify-between hover:bg-muted/30 transition-colors">
+                              <span>Radar global de l'équipe</span>
+                              <span className="text-xs text-muted-foreground group-open:hidden">Ouvrir ↓</span>
+                              <span className="text-xs text-muted-foreground hidden group-open:inline">Fermer ↑</span>
+                            </summary>
+                            <div className="border-t p-4">
+                              <TeamOverview
+                                categories={teamAggregate.categories}
+                                teamSize={teamAggregate.teamSize}
+                                submittedCount={teamAggregate.submittedCount}
+                                poleFilter={poleFilter}
+                              />
+                            </div>
+                          </details>
                           <TeamMembersGrid
                             members={teamAggregate.members}
                             poleCategoryIds={teamAggregate.categories.map(c => c.categoryId)}
