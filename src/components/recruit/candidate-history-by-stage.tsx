@@ -9,7 +9,8 @@ import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Down
 import QuickNoteComposer from './quick-note-composer'
 import { eventCategory, type EventCategory } from '@/lib/recruitment-events'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort, isStatut } from '@/lib/constants'
+import { StageFiche } from './stage-fiches/stage-fiche'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent, CandidatureDocument } from '@/hooks/use-candidate-data'
 
@@ -575,9 +576,16 @@ export interface CandidateHistoryByStageProps {
    *  Composer + manual notes always remain visible so the recruiter
    *  can still capture from inside a filtered view. */
   filter?: HistoryFilter
+  /** v5.1: candidature id used by the per-stage <StageFiche>. When
+   *  absent, no fiches are rendered (lets tests opt out / read-only
+   *  surfaces stay simple). */
+  candidatureId?: string
+  /** v5.1: bumped by the page-level SSE handler when stage_data_changed
+   *  fires; passed through to <StageFiche> to invalidate its query. */
+  stageDataRefetchSignal?: number
 }
 
-export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc, filter = 'all' }: CandidateHistoryByStageProps) {
+export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc, filter = 'all', candidatureId, stageDataRefetchSignal }: CandidateHistoryByStageProps) {
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   // Reset loading when a new doc opens so the spinner is consistent.
@@ -690,6 +698,21 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
               </AccordionTrigger>
               <AccordionContent className="px-2">
                 <div className="space-y-4">
+                  {/* v5.1: per-stage structured fiche (entretien, aboro, ...).
+                      Renders only for stages with a registered fiche
+                      schema; the dispatcher returns null otherwise so
+                      this stays a no-op for postule / preselection /
+                      refuse without an enclosing conditional. The
+                      fiche stores stage-specific data; the markdown
+                      composer below is for free-form reasoning. */}
+                  {candidatureId && isStatut(group.statut) && (
+                    <StageFiche
+                      candidatureId={candidatureId}
+                      stage={group.statut}
+                      refetchSignal={stageDataRefetchSignal}
+                    />
+                  )}
+
                   {/* v4.5: per-stage note composer.
                       Pinned to this stage via the `stage` prop — the
                       backend writes that into candidature_events.stage

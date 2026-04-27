@@ -29,6 +29,8 @@ import RevertCountdown from './revert-countdown'
 import DocumentSlotSummary from './document-slot-summary'
 import EvaluationDisclosure from './evaluation-disclosure'
 import GapSynthesis, { type GapEntry } from './gap-synthesis'
+import { NextCriticalFactPill } from './stage-fiches/next-critical-fact-pill'
+import { isStatut } from '@/lib/constants'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
 import type {
   CandidatureInfo, CandidatureEvent, CandidatureDocument, CandidateDetail,
@@ -63,6 +65,11 @@ export interface CandidatureWorkspaceProps {
   onSendNow: (candidatureId: string) => void
   currentUserSlug: string
   currentUserName?: string | null
+  /** v5.1 — bumped by the page-level SSE handler when a fiche is mutated
+   *  for this candidature in another tab. NextCriticalFactPill and
+   *  CandidateHistoryByStage both forward it to their fiche children to
+   *  trigger a refetch. */
+  stageDataRefetchSignal?: number
 }
 
 const HISTORY_ANCHOR = 'historique-complet'
@@ -119,6 +126,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
     onSendNow,
     currentUserSlug,
     currentUserName,
+    stageDataRefetchSignal,
   } = props
 
   const isPending = !candidate.submittedAt
@@ -322,6 +330,19 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             the ~800 LOC multi-user presence item that was originally
             in v6 but didn't earn its cost for a 10-recruiter team. */}
         <CandidateLastEditIndicator events={events} />
+
+        {/* v5.1 — "next critical fact" pill. Pulls from the active
+            stage fiche (interview date + Meet link, proposition
+            deadline, embauche arrival). Stays silent at stages with
+            no upstream date. Inserted BEFORE ml-auto with truncation
+            (codex Y4) so a long meeting title doesn't break the row. */}
+        {isStatut(c.statut) && (
+          <NextCriticalFactPill
+            candidatureId={c.id}
+            statut={c.statut}
+            refetchSignal={stageDataRefetchSignal}
+          />
+        )}
 
         <div className="flex items-center gap-1 ml-auto">
           {/* Skill Radar link copy lives next to the score tiles instead
@@ -589,16 +610,23 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         filterPosteTitre={c.posteTitre}
       />
 
-      {/* ── 7. Notes d'évaluation (recruiter-only, structured) ──
-          Reads strictly from candidatures.notes_directeur — no
-          fallback to the candidate's intake notes. Empty fields stay
-          empty until the recruiter fills them. */}
-      <CandidateNotesSection
-        candidateId={candidate.id}
-        candidatureId={c.id}
-        notes={c.notesDirecteur ?? ''}
-        onNotesChange={setNotes}
-      />
+      {/* ── 7. Notes d'évaluation (legacy 4-field form, collapsed) ──
+          Superseded by per-stage fiches in v5. Kept as a disclosure
+          so existing notes remain editable / migratable, but never
+          intrusive at stages where the 4 fields don't apply. */}
+      <details className="rounded-2xl border border-border/40 bg-muted/20">
+        <summary className="cursor-pointer select-none px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors">
+          Notes structurées (legacy) — déplacer vers les fiches d'étape
+        </summary>
+        <div className="px-1 pb-1">
+          <CandidateNotesSection
+            candidateId={candidate.id}
+            candidatureId={c.id}
+            notes={c.notesDirecteur ?? ''}
+            onNotesChange={setNotes}
+          />
+        </div>
+      </details>
 
       {/* ── 8. Documents: slot summary + full panel ── */}
       <DocumentSlotSummary documents={documents} onJumpToPanel={handleJumpToDocuments} />
@@ -741,6 +769,8 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           onEditNote={setEditingNote}
           onReassignDoc={setReassigningDoc}
           filter={timelineFilter}
+          candidatureId={c.id}
+          stageDataRefetchSignal={stageDataRefetchSignal}
         />
       </div>
 

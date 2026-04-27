@@ -1,3 +1,37 @@
+/**
+ * Canonical 10 stages of the recruitment pipeline.
+ *
+ * Tuple-typed so consumers (stage fiche schemas, registry, exhaustive
+ * switches) get compile-time coverage. Order matters — it is the
+ * pipeline order used by the stepper and is used to compute "skipped"
+ * steps in the state machine.
+ */
+export const STATUTS = [
+  'postule',
+  'preselectionne',
+  'skill_radar_envoye',
+  'skill_radar_complete',
+  'entretien_1',
+  'aboro',
+  'entretien_2',
+  'proposition',
+  'embauche',
+  'refuse',
+] as const
+
+export type Statut = (typeof STATUTS)[number]
+
+/**
+ * Stage labels. Typed loosely (`Record<string, string>`) so legacy
+ * call-sites that pass a raw `string` keep compiling — the typed
+ * exhaustiveness guarantee for v5 lives on `stageFicheSchemas` (see
+ * src/lib/stage-fiches/schemas.ts).
+ *
+ * `STATUT_LABELS_TYPED` is the same object exported with the
+ * compile-time-checked `Record<Statut, string>` shape for new callers
+ * who want exhaustiveness — TS will scream if any future stage we add
+ * to STATUTS is missing here.
+ */
 export const STATUT_LABELS: Record<string, string> = {
   postule: 'Postulé',
   preselectionne: 'Présélectionné',
@@ -9,6 +43,26 @@ export const STATUT_LABELS: Record<string, string> = {
   proposition: 'Proposition',
   embauche: 'Embauché',
   refuse: 'Refusé',
+}
+
+export const STATUT_LABELS_TYPED = STATUT_LABELS as Record<Statut, string>
+// Compile-time exhaustiveness probe — fails to compile if a Statut is missing.
+const _STATUT_LABELS_EXHAUSTIVE: Record<Statut, string> = {
+  postule: STATUT_LABELS.postule,
+  preselectionne: STATUT_LABELS.preselectionne,
+  skill_radar_envoye: STATUT_LABELS.skill_radar_envoye,
+  skill_radar_complete: STATUT_LABELS.skill_radar_complete,
+  entretien_1: STATUT_LABELS.entretien_1,
+  aboro: STATUT_LABELS.aboro,
+  entretien_2: STATUT_LABELS.entretien_2,
+  proposition: STATUT_LABELS.proposition,
+  embauche: STATUT_LABELS.embauche,
+  refuse: STATUT_LABELS.refuse,
+}
+void _STATUT_LABELS_EXHAUSTIVE
+
+export function isStatut(v: unknown): v is Statut {
+  return typeof v === 'string' && (STATUTS as readonly string[]).includes(v)
 }
 
 /** One-line explanation of each pipeline stage, shown in the stepper tooltip.

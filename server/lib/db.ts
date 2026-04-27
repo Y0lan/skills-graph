@@ -502,6 +502,83 @@ export function initDatabase(): void {
   try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
 
+  // ───────────────────────────────────────────────────────────────────
+  // v5.1 — candidature_stage_data: per-stage structured fiches
+  //
+  // One row per (candidature, stage). `data_json` stores the validated
+  // shape (Zod schemas live at src/lib/stage-fiches/schemas.ts).
+  // Generated columns project the 3 dates that drive the upstream
+  // "next critical fact" pill + the v5.2 cron — STORED so the partial
+  // indexes below are usable. Requires SQLite ≥ 3.31 (2020-01).
+  // ───────────────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidature_stage_data (
+      candidature_id    TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+      stage             TEXT NOT NULL,
+      data_json         TEXT NOT NULL DEFAULT '{}',
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by        TEXT,
+      scheduled_at      TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.scheduledAt'))      STORED,
+      response_deadline TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.responseDeadline')) STORED,
+      arrival_date      TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.arrivalDateInNc'))  STORED,
+      PRIMARY KEY (candidature_id, stage)
+    );
+    CREATE INDEX IF NOT EXISTS idx_stage_data_candidature ON candidature_stage_data(candidature_id);
+    CREATE INDEX IF NOT EXISTS idx_stage_data_scheduled   ON candidature_stage_data(scheduled_at)      WHERE scheduled_at      IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_stage_data_deadline    ON candidature_stage_data(response_deadline) WHERE response_deadline IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_stage_data_arrival     ON candidature_stage_data(arrival_date)      WHERE arrival_date      IS NOT NULL;
+  `)
+
+  // Boot-time portability assertions. Fail fast if a future runtime is
+  // missing JSON1 or generated columns instead of degrading silently.
+  try { db.prepare("SELECT json('{}')").get() }
+  catch (err) {
+    throw new Error(`SQLite JSON1 extension unavailable — bundled SQLite < 3.9? underlying: ${(err as Error).message}`)
+  }
+  try { db.prepare('SELECT scheduled_at FROM candidature_stage_data LIMIT 0').get() }
+  catch (err) {
+    throw new Error(`candidature_stage_data generated columns unsupported — SQLite < 3.31? underlying: ${(err as Error).message}`)
+  }
+
+  // v5.1: widen candidature_events CHECK to add 'stage_data_changed' so
+  // every fiche save inserts an audit row that surfaces in the historique
+  // ("Pierre L. a modifié la fiche entretien_1 — salaire proposé: 6 800 000 → 7 200 000 XPF").
+  // Mirrors the email_scheduled / email_cancelled pattern above.
+  const missingStageDataChangedType = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return !!tableInfo?.sql && !tableInfo.sql.includes("'stage_data_changed'")
+  })()
+
+  if (missingStageDataChangedType) {
+    db.exec('DROP TABLE IF EXISTS candidature_events_new')
+    const migrate = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE candidature_events_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+          type TEXT NOT NULL DEFAULT 'status_change'
+            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed')),
+          statut_from TEXT,
+          statut_to TEXT,
+          notes TEXT,
+          content_md TEXT,
+          email_snapshot TEXT,
+          stage TEXT,
+          updated_at TEXT,
+          created_by TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
+          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+          FROM candidature_events;
+        DROP TABLE candidature_events;
+        ALTER TABLE candidature_events_new RENAME TO candidature_events;
+      `)
+    })
+    migrate()
+    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+  }
+
   // ─── Idempotent backfill: canonical display_filename + candidate name ─
   // Applies the naming convention defined in server/lib/file-naming.ts to
   // every existing candidate and document. Re-runnable: skips rows already

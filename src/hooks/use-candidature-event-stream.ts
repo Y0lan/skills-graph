@@ -22,6 +22,9 @@ export interface CandidatureEventHandlers {
   onDocumentScanUpdated?: (candidatureId: string, payload: { documentId: string; scanStatus: string; filename: string }) => void
   onExtractionRunCompleted?: (candidatureId: string, payload: { runId: string; type: string }) => void
   onStatusChanged?: (candidatureId: string, payload: { statutFrom: string | null; statutTo: string; byUserSlug: string }) => void
+  /** v5.1 — fired when a stage fiche (PATCH /stages/:stage/data) is mutated.
+   *  Workspace listens to invalidate the matching `useStageFicheData` query. */
+  onStageDataChanged?: (candidatureId: string, payload: { stage: string; updatedAt: string; byUserSlug: string }) => void
 }
 
 export function useCandidatureEventStream(candidatureId: string | undefined, handlers: CandidatureEventHandlers): void {
@@ -68,6 +71,13 @@ export function useCandidatureEventStream(candidatureId: string | undefined, han
           // Skip the initial __connected__ heartbeat
           if (data.statutTo === '__connected__') return
           handlersRef.current.onStatusChanged?.(subscribedId, data)
+        } catch { /* malformed */ }
+      })
+
+      es.addEventListener('stage_data_changed', (e) => {
+        try {
+          const data = JSON.parse((e as MessageEvent).data) as { stage: string; updatedAt: string; byUserSlug: string }
+          handlersRef.current.onStageDataChanged?.(subscribedId, data)
         } catch { /* malformed */ }
       })
 

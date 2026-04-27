@@ -34,10 +34,25 @@ export interface StatusChanged {
   byUserSlug: string
 }
 
+/**
+ * Fired after a successful PATCH on a candidature's stage fiche
+ * (`/candidatures/:id/stages/:stage/data`). Lets other browser tabs
+ * watching the same candidature refetch the affected fiche without a
+ * page reload. Carries `updatedAt` so clients can short-circuit if
+ * their cached value is already newer (rare, but cheap to check).
+ */
+export interface StageDataChanged {
+  candidatureId: string
+  stage: string
+  updatedAt: string
+  byUserSlug: string
+}
+
 export interface RecruitmentEventMap {
   'document_scan_updated': DocumentScanUpdated
   'extraction_run_completed': ExtractionRunCompleted
   'status_changed': StatusChanged
+  'stage_data_changed': StageDataChanged
 }
 
 class TypedRecruitmentBus {
@@ -69,6 +84,7 @@ class TypedRecruitmentBus {
       document_scan_updated: this.emitter.listenerCount('document_scan_updated'),
       extraction_run_completed: this.emitter.listenerCount('extraction_run_completed'),
       status_changed: this.emitter.listenerCount('status_changed'),
+      stage_data_changed: this.emitter.listenerCount('stage_data_changed'),
     }
   }
 }

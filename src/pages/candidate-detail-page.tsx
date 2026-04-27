@@ -152,6 +152,10 @@ export default function CandidateDetailPage() {
   // send-now" in the same boolean.
   const [pendingRevert, setPendingRevert] = useState<{ candidatureId: string; emailState: 'sent' | 'scheduled' | 'none' } | null>(null)
   const [pendingSendNow, setPendingSendNow] = useState<string | null>(null)
+  // v5.1: bumped by the SSE handler when `stage_data_changed` fires for
+  // the selected candidature. Forwarded through the workspace down to
+  // <StageFiche> + <NextCriticalFactPill> to invalidate their fetches.
+  const [stageDataRefetchSignal, setStageDataRefetchSignal] = useState<number>(0)
 
   // Profile disclosure state is stored PER candidate so the recruiter's
   // "I want to see the full dossier" decision doesn't bleed from one
@@ -378,6 +382,14 @@ export default function CandidateDetailPage() {
         if (transitions && subscribedId === effectiveSelectedId) setAllowedTransitions(transitions)
         if (Array.isArray(freshDocs) && subscribedId === effectiveSelectedId) setDocuments(freshDocs)
       }).catch(() => { /* non-fatal */ })
+    },
+    onStageDataChanged: (subscribedId) => {
+      // Only the selected candidature actually has fiche components
+      // mounted. For others the bump is harmless — they'll refetch on
+      // mount when the user switches into them.
+      if (subscribedId === effectiveSelectedId) {
+        setStageDataRefetchSignal(s => s + 1)
+      }
     },
   })
 
@@ -839,6 +851,7 @@ export default function CandidateDetailPage() {
             onSendNow={handleSendNow}
             currentUserSlug={currentUserSlug}
             currentUserName={currentUserName}
+            stageDataRefetchSignal={stageDataRefetchSignal}
           />
         )}
 

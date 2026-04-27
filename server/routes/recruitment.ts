@@ -29,6 +29,9 @@ import { recruitmentBus, type RecruitmentEventMap } from '../lib/event-bus.js'
 import { Webhook } from 'svix'
 import { safeJsonParse, getUser, type PosteRow, type CandidatureRow, type CandidatureEventRow } from '../lib/types.js'
 import { TRANSITION_MAP, NOTES_REQUIRED, getAllowedTransitions, isSkipTransition, getSkippedSteps } from '../lib/state-machine.js'
+import { isStatut } from '../../src/lib/constants.js'
+import { validatePartialFichePatch, validateMergedFiche } from '../../src/lib/stage-fiches/schemas.js'
+import { requireSameOrigin } from '../middleware/require-origin.js'
 
 interface ParsedIntake {
   fields: Record<string, string>
@@ -1464,6 +1467,211 @@ protectedRouter.post('/candidatures/:id/recalculate', heavyRateLimit, (req, res)
 })
 
 // ═══════════════════════════════════════════════════════════════════════
+// v5.1 — Stage fiches: structured per-stage data with optimistic-lock PATCH
+// ═══════════════════════════════════════════════════════════════════════
+//
+// One row per (candidature, stage). The fiche stores stage-specific data
+// (interview date+Meet link, salary vs grille, arrival date, etc.); the
+// existing markdown thread on `candidature_events` continues to store the
+// recruiter's reasoning. Schemas live at src/lib/stage-fiches/schemas.ts
+// — same source of truth shared by front + back.
+//
+// Hardening (per codex challenge 2026-04-27):
+//   - R1 optimistic lock via `If-Match` header against `updated_at`
+//   - R3 merge-not-replace semantics; `null` clears a field
+//   - R6 audit row inserted into `candidature_events` (type
+//     'stage_data_changed') so the historique surfaces "Pierre L. a
+//     modifié la fiche entretien_1 — salaire proposé: 6 800 000 → 7 200 000 XPF"
+//   - R7 generated cols + partial indexes feed the upstream pill / cron
+//   - Y5 origin guard mounted per-route (not global yet — see plan)
+
+protectedRouter.get('/candidatures/:id/stages/:stage/data', (req, res) => {
+  const stageInput = String(req.params.stage)
+  if (!isStatut(stageInput)) {
+    res.status(400).json({ error: 'Étape inconnue' })
+    return
+  }
+  const cand = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  const row = getDb().prepare(`
+    SELECT data_json, updated_at, updated_by
+      FROM candidature_stage_data
+     WHERE candidature_id = ? AND stage = ?
+  `).get(req.params.id, stageInput) as { data_json: string; updated_at: string; updated_by: string | null } | undefined
+
+  if (!row) {
+    res.json({ data: {}, updatedAt: null, updatedBy: null })
+    return
+  }
+  let parsed: Record<string, unknown>
+  try { parsed = JSON.parse(row.data_json) as Record<string, unknown> }
+  catch { parsed = {} }
+  res.json({ data: parsed, updatedAt: row.updated_at, updatedBy: row.updated_by })
+})
+
+protectedRouter.patch(
+  '/candidatures/:id/stages/:stage/data',
+  requireSameOrigin,
+  mutationRateLimit,
+  (req, res) => {
+    const stageInput = String(req.params.stage)
+    if (!isStatut(stageInput)) {
+      res.status(400).json({ error: 'Étape inconnue' })
+      return
+    }
+    const cand = getDb().prepare('SELECT id, statut FROM candidatures WHERE id = ?')
+      .get(req.params.id) as { id: string; statut: string } | undefined
+    if (!cand) {
+      res.status(404).json({ error: 'Candidature introuvable' })
+      return
+    }
+
+    // Validate the partial body. Empty body is rejected (R3 footgun).
+    const validated = validatePartialFichePatch(stageInput, req.body)
+    if (!validated.ok) {
+      res.status(400).json({ error: validated.error, details: validated.details })
+      return
+    }
+
+    // Read existing row (or empty), merge, re-validate full schema.
+    const existingRow = getDb().prepare(`
+      SELECT data_json, updated_at FROM candidature_stage_data
+       WHERE candidature_id = ? AND stage = ?
+    `).get(req.params.id, stageInput) as { data_json: string; updated_at: string } | undefined
+    let existingData: Record<string, unknown> = {}
+    if (existingRow) {
+      try { existingData = JSON.parse(existingRow.data_json) as Record<string, unknown> }
+      catch { existingData = {} }
+    }
+
+    // R1 optimistic lock: client passed `If-Match: <updatedAt>`. Only
+    // enforced when the row actually exists; first-write has nothing
+    // to conflict with.
+    const ifMatchRaw = req.header('If-Match')
+    const ifMatch = ifMatchRaw ? ifMatchRaw.replace(/^"|"$/g, '') : null
+    if (existingRow && ifMatch && ifMatch !== existingRow.updated_at) {
+      res.status(409).json({
+        error: 'Modifications conflictuelles, rechargez la fiche',
+        currentUpdatedAt: existingRow.updated_at,
+      })
+      return
+    }
+
+    // Merge: incoming `null` clears the field; otherwise overwrites.
+    const merged: Record<string, unknown> = { ...existingData }
+    for (const [k, v] of Object.entries(validated.data)) {
+      if (v === null) delete merged[k]
+      else merged[k] = v
+    }
+
+    const finalCheck = validateMergedFiche(stageInput, merged)
+    if (!finalCheck.ok) {
+      res.status(400).json({ error: finalCheck.error, details: finalCheck.details })
+      return
+    }
+
+    const user = getUser(req)
+    const slug = user.slug || 'unknown'
+    const dataJson = JSON.stringify(finalCheck.data)
+    let newUpdatedAt = ''
+
+    try {
+      getDb().transaction(() => {
+        const upsert = getDb().prepare(`
+          INSERT INTO candidature_stage_data (candidature_id, stage, data_json, updated_at, updated_by)
+          VALUES (?, ?, ?, datetime('now'), ?)
+          ON CONFLICT(candidature_id, stage) DO UPDATE
+            SET data_json  = excluded.data_json,
+                updated_at = datetime('now'),
+                updated_by = excluded.updated_by
+          RETURNING updated_at
+        `).get(req.params.id, stageInput, dataJson, slug) as { updated_at: string }
+        newUpdatedAt = upsert.updated_at
+
+        // R6 audit log: a one-line summary of what changed lands in the
+        // existing historique under this stage's accordion. Field names
+        // come from the registry; values are formatted for readability.
+        const summary = describeFicheDiff(stageInput, existingData, finalCheck.data)
+        if (summary) {
+          getDb().prepare(`
+            INSERT INTO candidature_events (candidature_id, type, stage, content_md, created_by)
+            VALUES (?, 'stage_data_changed', ?, ?, ?)
+          `).run(req.params.id, stageInput, summary, slug)
+        }
+      })()
+    } catch (err) {
+      console.error('[stage-fiche] PATCH transaction failed:', err)
+      res.status(500).json({ error: 'Erreur interne' })
+      return
+    }
+
+    // SSE broadcast so other tabs refetch.
+    recruitmentBus.publish('stage_data_changed', {
+      candidatureId: String(req.params.id),
+      stage: stageInput,
+      updatedAt: newUpdatedAt,
+      byUserSlug: slug,
+    })
+
+    res.json({ data: finalCheck.data, updatedAt: newUpdatedAt, updatedBy: slug })
+  },
+)
+
+/**
+ * Format a 1-line human-readable diff between two fiche payloads. Returns
+ * a markdown bullet list suitable for the audit-log content_md, or an
+ * empty string when nothing changed (skip the audit insert).
+ */
+function describeFicheDiff(
+  stage: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string {
+  const keys = new Set<string>([...Object.keys(before), ...Object.keys(after)])
+  const lines: string[] = []
+  for (const key of keys) {
+    const a = before[key]
+    const b = after[key]
+    if (deepEqual(a, b)) continue
+    lines.push(`- **${key}**: ${formatFicheValue(a)} → ${formatFicheValue(b)}`)
+  }
+  if (lines.length === 0) return ''
+  return `*Fiche ${stage} mise à jour*\n${lines.join('\n')}`
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a == null || b == null) return a === b
+  if (typeof a !== typeof b) return false
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false
+    return a.every((v, i) => deepEqual(v, b[i]))
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    const ka = Object.keys(a as object).sort()
+    const kb = Object.keys(b as object).sort()
+    if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false
+    return ka.every(k => deepEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  }
+  return false
+}
+
+function formatFicheValue(v: unknown): string {
+  if (v == null) return '_vide_'
+  if (typeof v === 'string') {
+    if (v.length > 80) return `« ${v.slice(0, 77)}… »`
+    return `« ${v} »`
+  }
+  if (typeof v === 'number') return new Intl.NumberFormat('fr-FR').format(v)
+  if (typeof v === 'boolean') return v ? '✓' : '✗'
+  if (Array.isArray(v)) return v.length === 0 ? '_vide_' : v.join(', ')
+  return JSON.stringify(v)
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // CV Intelligence Phase 10 — shortlist + batch outreach
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -2146,6 +2354,9 @@ protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
   const offStatus = recruitmentBus.subscribe('status_changed', (p) => {
     if (p.candidatureId === candidatureId) send('status_changed', p)
   })
+  const offStageData = recruitmentBus.subscribe('stage_data_changed', (p) => {
+    if (p.candidatureId === candidatureId) send('stage_data_changed', p)
+  })
 
   // Heartbeat — comment line, ignored by EventSource but keeps proxies happy.
   const heartbeat = setInterval(() => {
@@ -2157,6 +2368,7 @@ protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
     offDocs()
     offExtraction()
     offStatus()
+    offStageData()
   }
   req.on('close', cleanup)
   req.on('error', cleanup)
