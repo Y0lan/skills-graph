@@ -57,6 +57,10 @@ interface TooltipData {
   label: string
   value: number
   overlay?: number
+  /** One entry per `extraSeries` polygon — same order so the tooltip can
+   *  map color/dash to label and avoid the "3 in legend, 2 in tooltip"
+   *  drift that the user reported. */
+  extras?: Array<{ label: string; value: number; color: string }>
 }
 
 const LEVELS = 5
@@ -241,6 +245,18 @@ export default function VisxRadarChart({
               </span>
             </p>
           )}
+          {tooltipData.extras?.map((extra, idx) => (
+            <p key={idx} className="text-muted-foreground">
+              <span
+                className="mr-1.5 inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: extra.color }}
+              />
+              {extra.label} :{' '}
+              <span className="font-semibold text-popover-foreground">
+                {extra.value.toFixed(1)}
+              </span>
+            </p>
+          ))}
         </TooltipWithBounds>
       )}
     </div>
@@ -479,6 +495,11 @@ function RadarSvg({
                       label: d.label,
                       value: d.value,
                       overlay: overlay?.[i]?.value,
+                      extras: extraSeries?.map(s => ({
+                        label: s.label,
+                        value: s.data[i]?.value ?? 0,
+                        color: s.color,
+                      })),
                     },
                     tooltipLeft: e.clientX,
                     tooltipTop: e.clientY,
