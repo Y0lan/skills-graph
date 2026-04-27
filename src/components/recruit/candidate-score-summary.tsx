@@ -116,7 +116,7 @@ export default function CandidateScoreSummary({
                 </p>
               ) : (
                 <p
-                  className="text-xl font-semibold tabular-nums leading-none text-muted-foreground/50"
+                  className="text-xl font-semibold tabular-nums leading-none text-muted-foreground"
                   style={{ fontFamily: "'Raleway Variable', sans-serif" }}
                 >
                   —
@@ -138,7 +138,7 @@ export default function CandidateScoreSummary({
                     />
                   </div>
                 ) : (
-                  <p className="text-[10px] leading-tight text-muted-foreground/80 line-clamp-2 min-h-[20px]">
+                  <p className="text-[10px] leading-tight text-foreground/70 line-clamp-2 min-h-[20px]">
                     {MISSING_HINT[t.label]}
                   </p>
                 )}

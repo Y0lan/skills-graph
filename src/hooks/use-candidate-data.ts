@@ -71,6 +71,14 @@ export interface CandidatureEvent {
   emailSnapshot: string | null
   createdBy: string
   createdAt: string
+  /** v4.5: pipeline stage active when the event was created. NULL on
+   *  legacy rows that pre-date the column; the boot backfill in
+   *  `server/lib/db.ts` walks status_change history to populate them. */
+  stage?: string | null
+  /** v4.5: last-edit timestamp for `note` events (set by the
+   *  PATCH `/events/note/:id` endpoint). NULL when never edited.
+   *  Drives the "Modifié il y a 3 min" indicator in the timeline. */
+  updatedAt?: string | null
 }
 
 export interface CandidatureDocument {

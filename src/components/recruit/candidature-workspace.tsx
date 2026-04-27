@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,11 +15,13 @@ import CandidateNotesSection from './candidate-notes-section'
 import CandidateApplicationMessage from './candidate-application-message'
 import AboroProfileSection from './aboro-profile-section'
 import CandidateHistoryByStage from './candidate-history-by-stage'
+import NoteEditDialog from './note-edit-dialog'
+import DocumentStageReassignDialog from './document-stage-reassign-dialog'
 import ScheduledEmailBanner from './scheduled-email-banner'
 import FitReport from './fit-report'
 import MultiPosteCard from './multi-poste-card'
 import VisxRadarChart from '@/components/visx-radar-chart'
-import RecentJournal from './recent-journal'
+import QuickNoteComposer from './quick-note-composer'
 import RevertCountdown from './revert-countdown'
 import DocumentSlotSummary from './document-slot-summary'
 import EvaluationDisclosure from './evaluation-disclosure'
@@ -249,6 +251,28 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
   // Kept as a fallback for callers that don't drive the optimistic path.
   const handleNotePublished = prependEvent
 
+  // v4.5: in-place note edit + per-doc stage reassignment.
+  // Both surfaces are dialogs; the workspace owns their open/close
+  // state so the historique can be a pure presentational layer.
+  const [editingNote, setEditingNote] = useState<CandidatureEvent | null>(null)
+  const [reassigningDoc, setReassigningDoc] = useState<CandidatureDocument | null>(null)
+  const replaceEvent = (real: CandidatureEvent) => {
+    setEvents(prev => prev.map(e => e.id === real.id ? real : e))
+    setCandidatureDataMap(prev => {
+      const entry = prev[c.id]
+      if (!entry) return prev
+      return { ...prev, [c.id]: { ...entry, events: entry.events.map(e => e.id === real.id ? real : e) } }
+    })
+  }
+  const replaceDocumentEventId = (docId: string, eventId: number | null) => {
+    setDocuments(prev => prev.map(d => d.id === docId ? { ...d, event_id: eventId } : d))
+    setCandidatureDataMap(prev => {
+      const entry = prev[c.id]
+      if (!entry) return prev
+      return { ...prev, [c.id]: { ...entry, documents: entry.documents.map(d => d.id === docId ? { ...d, event_id: eventId } : d) } }
+    })
+  }
+
   return (
     <div className="space-y-6">
       {/* ── 1. Candidature header row ──────────────────── */}
@@ -328,7 +352,26 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
       )}
 
       {/* ── 3. Pipeline stepper ────────────────────── */}
-      <CandidatePipelineStepper candidature={c} events={events} allowedTransitions={allowedTransitions} />
+      <CandidatePipelineStepper
+        candidature={c}
+        events={events}
+        allowedTransitions={allowedTransitions}
+        onStepClick={(statut, intent) => {
+          if (intent === 'navigate') {
+            // Done / refused steps: scroll the historique to that stage.
+            // The accordion's defaultOpen logic keeps the current stage
+            // open; the stage they clicked may be collapsed — that's
+            // fine, the scroll lands them at the section header.
+            const el = document.getElementById(HISTORY_ANCHOR)
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          } else if (intent === 'advance') {
+            // Future allowed step: open the transition dialog targeted at
+            // that statut. Same code path as the primary CTA below the
+            // scores — just a different entry.
+            onOpenTransition(c.id, statut, false, [], c.statut)
+          }
+        }}
+      />
 
       {/* ── 4. Scores + Actions ──────────────────────
           Two columns on desktop, stacks on mobile. Primary CTA is big
@@ -455,18 +498,21 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         />
       )}
 
-      {/* ── 6. Journal récent + quick note composer ── */}
-      <RecentJournal
-        events={events}
-        documents={documents}
+      {/* ── 6. Quick note composer (page-level) ──
+          v4.5: dropped the separate "Journal récent" 5-row strip.
+          The historique below is now THE timeline surface, with
+          per-stage composers inside each accordion. This top-level
+          composer lets the recruiter drop a quick note pinned to the
+          current statut without expanding any stage. */}
+      <QuickNoteComposer
         candidatureId={c.id}
         currentUserSlug={currentUserSlug}
         currentUserName={currentUserName}
-        onNotePublished={handleNotePublished}
+        onPublished={handleNotePublished}
         onOptimisticPrepend={prependEvent}
         onReplaceTemp={replaceTempEvent}
         onRollbackTemp={rollbackTempEvent}
-        historyAnchorId={HISTORY_ANCHOR}
+        placeholder={`Note rapide pour l'étape « ${STATUT_LABELS[c.statut] ?? c.statut} »…`}
       />
 
       {/* ── 6.5 Message du candidat à l'inscription ──
@@ -599,13 +645,47 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
         />
       )}
 
-      {/* ── 11. Historique complet ──────────────── */}
+      {/* ── 11. Historique complet ────────────────
+          v4.5: per-stage note composer hooks + edit pencil on note rows.
+          The composer pins each note to its stage so retroactive notes
+          attach to the right step in the pipeline. */}
       <div id={HISTORY_ANCHOR} className="pt-4 border-t scroll-mt-24">
         <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground uppercase mb-3">
           Historique complet
         </p>
-        <CandidateHistoryByStage events={events} documents={documents} currentStatut={c.statut} />
+        <CandidateHistoryByStage
+          events={events}
+          documents={documents}
+          currentStatut={c.statut}
+          composer={{
+            candidatureId: c.id,
+            currentUserSlug,
+            currentUserName,
+            onPublished: handleNotePublished,
+            onOptimisticPrepend: prependEvent,
+            onReplaceTemp: replaceTempEvent,
+            onRollbackTemp: rollbackTempEvent,
+          }}
+          onEditNote={setEditingNote}
+          onReassignDoc={setReassigningDoc}
+        />
       </div>
+
+      {/* v4.5 dialogs — owned at the workspace level so the historique
+          stays presentational. */}
+      <NoteEditDialog
+        open={!!editingNote}
+        onOpenChange={(open) => { if (!open) setEditingNote(null) }}
+        event={editingNote}
+        candidatureId={c.id}
+        onSaved={(real) => { replaceEvent(real); setEditingNote(null) }}
+      />
+      <DocumentStageReassignDialog
+        open={!!reassigningDoc}
+        onOpenChange={(open) => { if (!open) setReassigningDoc(null) }}
+        doc={reassigningDoc}
+        onReassigned={(docId, eventId) => { replaceDocumentEventId(docId, eventId); setReassigningDoc(null) }}
+      />
     </div>
   )
 }

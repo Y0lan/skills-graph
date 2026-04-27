@@ -5,7 +5,8 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2 } from 'lucide-react'
+import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2, Pencil, FolderInput } from 'lucide-react'
+import QuickNoteComposer from './quick-note-composer'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
@@ -334,11 +335,13 @@ function EventRow({
   deliveryMap,
   attachedDocs,
   onPreviewDoc,
+  onReassignDoc,
 }: {
   event: CandidatureEvent
   deliveryMap: Map<string, Set<string>>
   attachedDocs?: CandidatureDocument[]
   onPreviewDoc?: (d: CandidatureDocument) => void
+  onReassignDoc?: (d: CandidatureDocument) => void
 }) {
   const isDocument = event.type === 'document'
   const isEmailSent = event.type === 'email_sent'
@@ -399,9 +402,17 @@ function EventRow({
         {/* Short notes on non-status events (email send descriptions etc.)
             stay inline. Status-change notes get the full quoted-block
             treatment below so typed-in transition notes are readable
-            even when multi-line. */}
+            even when multi-line.
+            v4.5: route through NoteContent (ReactMarkdown + remarkGfm)
+            so `**bold**` and `## heading` in legacy `event.notes` rows
+            render formatted instead of literal. NoteContent's prose
+            wrapper is full-block; we keep this branch inline by
+            wrapping in a span with `inline-block` + `align-baseline`
+            so it composes with the surrounding flex line. */}
         {event.notes && event.type !== 'status_change' && (
-          <span className="text-foreground">{event.notes}</span>
+          <span className="text-foreground inline-block align-baseline">
+            <NoteContent content={event.notes} />
+          </span>
         )}
       </div>
 
@@ -441,7 +452,7 @@ function EventRow({
       {attachedDocs && attachedDocs.length > 0 && onPreviewDoc && (
         <div className="mt-2 ml-7 grid gap-0.5">
           {attachedDocs.map(d => (
-            <DocumentCard key={d.id} doc={d} onPreview={onPreviewDoc} />
+            <DocumentCard key={d.id} doc={d} onPreview={onPreviewDoc} onReassign={onReassignDoc} />
           ))}
         </div>
       )}
@@ -465,7 +476,7 @@ const DOC_TYPE_LABEL: Record<string, string> = {
   other: 'Autre',
 }
 
-function DocumentCard({ doc, onPreview }: { doc: CandidatureDocument; onPreview: (d: CandidatureDocument) => void }) {
+function DocumentCard({ doc, onPreview, onReassign }: { doc: CandidatureDocument; onPreview: (d: CandidatureDocument) => void; onReassign?: (d: CandidatureDocument) => void }) {
   const name = effectiveName(doc)
   const typeLabel = DOC_TYPE_LABEL[doc.type] ?? doc.type
   return (
@@ -496,18 +507,63 @@ function DocumentCard({ doc, onPreview }: { doc: CandidatureDocument; onPreview:
         >
           <Download className="h-3.5 w-3.5" />
         </Button>
+        {onReassign && (
+          <Button
+            size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            title="Déplacer vers une autre étape" aria-label={`Déplacer ${name} vers une autre étape`}
+            onClick={() => onReassign(doc)}
+          >
+            <FolderInput className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </div>
   )
 }
 
+/** v4.5: per-stage note composer hooks. When supplied, every stage in
+ *  the accordion renders an inline `QuickNoteComposer` at the top of
+ *  its content, pinned to that stage's statut so the recruiter can
+ *  retroactively attach a note to the right step. The hooks mirror the
+ *  composer's optimistic-render contract (prepend / replace / rollback).
+ *  When omitted, the composer doesn't render and the historique stays
+ *  read-only (legacy behavior). */
+export interface StageComposerHooks {
+  candidatureId: string
+  currentUserSlug: string
+  currentUserName?: string | null
+  onPublished: (event: CandidatureEvent) => void
+  onOptimisticPrepend?: (tempEvent: CandidatureEvent) => void
+  onReplaceTemp?: (tempId: number, real: CandidatureEvent) => void
+  onRollbackTemp?: (tempId: number) => void
+}
+
+/** v4.5: optional edit hook for note rows. The pencil button on a note
+ *  row calls this with the event id; the caller (typically the page-
+ *  level workspace) opens an edit dialog and PATCHes the row. Decoupled
+ *  from this component so the inline editor can be swapped without
+ *  touching the timeline rendering. */
+export type OnEditNote = (event: CandidatureEvent) => void
+
+/** v4.5: optional reassign hook for document cards. The folder-arrow
+ *  button on a document calls this with the doc; the caller opens the
+ *  stage-reassign dialog and PATCHes `event_id`. */
+export type OnReassignDoc = (doc: CandidatureDocument) => void
+
 export interface CandidateHistoryByStageProps {
   events: CandidatureEvent[]
   documents?: CandidatureDocument[]
   currentStatut: string
+  /** Per-stage composer hooks. See StageComposerHooks for the contract.
+   *  Optional — when omitted the historique is read-only. */
+  composer?: StageComposerHooks
+  /** Pencil-edit hook on note rows. */
+  onEditNote?: OnEditNote
+  /** Folder-arrow reassign hook on document cards. */
+  onReassignDoc?: OnReassignDoc
 }
 
-export default function CandidateHistoryByStage({ events, documents = [], currentStatut }: CandidateHistoryByStageProps) {
+export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc }: CandidateHistoryByStageProps) {
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   // Reset loading when a new doc opens so the spinner is consistent.
@@ -604,6 +660,27 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
               </AccordionTrigger>
               <AccordionContent className="px-2">
                 <div className="space-y-4">
+                  {/* v4.5: per-stage note composer.
+                      Pinned to this stage via the `stage` prop — the
+                      backend writes that into candidature_events.stage
+                      so retroactive notes attach to the right step.
+                      The composer reuses the page-level workspace's
+                      optimistic prepend / replace / rollback hooks. */}
+                  {composer && (
+                    <QuickNoteComposer
+                      candidatureId={composer.candidatureId}
+                      currentUserSlug={composer.currentUserSlug}
+                      currentUserName={composer.currentUserName}
+                      onPublished={composer.onPublished}
+                      onOptimisticPrepend={composer.onOptimisticPrepend}
+                      onReplaceTemp={composer.onReplaceTemp}
+                      onRollbackTemp={composer.onRollbackTemp}
+                      stage={group.statut}
+                      placeholder={`Note pour l'étape « ${STATUT_LABELS[group.statut] ?? group.statut} »…`}
+                      compact
+                    />
+                  )}
+
                   {/* Transitions + emails — each transition carries its
                       attached document(s) inline below it (see attachDocsTo
                       Transitions for the time-window match). Reads as a
@@ -623,13 +700,17 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                             deliveryMap={deliveryMap}
                             attachedDocs={docsByEvent.get(e.id)}
                             onPreviewDoc={openPreview}
+                            onReassignDoc={onReassignDoc}
                           />
                         ))}
                       </div>
                     </div>
                   )}
 
-                  {/* Notes — markdown-rendered, one block per note event */}
+                  {/* Notes — markdown-rendered, one block per note event.
+                      v4.5: pencil button opens the inline edit dialog.
+                      `updated_at` shows up next to the timestamp once the
+                      note has been edited at least once. */}
                   {noteEvents.length > 0 && (
                     <div className="space-y-2">
                       <h5 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
@@ -641,6 +722,19 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                           <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
                             <span>{formatDateTime(e.createdAt)}</span>
                             {e.createdBy && <span>· {e.createdBy}</span>}
+                            {e.updatedAt && <span className="italic">· modifiée le {formatDateTime(e.updatedAt)}</span>}
+                            {onEditNote && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="ml-auto h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                                onClick={() => onEditNote(e)}
+                                aria-label="Modifier cette note"
+                                title="Modifier cette note"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            )}
                           </div>
                           <NoteContent content={e.contentMd ?? ''} />
                         </div>
@@ -660,7 +754,7 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                       </h5>
                       <div className="grid gap-1">
                         {[...unattachedDocs].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(d => (
-                          <DocumentCard key={d.id} doc={d} onPreview={openPreview} />
+                          <DocumentCard key={d.id} doc={d} onPreview={openPreview} onReassign={onReassignDoc} />
                         ))}
                       </div>
                     </div>

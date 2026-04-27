@@ -833,6 +833,8 @@ protectedRouter.get('/candidatures/:id', (req, res) => {
       emailSnapshot: e.email_snapshot,
       createdBy: e.created_by,
       createdAt: e.created_at,
+      stage: e.stage ?? null,
+      updatedAt: e.updated_at ?? null,
     })),
     gaps,
     multiPosteCompatibility,

@@ -90,9 +90,18 @@ export interface CandidatePipelineStepperProps {
    *  static NEXT_ACTION map), so a terminal candidate or a candidature
    *  awaiting the candidate never shows a misleading recommendation. */
   allowedTransitions?: AllowedTransitions | null
+  /** v4.5: clicking a step is now actionable.
+   *  - 'done' / 'refused' steps → caller scrolls the timeline to that
+   *    stage's group ('navigate' intent).
+   *  - upcoming steps in `allowedTransitions.allowedTransitions` →
+   *    caller opens the transition dialog for that target ('advance'
+   *    intent).
+   *  - upcoming steps NOT in allowedTransitions → no callback fires.
+   *  When `onStepClick` is undefined the stepper stays informational. */
+  onStepClick?: (statut: string, intent: 'navigate' | 'advance') => void
 }
 
-export default function CandidatePipelineStepper({ candidature, events, allowedTransitions }: CandidatePipelineStepperProps) {
+export default function CandidatePipelineStepper({ candidature, events, allowedTransitions, onStepClick }: CandidatePipelineStepperProps) {
   const steps = computeSteps(candidature, events)
   const currentStepIndex = steps.findIndex(s => s.state === 'current' || s.state === 'refused')
   const lastEvent = getLastEvent(events)
@@ -112,38 +121,68 @@ export default function CandidatePipelineStepper({ candidature, events, allowedT
     return candidature.statut !== 'refuse' ? NEXT_ACTION[candidature.statut] : null
   })()
 
+  // Compute click intent + tooltip per step. `done` / `refused` →
+  // navigate. Upcoming steps in `allowedTransitions.allowedTransitions`
+  // → advance. Otherwise: no-op (tooltip explains why).
+  const allowedSet = new Set((allowedTransitions?.allowedTransitions ?? []))
+  const stepIntent = (step: StepInfo): { kind: 'navigate' | 'advance' | null; hint?: string } => {
+    if (!onStepClick) return { kind: null }
+    if (step.state === 'done' || step.state === 'refused' || step.state === 'skipped') return { kind: 'navigate', hint: 'Voir cette étape dans l\'historique' }
+    if (step.state === 'current') return { kind: null, hint: 'Étape actuelle' }
+    if (allowedSet.has(step.statut)) return { kind: 'advance', hint: `Passer à ${STATUT_LABELS[step.statut] ?? step.statut}` }
+    return { kind: null, hint: 'Pas accessible depuis l\'étape actuelle' }
+  }
+
   return (
     <div className="space-y-3">
       {/* Desktop stepper */}
       <div className="hidden sm:block">
         <div className="flex items-center gap-0">
-          {steps.map((step, i) => (
+          {steps.map((step, i) => {
+            const intent = stepIntent(step)
+            const isClickable = intent.kind !== null
+            const circleBase = step.state === 'done'
+              ? 'h-6 w-6 bg-green-600 text-white'
+              : step.state === 'current'
+                ? 'h-7 w-7 ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary text-primary-foreground'
+                : step.state === 'refused'
+                  ? 'h-6 w-6 bg-red-600 text-white'
+                  : step.state === 'skipped'
+                    ? 'h-6 w-6 border-2 border-dashed border-amber-500 text-amber-500'
+                    : intent.kind === 'advance'
+                      ? 'h-6 w-6 border-2 border-primary/50 text-primary hover:bg-primary/10'
+                      : 'h-6 w-6 border-2 border-muted-foreground/30 text-muted-foreground/50'
+            const circleInteractive = isClickable
+              ? 'cursor-pointer hover:scale-110'
+              : onStepClick ? 'cursor-not-allowed' : ''
+            const circle = (
+              <div className={`shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold transition-all ${circleBase} ${circleInteractive}`}>
+                {step.state === 'done' && <Check className="h-3 w-3" />}
+                {step.state === 'current' && <span>{i + 1}</span>}
+                {step.state === 'refused' && <X className="h-3 w-3" />}
+                {step.state === 'skipped' && <SkipForward className="h-2.5 w-2.5" />}
+                {step.state === 'upcoming' && <span>{i + 1}</span>}
+              </div>
+            )
+            return (
             <div key={step.statut} className="flex items-center flex-1 min-w-0">
-              {/* Step circle */}
+              {/* Step circle. When clickable, wrap in a button so it's
+                  keyboard-reachable and the cursor change actually
+                  signals the affordance. */}
               <Tooltip>
-                <TooltipTrigger>
-                  <div className={`shrink-0 flex items-center justify-center rounded-full text-[10px] font-bold transition-colors ${
-                    step.state === 'done'
-                      ? 'h-6 w-6 bg-green-600 text-white'
-                      : step.state === 'current'
-                        ? 'h-7 w-7 ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary text-primary-foreground'
-                        : step.state === 'refused'
-                          ? 'h-6 w-6 bg-red-600 text-white'
-                          : step.state === 'skipped'
-                            ? 'h-6 w-6 border-2 border-dashed border-amber-500 text-amber-500'
-                            : 'h-6 w-6 border-2 border-muted-foreground/30 text-muted-foreground/50'
-                  }`}>
-                    {step.state === 'done' && <Check className="h-3 w-3" />}
-                    {step.state === 'current' && <span>{i + 1}</span>}
-                    {step.state === 'refused' && <X className="h-3 w-3" />}
-                    {step.state === 'skipped' && <SkipForward className="h-2.5 w-2.5" />}
-                    {step.state === 'upcoming' && <span>{i + 1}</span>}
-                  </div>
+                <TooltipTrigger
+                  onClick={isClickable ? () => onStepClick?.(step.statut, intent.kind!) : undefined}
+                  aria-label={intent.hint ?? STATUT_LABELS[step.statut] ?? step.statut}
+                  aria-disabled={!isClickable && !!onStepClick}
+                  className={`rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${isClickable ? 'cursor-pointer' : onStepClick ? 'cursor-not-allowed' : ''}`}
+                >
+                  {circle}
                 </TooltipTrigger>
                 <TooltipContent className="text-xs">
                   <p className="font-medium">{STATUT_LABELS[step.statut] ?? step.statut}</p>
                   {step.date && <p className="text-muted-foreground">{formatDateShort(step.date)}</p>}
                   {step.state === 'skipped' && <p className="text-amber-500">Etape sautee</p>}
+                  {intent.hint && step.state !== 'skipped' && <p className="text-muted-foreground italic">{intent.hint}</p>}
                 </TooltipContent>
               </Tooltip>
 
@@ -160,7 +199,8 @@ export default function CandidatePipelineStepper({ candidature, events, allowedT
                 }`} />
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Labels under circles */}

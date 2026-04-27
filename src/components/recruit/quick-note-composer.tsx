@@ -54,11 +54,25 @@ export interface QuickNoteComposerProps {
   onOptimisticPrepend?: (tempEvent: CandidatureEvent) => void
   onReplaceTemp?: (tempId: number, real: CandidatureEvent) => void
   onRollbackTemp?: (tempId: number) => void
+  /** v4.5: pin the note to a specific pipeline stage. When omitted the
+   *  server defaults to the candidature's current statut. Pass a stage
+   *  string when the composer lives inside a per-stage block in the
+   *  historique so the recruiter can write retroactive notes against an
+   *  earlier step. */
+  stage?: string
+  /** Override the placeholder so per-stage variants can read more
+   *  contextually ("Note pour cette étape…" vs the generic). */
+  placeholder?: string
+  /** Compact mode collapses the composer into a smaller padding +
+   *  smaller textarea — used inside per-stage blocks where the
+   *  composer is contextual rather than the page's primary input. */
+  compact?: boolean
 }
 
 export default function QuickNoteComposer({
   candidatureId, currentUserSlug, currentUserName,
   onPublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp,
+  stage, placeholder, compact = false,
 }: QuickNoteComposerProps) {
   const [value, setValue] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -85,6 +99,8 @@ export default function QuickNoteComposer({
         emailSnapshot: null,
         createdBy: currentUserSlug,
         createdAt: new Date().toISOString().replace('T', ' ').slice(0, 19),
+        stage: stage ?? null,
+        updatedAt: null,
       }
       onOptimisticPrepend!(tempEvent)
       setValue('')
@@ -96,7 +112,7 @@ export default function QuickNoteComposer({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ contentMd: trimmed }),
+        body: JSON.stringify(stage ? { contentMd: trimmed, stage } : { contentMd: trimmed }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -122,7 +138,7 @@ export default function QuickNoteComposer({
     } finally {
       setSubmitting(false)
     }
-  }, [value, candidatureId, currentUserSlug, onPublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp, submitting])
+  }, [value, candidatureId, currentUserSlug, stage, onPublished, onOptimisticPrepend, onReplaceTemp, onRollbackTemp, submitting])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -132,15 +148,15 @@ export default function QuickNoteComposer({
   }, [submit])
 
   return (
-    <div className="rounded-md border bg-card p-3 flex gap-3">
+    <div className={`rounded-md border bg-card flex gap-3 ${compact ? 'p-2' : 'p-3'}`}>
       <InitialsBadge name={currentUserName || currentUserSlug || '?'} size="sm" />
       <div className="flex-1 min-w-0">
         <Textarea
           value={value}
           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setValue(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Ajouter une note rapide — markdown supporté, Ctrl+Enter pour publier"
-          rows={2}
+          placeholder={placeholder ?? 'Ajouter une note rapide — markdown supporté, Ctrl+Enter pour publier'}
+          rows={compact ? 1 : 2}
           maxLength={5000}
           disabled={submitting}
           className="text-sm resize-none"

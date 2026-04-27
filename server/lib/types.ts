@@ -113,6 +113,11 @@ export interface CandidatureEventRow {
   email_snapshot: string | null
   created_by: string
   created_at: string
+  /** v4.5: pipeline stage active when the event was created. NULL on
+   *  legacy rows; backfilled at server boot. */
+  stage?: string | null
+  /** v4.5: last-edit timestamp for `note` events. NULL when never edited. */
+  updated_at?: string | null
 }
 
 /** Safe JSON.parse that returns a fallback on error instead of crashing.
