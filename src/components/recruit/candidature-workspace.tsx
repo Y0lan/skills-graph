@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Clock, Copy } from 'lucide-react'
 import {
-  STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime,
+  STATUT_LABELS,
   transitionConsequence,
 } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -20,7 +20,7 @@ import AboroProfileSection from './aboro-profile-section'
 import CandidateHistoryByStage from './candidate-history-by-stage'
 import NoteEditDialog from './note-edit-dialog'
 import DocumentStageReassignDialog from './document-stage-reassign-dialog'
-import CandidateLastEditIndicator from './candidate-last-edit-indicator'
+// CandidateLastEditIndicator now lives in <CandidaturePosteHeader> at the page level.
 import TimelineFilterChips from './timeline-filter-chips'
 import { useTimelineFilter } from '@/hooks/use-timeline-filter'
 import ScheduledEmailBanner from './scheduled-email-banner'
@@ -32,8 +32,8 @@ import RevertCountdown from './revert-countdown'
 import DocumentSlotSummary from './document-slot-summary'
 import EvaluationDisclosure from './evaluation-disclosure'
 import GapSynthesis, { type GapEntry } from './gap-synthesis'
-import { NextCriticalFactPill } from './stage-fiches/next-critical-fact-pill'
-import { isStatut } from '@/lib/constants'
+// NextCriticalFactPill + isStatut moved into CandidaturePosteHeader (page level).
+import RemindersPanel from './reminders-panel'
 import type { RadarDataPoint } from '@/components/visx-radar-chart'
 import type {
   CandidatureInfo, CandidatureEvent, CandidatureDocument, CandidateDetail,
@@ -134,8 +134,9 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
 
   const isPending = !candidate.submittedAt
   const submitted = !!candidate.submittedAt
-  const analysed = submitted && !!candidate.aiReport
-  const awaitingRadar = isPending && c.statut === 'skill_radar_envoye'
+  // `analysed` and `awaitingRadar` are now consumed by <CandidaturePosteHeader>
+  // at the page level. Keep `isPending` + `submitted` here for the in-workspace
+  // rails (handleReopen + scoring tiles + EvaluationDisclosure copy).
   const isTerminal = c.statut === 'embauche' || c.statut === 'refuse'
 
   /**
@@ -336,78 +337,33 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
 
   return (
     <div className="space-y-6">
-      {/* ── 1. Candidature header row ──────────────────── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <h2
-          className="text-xl font-bold tracking-tight"
-          style={{ fontFamily: "'Raleway Variable', sans-serif" }}
-        >
-          {c.posteTitre}
-        </h2>
-
-        {awaitingRadar ? (
-          <Badge
-            variant="secondary"
-            className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-            title="Le Skill Radar a été envoyé au candidat, on attend qu'il complète l'auto-évaluation"
+      {/* ── 1. Operational utility row ────────────────────
+          Posture header (poste title + statut + canal + date +
+          presence + next-critical-fact pill) lives at the page level
+          now — see <CandidaturePosteHeader> in candidate-detail-page.tsx.
+          This row keeps only the operational button(s) the workspace
+          owns (Rouvrir l'évaluation), and is hidden entirely when
+          there's nothing to render. */}
+      {submitted && (
+        <div className="flex items-center justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReopen}
+            className="gap-1.5 h-7 text-xs"
           >
-            <Clock className="mr-1 h-3 w-3" />
-            Skill Radar envoyé · en attente
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className={`text-xs ${STATUT_COLORS[c.statut] ?? ''}`}>
-            {STATUT_LABELS[c.statut] ?? c.statut}
-          </Badge>
-        )}
-        {!awaitingRadar && analysed && (
-          <Badge variant="default" className="bg-[#1B6179] text-xs">Analyse</Badge>
-        )}
-        {!awaitingRadar && submitted && !analysed && (
-          <Badge variant="default" className="bg-primary text-xs">Skill Radar soumis</Badge>
-        )}
-
-        <span className="text-xs text-muted-foreground">
-          {CANAL_LABELS[c.canal] ?? c.canal} · {formatDateTime(c.createdAt)}
-        </span>
-
-        {/* v4.6: passive presence — "Modifié il y a 12 min par Franck".
-            Free win since updated_at is now on every event. Replaces
-            the ~800 LOC multi-user presence item that was originally
-            in v6 but didn't earn its cost for a 10-recruiter team. */}
-        <CandidateLastEditIndicator events={events} />
-
-        {/* v5.1 — "next critical fact" pill. Pulls from the active
-            stage fiche (interview date + Meet link, proposition
-            deadline, embauche arrival). Stays silent at stages with
-            no upstream date. Inserted BEFORE ml-auto with truncation
-            (codex Y4) so a long meeting title doesn't break the row. */}
-        {isStatut(c.statut) && (
-          <NextCriticalFactPill
-            candidatureId={c.id}
-            statut={c.statut}
-            refetchSignal={stageDataRefetchSignal}
-          />
-        )}
-
-        <div className="flex items-center gap-1 ml-auto">
-          {/* Skill Radar link copy lives next to the score tiles instead
-              of here — that's where the recruiter learns "scores are
-              missing" and acts on it. Keeping a duplicate generic
-              button on the header just gave two paths for the same
-              action without contextual framing. */}
-          {submitted && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReopen}
-              className="gap-1.5 h-7 text-xs"
-            >
-              <RotateCcw className="h-3 w-3" />
-              Rouvrir l'évaluation
-            </Button>
-          )}
+            <RotateCcw className="h-3 w-3" />
+            Rouvrir l'évaluation
+          </Button>
         </div>
-      </div>
+      )}
+
+      {/* ── 1.35 Reminders panel (v5.2) ──
+          Recruiter-set "rappel-moi le 30/04 sur Pierre". The
+          daily-recap cron emails Guillaume a digest of due reminders +
+          auto-derived alerts (entretien tomorrow, proposition
+          deadline due, embauche arrival in NC). */}
+      <RemindersPanel candidatureId={c.id} />
 
       {/* ── 1.4 DOSSIER status bar (hoisted v5.1.x A.7) ──
           Compact one-liner ("✓ CV ✓ Lettre — Rapport Aboro optionnel —

@@ -11,6 +11,12 @@ resources:
 - service.yaml
 - gateway.yaml
 - configmap.yaml
+# v5.2 cronjob-daily-recap.yaml NOT mounted in dev: a misfire from the
+# dev cluster would email real production recruiters (Resend doesn't
+# distinguish dev vs prod senders). Test the endpoint manually on dev
+# via:
+#   curl -X POST -H "Authorization: Bearer $TOKEN" \
+#     https://dev.radar.sinapse.nc/api/recruitment/jobs/daily-recap
 # secret is managed by Infisical operator (InfisicalSecret CRD)
 
 images:

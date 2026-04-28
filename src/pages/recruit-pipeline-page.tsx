@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown, ClipboardCheck, PhoneCall, Check, XCircle, Star } from 'lucide-react'
+import { Loader2, Users, ChevronRight, FileText, Settings, BarChart3, Info, LayoutList, Kanban, Download, Pencil, Trophy, Search, SlidersHorizontal, ArrowUpDown, X, Plus, Copy, Trash2, Eye, GitBranch, UserCog, ArrowUp, ArrowDown, ClipboardCheck, PhoneCall, Check, XCircle, Star, Building2 } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
 import RoleManagerPanel from '@/components/recruit/role-manager-panel'
@@ -33,6 +33,7 @@ import KpiCell from '@/components/recruit/kpi-cell'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
+import { classifyLocation, LOCATION_BUCKET_LABELS, type LocationBucket } from '@/lib/location'
 import KanbanBoard from '@/components/recruit/kanban-board'
 import StatusChip from '@/components/recruit/status-chip'
 import DocsChip from '@/components/recruit/docs-chip'
@@ -226,6 +227,14 @@ export default function RecruitPipelinePage() {
   const [filterSearch, setFilterSearch] = useState<string>('')
   const [editingPoste, setEditingPoste] = useState<Poste | null>(null)
   const [filterStatut, setFilterStatut] = useState<string>('all')
+  // v5.x — quick canal filter (cabinet vs direct&autres). Demo ask:
+  // "pouvoir filtrer par celles qui viennent d'un cabinet de recrutement".
+  const [filterCanal, setFilterCanal] = useState<'all' | 'cabinet' | 'direct'>('all')
+  // v5.x — location filter (Nouméa / NC reste / France / International /
+  // Inconnu). Demo ask: "pouvoir filtrer les candidatures par celle qui
+  // sont de Nouméa et celle ailleurs de Nouvelle-Calédonie", refined to
+  // 4 + unknown buckets.
+  const [filterLocation, setFilterLocation] = useState<'all' | 'noumea' | 'nc_outside' | 'france' | 'international' | 'unknown'>('all')
   // Separate dimension from filterStatut — see STAGE_STATUSES comment.
   const [filterStage, setFilterStage] = useState<PipelineStage | 'refuses' | 'all'>('all')
   // Item 21 P2 smart filter chips — multi-select, AND-combined.
@@ -464,6 +473,15 @@ export default function RecruitPipelinePage() {
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
     if (!statutMatchesStageFilter(c.statut, filterStage)) return false
+    if (filterCanal === 'cabinet' && c.canal !== 'cabinet') return false
+    if (filterCanal === 'direct' && c.canal === 'cabinet') return false
+    if (filterLocation !== 'all') {
+      const bucket = classifyLocation(
+        c.previewProfile?.city ?? null,
+        c.previewProfile?.country ?? null,
+      )
+      if (bucket !== filterLocation) return false
+    }
     // Free-form search: match any of name / poste / city / current role / current company
     if (searchNeedle) {
       const hay = [
@@ -1041,6 +1059,63 @@ export default function RecruitPipelinePage() {
                 </SelectContent>
               </Select>
               {filterStatut !== 'all' && chipClear(() => setFilterStatut('all'), 'Statut')}
+            </span>
+
+            {/* Canal chip — quick filter cabinet vs direct&autres. Demo
+                ask (April 2026): "pouvoir filtrer par celles qui viennent
+                d\'un cabinet de recrutement". */}
+            <span className="inline-flex items-stretch">
+              <Select value={filterCanal} onValueChange={(v) => setFilterCanal((v ?? 'all') as 'all' | 'cabinet' | 'direct')}>
+                <SelectTrigger
+                  className={`${filterCanal === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
+                  aria-label="Filtrer par canal"
+                >
+                  <SelectValue>
+                    {filterCanal === 'all' ? (
+                      <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />Canal</span>
+                    ) : filterCanal === 'cabinet' ? (
+                      <>Canal <span className="text-muted-foreground">:</span> Cabinet</>
+                    ) : (
+                      <>Canal <span className="text-muted-foreground">:</span> Direct &amp; autres</>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les canaux</SelectItem>
+                  <SelectItem value="cabinet">Cabinet de recrutement</SelectItem>
+                  <SelectItem value="direct">Direct &amp; autres (site, candidature directe, réseau)</SelectItem>
+                </SelectContent>
+              </Select>
+              {filterCanal !== 'all' && chipClear(() => setFilterCanal('all'), 'Canal')}
+            </span>
+
+            {/* Localisation chip — Nouméa / NC reste / France / Intl /
+                Inconnu. Demo ask: filtrer par zone géographique avec
+                priorité à la ville (NC est administrativement français,
+                donc city > country dans le classifier — voir
+                src/lib/location.ts). */}
+            <span className="inline-flex items-stretch">
+              <Select value={filterLocation} onValueChange={(v) => setFilterLocation((v ?? 'all') as 'all' | LocationBucket)}>
+                <SelectTrigger
+                  className={`${filterLocation === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
+                  aria-label="Filtrer par localisation"
+                >
+                  <SelectValue>
+                    {filterLocation === 'all'
+                      ? 'Localisation'
+                      : <>Localisation <span className="text-muted-foreground">:</span> {LOCATION_BUCKET_LABELS[filterLocation as LocationBucket]}</>}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les localisations</SelectItem>
+                  <SelectItem value="noumea">Nouméa</SelectItem>
+                  <SelectItem value="nc_outside">NC (reste)</SelectItem>
+                  <SelectItem value="france">France</SelectItem>
+                  <SelectItem value="international">International</SelectItem>
+                  <SelectItem value="unknown">Inconnu (CV non extrait)</SelectItem>
+                </SelectContent>
+              </Select>
+              {filterLocation !== 'all' && chipClear(() => setFilterLocation('all'), 'Localisation')}
             </span>
 
             {/* Plus — advanced filters (Expérience + Préavis). Count badge

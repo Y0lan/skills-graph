@@ -48,11 +48,24 @@ export interface StageDataChanged {
   byUserSlug: string
 }
 
+/**
+ * Fired when a recruiter flips the cabinet/direct toggle on a
+ * candidature. Open detail panes + the pipeline page subscribe so the
+ * filter chip + header reflect the change without a manual reload.
+ */
+export interface CanalChanged {
+  candidatureId: string
+  canalFrom: string
+  canalTo: string
+  byUserSlug: string
+}
+
 export interface RecruitmentEventMap {
   'document_scan_updated': DocumentScanUpdated
   'extraction_run_completed': ExtractionRunCompleted
   'status_changed': StatusChanged
   'stage_data_changed': StageDataChanged
+  'canal_changed': CanalChanged
 }
 
 class TypedRecruitmentBus {
@@ -85,6 +98,7 @@ class TypedRecruitmentBus {
       extraction_run_completed: this.emitter.listenerCount('extraction_run_completed'),
       status_changed: this.emitter.listenerCount('status_changed'),
       stage_data_changed: this.emitter.listenerCount('stage_data_changed'),
+      canal_changed: this.emitter.listenerCount('canal_changed'),
     }
   }
 }

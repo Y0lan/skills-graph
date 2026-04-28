@@ -118,6 +118,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
       const decoder = new TextDecoder()
       let assistantText = ''
       let buffer = ''
+      let contextDowngraded = false
 
       const assistantIdx = newMessages.length
       onMessagesChange([...newMessages, { role: 'assistant', content: '' }])
@@ -149,6 +150,9 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
             if (data.done && data.remaining !== undefined) {
               setRemaining(data.remaining)
             }
+            if (data.contextDowngraded === true) {
+              contextDowngraded = true
+            }
             if (data.error) {
               assistantText += data.error
             }
@@ -156,9 +160,15 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
         }
       }
 
-      // Reveal complete response
+      // Reveal complete response. When the server flagged the context as
+      // downgraded (équipe trop large pour le détail complet), prepend a
+      // discreet note so the user understands why the answer references
+      // aggregates only.
       if (assistantText) {
-        updateAssistant(assistantText)
+        const finalText = contextDowngraded
+          ? `_Contexte resserré : équipe trop large pour le détail individuel — réponse basée sur les moyennes par catégorie._\n\n${assistantText}`
+          : assistantText
+        updateAssistant(finalText)
       }
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {

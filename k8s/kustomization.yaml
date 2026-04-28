@@ -11,6 +11,7 @@ resources:
 - deployment.yaml
 - service.yaml
 - gateway.yaml
+- cronjob-daily-recap.yaml  # v5.2 daily recap email at 08:00 NC
 # secret is managed by Infisical operator (InfisicalSecret CRD)
 
 images:

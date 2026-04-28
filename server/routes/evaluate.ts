@@ -2,7 +2,7 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { getDb, getCategoriesForCandidate, getCategoryIdsByPole } from '../lib/db.js'
 import { sendCandidateSubmitted } from '../lib/email.js'
-import { validateRatings } from '../lib/validation.js'
+import { validateRatings, filterValidRatings } from '../lib/validation.js'
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js'
 import { rescoreCandidature } from '../lib/scoring-helpers.js'
 import { requireLead } from '../middleware/require-lead.js'
@@ -64,13 +64,23 @@ evaluateRouter.get('/:id/form', (req, res) => {
 
   const cvDerivedCategories = computeCvDerivedCategories(row.id, candidateCategories)
 
+  // Read-time defensive filter: drop any non-catalog skill IDs from
+  // ai_suggestions before sending to the form. Heals legacy rows where
+  // multipass reconcile (pre-fix) wrote hallucinated keys like "oracle".
+  // Without this, the candidate's form state seeds with unknown keys
+  // that ride invisibly into the autosave/submit payload and get
+  // rejected by validateRatings — leaving the candidate stuck with no
+  // way to remove the offending key. See plan §Item 2.
+  const rawSuggestions = safeJsonParse<Record<string, unknown> | null>(row.ai_suggestions, null)
+  const aiSuggestions = rawSuggestions ? filterValidRatings(rawSuggestions) : null
+
   res.json({
     id: row.id,
     name: row.name,
     role: row.role,
     posteTitres: candidatureRows.map(r => r.poste_titre),
     submitted: !!row.submitted_at,
-    aiSuggestions: safeJsonParse(row.ai_suggestions, null),
+    aiSuggestions,
     roleCategories: candidateCategories.length > 0 ? candidateCategories : null,
     cvDerivedCategories,
     categoryIdsByPole: getCategoryIdsByPole(),

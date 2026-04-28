@@ -91,7 +91,12 @@ app.all('/api/auth/{*splat}', async (req, res, _next) => {
 // the stream and we fall back to `JSON.stringify(req.body)` — byte-identical
 // is not guaranteed, so signatures can fail intermittently.
 app.use(express.json({
-  limit: '1mb',
+  // Bumped from 1mb to 5mb in v5.3 (codex P2) — Resend Inbound payloads
+  // include quoted HTML threads + attachment metadata that can exceed
+  // 1mb on long reply chains. The verify hook below captures rawBody
+  // for both outbound (/webhooks/resend) and inbound
+  // (/webhooks/resend-inbound) routes for Svix verification.
+  limit: '5mb',
   verify: (req: { url?: string; rawBody?: string }, _res, buf: Buffer) => {
     if (req.url?.includes('/recruitment/webhooks/resend')) {
       req.rawBody = buf.toString('utf-8')

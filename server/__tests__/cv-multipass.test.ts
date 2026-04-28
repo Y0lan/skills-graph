@@ -32,6 +32,22 @@ function preSeed() {
   db.close()
 }
 
+/**
+ * Seed the `skills` table with the test catalog. Must run AFTER
+ * initDatabase() (which creates the schema via CREATE TABLE IF NOT
+ * EXISTS) so we don\'t fight the canonical column order. java/
+ * typescript/python are the catalog-valid IDs the tests reference;
+ * anything else (oracle, kafka, …) is treated as a hallucination by
+ * filterValidRatings, which is the multipass reconcile drift fix.
+ */
+function seedSkills() {
+  const db = getDb()
+  const insSkill = db.prepare('INSERT OR IGNORE INTO skills (id, category_id, label, sort_order) VALUES (?, ?, ?, ?)')
+  ;[['java', 'Java'], ['typescript', 'TypeScript'], ['python', 'Python']].forEach(([id, label], i) => {
+    insSkill.run(id, 'core-engineering', label, i)
+  })
+}
+
 function seedCandidate(): string {
   const cid = crypto.randomUUID()
   getDb().prepare('INSERT INTO candidates (id, name, role, created_by) VALUES (?, ?, ?, ?)').run(cid, 'T', 'T', 'system')
@@ -66,6 +82,7 @@ describe('runMultipass', () => {
   beforeAll(() => {
     preSeed()
     initDatabase()
+    seedSkills()
   })
   afterAll(() => {
     try { getDb().close() } catch { /* ignore */ }
@@ -143,6 +160,44 @@ describe('runMultipass', () => {
       baseline: { ratings: { java: 4 }, reasoning: { java: 'original' }, questions: { java: 'q?' } },
     })
     expect(result).toBeNull()
+  })
+
+  it('reconcile hallucinated skill IDs (not in catalog) are dropped before persistence', async () => {
+    // Demo bug: Anthropic emits "oracle" or "kafka" in the reconcile pass.
+    // The old code filtered by numeric value only, so these hallucinated
+    // keys made it into ai_suggestions, then into the form\'s ratings
+    // state via prefill, then got rejected on submit by validateRatings —
+    // leaving the candidate stuck. Now the multipass reconcile filters
+    // against the catalog at write time. See plan §Item 2.
+    const cid = seedCandidate()
+    // Critique surfaces an addition so the reconcile pass actually runs
+    // (otherwise it short-circuits and filterValidRatings never sees the
+    // hallucinated keys).
+    mockCreate.mockResolvedValueOnce(mockCritique({
+      issues: [],
+      additions: [{ skillId: 'typescript', suggestedRating: 2, evidence: 'mentioned TS' }],
+    }))
+    mockCreate.mockResolvedValueOnce(mockReconcile({
+      ratings: { java: 4, oracle: 3, typescript: 2, kafka: 5 }, // oracle + kafka NOT in catalog
+      reasoning: { java: 'ok', oracle: 'leaked', typescript: 'ok', kafka: 'leaked' },
+      questions: { java: 'q?', oracle: 'q?', typescript: 'q?', kafka: 'q?' },
+    }))
+
+    const result = await runMultipass({
+      candidateId: cid,
+      cvText: 'A'.repeat(200),
+      baseline: { ratings: { java: 4 }, reasoning: { java: 'ok' }, questions: { java: 'q?' } },
+    })
+    expect(result).not.toBeNull()
+    expect(result!.ratings).toEqual({ java: 4, typescript: 2 })
+    expect(result!.ratings.oracle).toBeUndefined()
+    expect(result!.ratings.kafka).toBeUndefined()
+    // ai_reasoning entries for hallucinated keys are also stripped to keep
+    // the column coherent with ai_suggestions.
+    expect(result!.reasoning.oracle).toBeUndefined()
+    expect(result!.reasoning.kafka).toBeUndefined()
+    expect(result!.questions.oracle).toBeUndefined()
+    expect(result!.questions.kafka).toBeUndefined()
   })
 
   it('reconcile ratings out-of-range are filtered, not persisted', async () => {

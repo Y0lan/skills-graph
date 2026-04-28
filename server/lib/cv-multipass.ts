@@ -1,6 +1,7 @@
 import { callAnthropicTool } from './anthropic-tool.js'
 import { EXTRACTION_MODEL, PROMPT_VERSION } from './cv-extraction.js'
 import { startRun, finishRun } from './extraction-runs.js'
+import { filterValidRatings } from './validation.js'
 
 /**
  * Multi-pass skill extraction (Phase 7).
@@ -227,11 +228,11 @@ Produis la version finale.`,
       return null
     }
 
-    // Trust but verify: filter out rating values that aren't numbers 0-5
-    const ratings: Record<string, number> = {}
-    for (const [k, v] of Object.entries(result.input.ratings)) {
-      if (typeof v === 'number' && v >= 0 && v <= 5) ratings[k] = v
-    }
+    // Trust but verify: filter against catalog (drops hallucinated keys
+    // like "oracle" that aren't real catalog skill IDs) AND validate the
+    // value shape. Reasoning/questions are then keyed by the surviving
+    // skill IDs so the columns stay coherent.
+    const ratings = filterValidRatings(result.input.ratings as Record<string, unknown>)
     const reasoning: Record<string, string> = {}
     for (const [k, v] of Object.entries(result.input.reasoning ?? {})) {
       if (typeof v === 'string' && v.trim() && k in ratings) reasoning[k] = v.trim()

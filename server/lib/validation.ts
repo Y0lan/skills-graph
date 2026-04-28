@@ -11,13 +11,20 @@ export function validateRatings(ratings: unknown): string | null {
   const validSkillIds = new Set(
     getSkillCategories().flatMap(c => c.skills.map(s => s.id))
   )
+  const unknown: string[] = []
   for (const [key, value] of Object.entries(ratings as Record<string, unknown>)) {
     if (!validSkillIds.has(key)) {
-      return `Compétence inconnue: ${key}`
+      unknown.push(key)
+      continue
     }
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 5) {
       return `Valeur invalide pour ${key}: doit être un entier entre 0 et 5`
     }
+  }
+  if (unknown.length > 0) {
+    return unknown.length === 1
+      ? `Compétence inconnue: ${unknown[0]}`
+      : `Compétences inconnues: ${unknown.join(', ')}`
   }
   return null
 }

@@ -540,6 +540,61 @@ export function initDatabase(): void {
     throw new Error(`candidature_stage_data generated columns unsupported — SQLite < 3.31? underlying: ${(err as Error).message}`)
   }
 
+  // ───────────────────────────────────────────────────────────────────
+  // v5.2 — candidature_reminders: manual recruiter reminders
+  //
+  // Lets the recruiter set "rappel-moi le 30 avril sur Pierre" against
+  // a candidature. The daily-recap cron (/api/recruitment/jobs/daily-
+  // recap) emails Guillaume a digest at 08:00 NC of every reminder
+  // due in the next 24h plus auto-derived alerts from
+  // candidature_stage_data (entretien tomorrow, proposition deadline
+  // due, embauche arrival).
+  //
+  // remind_at is stored in Pacific/Noumea wall-clock per the v5.1 R5
+  // convention (see src/lib/stage-fiches/datetime.ts). The cron query
+  // uses a generated `remind_at_iso` column projected to UTC for index
+  // lookup speed. (We could also use plain string comparison since the
+  // wall-clock format sorts lex-correctly, but indexing on a real
+  // datetime is more SQL-friendly.)
+  // ───────────────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidature_reminders (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      candidature_id TEXT    NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+      candidate_id   TEXT    NOT NULL REFERENCES candidates(id)   ON DELETE CASCADE,
+      remind_at      TEXT    NOT NULL,
+      body_md        TEXT    NOT NULL DEFAULT '',
+      is_done        INTEGER NOT NULL DEFAULT 0,
+      created_by     TEXT    NOT NULL,
+      created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+      done_at        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_reminders_candidature ON candidature_reminders(candidature_id);
+    CREATE INDEX IF NOT EXISTS idx_reminders_due         ON candidature_reminders(remind_at) WHERE is_done = 0;
+  `)
+
+  // ───────────────────────────────────────────────────────────────────
+  // v5.3 — candidate_tags: cross-candidature filtering tags
+  //
+  // Tags live at the CANDIDATE level (not candidature) so they survive
+  // across multi-poste applications and re-applications. A tag is just
+  // a string label attached to (candidate_id, tag) — composite primary
+  // key prevents duplicates per candidate.
+  //
+  // The pipeline page filters by tag; the identity strip surfaces them
+  // as small pills. ~200 LOC total per the v5 plan budget.
+  // ───────────────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS candidate_tags (
+      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+      tag          TEXT NOT NULL,
+      created_by   TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (candidate_id, tag)
+    );
+    CREATE INDEX IF NOT EXISTS idx_candidate_tags_tag ON candidate_tags(tag);
+  `)
+
   // v5.1: widen candidature_events CHECK to add 'stage_data_changed' so
   // every fiche save inserts an audit row that surfaces in the historique
   // ("Pierre L. a modifié la fiche entretien_1 — salaire proposé: 6 800 000 → 7 200 000 XPF").
@@ -566,6 +621,95 @@ export function initDatabase(): void {
             candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
             type TEXT NOT NULL DEFAULT 'status_change'
               CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed')),
+            statut_from TEXT,
+            statut_to TEXT,
+            notes TEXT,
+            content_md TEXT,
+            email_snapshot TEXT,
+            stage TEXT,
+            updated_at TEXT,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
+            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+            FROM candidature_events;
+          DROP TABLE candidature_events;
+          ALTER TABLE candidature_events_new RENAME TO candidature_events;
+        `)
+      })
+      migrate()
+      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+    } finally {
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  }
+
+  // v5.3: widen candidature_events CHECK to add 'email_received' for
+  // inbound mail logged via Resend Inbound webhook. Same FK-disable
+  // dance as v5.1 (candidature_documents.event_id still references this
+  // table). Mirrors the v5.1 stage_data_changed migration pattern.
+  const missingEmailReceivedType = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_received'")
+  })()
+
+  if (missingEmailReceivedType) {
+    db.exec('DROP TABLE IF EXISTS candidature_events_new')
+    db.exec('PRAGMA foreign_keys=OFF')
+    try {
+      const migrate = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE candidature_events_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+            type TEXT NOT NULL DEFAULT 'status_change'
+              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed','email_received')),
+            statut_from TEXT,
+            statut_to TEXT,
+            notes TEXT,
+            content_md TEXT,
+            email_snapshot TEXT,
+            stage TEXT,
+            updated_at TEXT,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
+            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
+            FROM candidature_events;
+          DROP TABLE candidature_events;
+          ALTER TABLE candidature_events_new RENAME TO candidature_events;
+        `)
+      })
+      migrate()
+      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+    } finally {
+      db.exec('PRAGMA foreign_keys=ON')
+    }
+  }
+
+  // v5.x: widen candidature_events CHECK to add 'canal_change' for the
+  // cabinet/direct toggle. Codex P11 — canal change is semantically
+  // orthogonal to stage progression, so it deserves its own event_type.
+  // Same FK-disable dance because candidature_documents.event_id still
+  // FKs to this table.
+  const missingCanalChangeType = (() => {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
+    return !!tableInfo?.sql && !tableInfo.sql.includes("'canal_change'")
+  })()
+
+  if (missingCanalChangeType) {
+    db.exec('DROP TABLE IF EXISTS candidature_events_new')
+    db.exec('PRAGMA foreign_keys=OFF')
+    try {
+      const migrate = db.transaction(() => {
+        db.exec(`
+          CREATE TABLE candidature_events_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
+            type TEXT NOT NULL DEFAULT 'status_change'
+              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed','email_received','canal_change')),
             statut_from TEXT,
             statut_to TEXT,
             notes TEXT,

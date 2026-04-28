@@ -10,6 +10,8 @@ import CandidateProfileCard, { type AiProfile } from '@/components/recruit/candi
 import CandidateIdentityStrip from '@/components/recruit/candidate-identity-strip'
 import CandidatureSwitcher from '@/components/recruit/candidature-switcher'
 import CandidateApplicationMessage from '@/components/recruit/candidate-application-message'
+import CandidateTagsBar from '@/components/recruit/candidate-tags-bar'
+import CandidaturePosteHeader from '@/components/recruit/candidature-poste-header'
 import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
 import CandidateStickyHeader from '@/components/recruit/candidate-sticky-header'
 import ConfirmDialog from '@/components/recruit/confirm-dialog'
@@ -738,6 +740,43 @@ export default function CandidateDetailPage() {
           profileExpanded={profileExpanded}
         />
 
+        {/* v5.3 tags bar — lives at the candidate level so labels survive
+            multi-poste applications. Used for "rappeler-2027",
+            "ex-CIO", "talent-pool", etc. */}
+        {candidate.id && (
+          <div className="mb-3">
+            <CandidateTagsBar candidateId={candidate.id} />
+          </div>
+        )}
+
+        {/* v5.1.x A.3 (re-positioned per codex /design-review):
+            MESSAGE DU CANDIDAT lives at the TOP, between the
+            tags bar and the profile-card disclosure — visible in
+            the 5-second scan, never lost between operational rails. */}
+        {candidate && (
+          <CandidateApplicationMessage
+            notes={candidate.notes ?? null}
+            filterPosteTitre={selectedCandidature?.posteTitre ?? ''}
+          />
+        )}
+
+        {/* v5.2 (post-design-review): candidature posture header lifted
+            from inside <CandidatureWorkspace> to here, so the recruiter
+            sees "Dev Java Senior · Postulé · sinapse.nc · 24/04 · YM
+            Activité il y a 3 j" within the first viewport. The
+            workspace below keeps the operational rails (DOSSIER,
+            command bar, scores, historique). */}
+        {selectedCandidature && (
+          <CandidaturePosteHeader
+            candidature={selectedCandidature}
+            isPending={!candidate.submittedAt}
+            submitted={!!candidate.submittedAt}
+            analysed={!!candidate.submittedAt && !!candidate.aiReport}
+            events={selectedEvents}
+            stageDataRefetchSignal={stageDataRefetchSignal}
+          />
+        )}
+
         {/* Full LinkedIn-style profile card — lives RIGHT UNDER the
             identity strip as a disclosure so it's easy to find but
             doesn't clutter the scan. The id matches `aria-controls` on
@@ -800,20 +839,9 @@ export default function CandidateDetailPage() {
         )}
 
         {/* v5.1.x A.3 — Hoisted from inside <CandidatureWorkspace>. The
-            candidate's intake message (Drupal form text) is the
-            candidate's voice. It belongs ABOVE the workspace — between
-            the identity strip and the operational cockpit — where the
-            recruiter is still framing "who this person is" rather than
-            "what to do next". `selectedCandidature.posteTitre` is in
-            scope here (post-switcher), so multi-poste candidates get
-            the message filtered to the active candidature. The
-            component renders nothing when `notes` is null. */}
-        {candidate && selectedCandidature && (
-          <CandidateApplicationMessage
-            notes={candidate.notes ?? null}
-            filterPosteTitre={selectedCandidature.posteTitre}
-          />
-        )}
+            (MESSAGE DU CANDIDAT relocated to top-of-page above the
+            profile card — see the placement note next to the tags
+            bar.) */}
 
         {/* Empty state: candidate with no candidature (manual create). */}
         {candidatures.length === 0 && (

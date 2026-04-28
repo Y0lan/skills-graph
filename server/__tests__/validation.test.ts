@@ -39,6 +39,21 @@ describe('validateRatings', () => {
     expect(result).toBe('Comp\u00e9tence inconnue: unknown-skill')
   })
 
+  it('returns ALL unknown skill IDs in one error (oracle drift fix)', () => {
+    // Demo bug: form blocks the candidate with "Comp\u00e9tence inconnue: oracle"
+    // and they have to guess what other keys are also bad. Now the error
+    // lists every unknown key in one shot.
+    const result = validateRatings({ oracle: 4, java: 3, mysql: 2, kafka: 1 })
+    expect(result).toBe('Comp\u00e9tences inconnues: oracle, mysql, kafka')
+  })
+
+  it('reports value errors before unknown-key errors when both present', () => {
+    // If a known key has a bad value, that\'s the immediate error. Unknown
+    // keys are only flagged if all known keys validate cleanly.
+    const result = validateRatings({ java: 99, oracle: 4 })
+    expect(result).toMatch(/Valeur invalide pour java/)
+  })
+
   it('returns error for non-integer rating (float)', () => {
     const result = validateRatings({ java: 2.5 })
     expect(result).toMatch(/Valeur invalide pour java/)

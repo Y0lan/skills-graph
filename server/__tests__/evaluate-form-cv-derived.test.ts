@@ -161,4 +161,44 @@ describe('GET /api/evaluate/:id/form — cvDerivedCategories (Phase 6)', () => {
     expect(res.body.aiSuggestions).toMatchObject({ java: 4 })
     expect(res.body.roleCategories).toContain('core-engineering')
   })
+
+  // Read-time filter on aiSuggestions (oracle drift fix)
+  // ----------------------------------------------------
+  // Demo bug: legacy candidates have ai_suggestions.oracle = 4 from
+  // pre-fix CV extraction. Without the read-time filter, the form
+  // page seeds ratings state with "oracle: 4" which then rides
+  // invisibly into autosave/submit and gets rejected by
+  // validateRatings — leaving the candidate stuck. The form-info
+  // endpoint now strips non-catalog keys on read.
+
+  it('aiSuggestions drops non-catalog skill IDs before sending to client', async () => {
+    const cid = seedCandidateWithRole(['core-engineering'], {
+      suggestions: { java: 4, oracle: 3, react: 2, kafka: 5 }, // oracle + kafka NOT in catalog
+      reasoning: { java: 'ok', oracle: 'leaked', react: 'ok', kafka: 'leaked' },
+    })
+    const app = await buildApp()
+    const res = await supertest(app).get(`/api/evaluate/${cid}/form`)
+    expect(res.status).toBe(200)
+    expect(res.body.aiSuggestions).toEqual({ java: 4, react: 2 })
+    expect(res.body.aiSuggestions.oracle).toBeUndefined()
+    expect(res.body.aiSuggestions.kafka).toBeUndefined()
+  })
+
+  it('aiSuggestions is null when DB row has none (preserves existing contract)', async () => {
+    const cid = seedCandidateWithRole(['core-engineering'], {})
+    const app = await buildApp()
+    const res = await supertest(app).get(`/api/evaluate/${cid}/form`)
+    expect(res.status).toBe(200)
+    expect(res.body.aiSuggestions).toBeNull()
+  })
+
+  it('aiSuggestions is empty object when DB row has only hallucinated keys', async () => {
+    const cid = seedCandidateWithRole(['core-engineering'], {
+      suggestions: { oracle: 3, kafka: 4 }, // both hallucinated
+    })
+    const app = await buildApp()
+    const res = await supertest(app).get(`/api/evaluate/${cid}/form`)
+    expect(res.status).toBe(200)
+    expect(res.body.aiSuggestions).toEqual({})
+  })
 })

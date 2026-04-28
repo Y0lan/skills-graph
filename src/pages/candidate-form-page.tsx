@@ -89,8 +89,13 @@ export default function CandidateFormPage() {
           setSubmitted(true)
           return
         }
-        const initialRatings = formInfo.aiSuggestions ?? {}
-        setExistingRatings({ ratings: initialRatings, experience: {}, skippedCategories: [], declinedCategories: [] })
+        // Per Yolan (April 2026): the candidate's self-eval form starts
+        // EMPTY. The CV-derived ratings on candidates.ai_suggestions are
+        // the recruiter\'s "first glance" preview; they should not bias
+        // the candidate by appearing as starting answers. Subsumes the
+        // earlier prefill-safety-net logic (oracle drift) — there\'s no
+        // prefill to filter anymore.
+        setExistingRatings({ ratings: {}, experience: {}, skippedCategories: [], declinedCategories: [] })
       })
       .catch(() => setError('Impossible de charger le formulaire'))
       .finally(() => setLoading(false))
@@ -263,7 +268,6 @@ export default function CandidateFormPage() {
           submitting={submitting}
           autosaveEndpoint={`/api/evaluate/${id}/ratings`}
           onNavigationChange={setWizardNav}
-          aiSuggestions={formData.aiSuggestions ?? undefined}
           roleCategories={formData.roleCategories ?? undefined}
           nonPoleGroups={nonPoleGroups}
         />

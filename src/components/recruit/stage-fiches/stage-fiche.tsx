@@ -13,6 +13,10 @@ import {
 import { STAGE_FICHE_META } from '@/lib/stage-fiches/registry'
 import { EntretienFiche, type EntretienFicheValues } from './entretien-fiche'
 import { AboroFiche, type AboroFicheValues } from './aboro-fiche'
+import { PropositionFiche, type PropositionFicheValues } from './proposition-fiche'
+import { EmbaucheFiche, type EmbaucheFicheValues } from './embauche-fiche'
+import { SkillRadarCompleteFiche, type SkillRadarCompleteFicheValues } from './skill-radar-complete-fiche'
+import { RefuseFiche, type RefuseFicheValues } from './refuse-fiche'
 
 /**
  * Dispatcher: takes a (candidatureId, stage) and renders the matching
@@ -33,7 +37,15 @@ export interface StageFicheProps {
   refetchSignal?: number
 }
 
-const SUPPORTED: ReadonlySet<Statut> = new Set<Statut>(['entretien_1', 'entretien_2', 'aboro'])
+const SUPPORTED: ReadonlySet<Statut> = new Set<Statut>([
+  'entretien_1',
+  'entretien_2',
+  'aboro',
+  'proposition',
+  'embauche',
+  'skill_radar_complete',
+  'refuse',
+])
 
 export function StageFiche({ candidatureId, stage, refetchSignal }: StageFicheProps) {
   const supported = SUPPORTED.has(stage)
@@ -149,6 +161,58 @@ export function StageFiche({ candidatureId, stage, refetchSignal }: StageFichePr
         metaLine={metaLine}
         draftBanner={draftBanner}
         onSave={(next) => saveAdapter(next as Record<string, unknown>)}
+        onLocalChange={(next) => handleLocalChange(next as Record<string, unknown>)}
+      />
+    )
+  }
+  if (stage === 'proposition') {
+    return (
+      <PropositionFiche
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        data={data as PropositionFicheValues}
+        metaLine={metaLine}
+        draftBanner={draftBanner}
+        onSave={(patch) => saveAdapter(patch)}
+        onLocalChange={(next) => handleLocalChange(next as Record<string, unknown>)}
+      />
+    )
+  }
+  if (stage === 'embauche') {
+    return (
+      <EmbaucheFiche
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        data={data as EmbaucheFicheValues}
+        metaLine={metaLine}
+        draftBanner={draftBanner}
+        onSave={(patch) => saveAdapter(patch)}
+        onLocalChange={(next) => handleLocalChange(next as Record<string, unknown>)}
+      />
+    )
+  }
+  if (stage === 'skill_radar_complete') {
+    return (
+      <SkillRadarCompleteFiche
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        data={data as SkillRadarCompleteFicheValues}
+        metaLine={metaLine}
+        draftBanner={draftBanner}
+        onSave={(patch) => saveAdapter(patch)}
+        onLocalChange={(next) => handleLocalChange(next as Record<string, unknown>)}
+      />
+    )
+  }
+  if (stage === 'refuse') {
+    return (
+      <RefuseFiche
+        eyebrow={meta.eyebrow}
+        title={meta.title}
+        data={data as RefuseFicheValues}
+        metaLine={metaLine}
+        draftBanner={draftBanner}
+        onSave={(patch) => saveAdapter(patch)}
         onLocalChange={(next) => handleLocalChange(next as Record<string, unknown>)}
       />
     )

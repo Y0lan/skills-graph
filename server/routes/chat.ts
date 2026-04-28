@@ -54,6 +54,81 @@ function buildSkillDetail(ratings: Record<string, number>): string {
   return lines.join('\n')
 }
 
+/**
+ * Compact skill summary for a single member: top-N strongest skills (level ≥ 4)
+ * + top-M weakest evaluated skills (level ≤ 1, non-skipped). Used for the
+ * "global team" context where we'd otherwise blow the token budget by
+ * emitting every catalog skill × every member with descriptors.
+ *
+ * Demo-day fix: a 10-member team × 178 catalog skills × ~150 chars/skill
+ * was producing ~250 KB of system prompt, which Anthropic rejected with
+ * a context-length error that the original code swallowed as a generic
+ * "Erreur lors de la génération". See plan §Item 1.
+ */
+export function buildCompactSkillSummary(ratings: Record<string, number>, topN = 5, bottomM = 3): string {
+  const entries = Object.entries(ratings).filter(([, v]) => typeof v === 'number')
+  if (entries.length === 0) return '  (pas d\'évaluations)'
+  const cats = getSkillCategories()
+  const labelById = new Map<string, string>()
+  for (const c of cats) for (const s of c.skills) labelById.set(s.id, s.label)
+  const labelOf = (id: string) => labelById.get(id) ?? id
+  const top = entries
+    .filter(([, v]) => v >= 4)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, topN)
+    .map(([id, v]) => `${labelOf(id)} ${v}/5`)
+  const bottom = entries
+    .filter(([, v]) => v >= 0 && v <= 1)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, bottomM)
+    .map(([id, v]) => `${labelOf(id)} ${v}/5`)
+  const parts: string[] = []
+  if (top.length > 0) parts.push(`  Forces : ${top.join(', ')}`)
+  if (bottom.length > 0) parts.push(`  À renforcer : ${bottom.join(', ')}`)
+  return parts.length > 0 ? parts.join('\n') : '  (pas d\'extrêmes notables)'
+}
+
+/**
+ * Map an Anthropic SDK error to a French user-facing message.
+ *
+ * Diagnose-first principle (codex P3): we surface the actual error class
+ * instead of swallowing every failure as "Erreur lors de la génération".
+ * This way Yolan/Guillaume see WHY the chatbot failed (rate limit vs
+ * context length vs auth vs something else) and the server log retains
+ * the raw error for debugging.
+ */
+export function mapAnthropicError(err: unknown): string {
+  // Anthropic SDK errors carry status + error.type. We type-narrow defensively
+  // because the runtime shape can vary across SDK versions and middleware.
+  const e = err as {
+    status?: number
+    error?: { error?: { type?: string; message?: string }; type?: string }
+    type?: string
+    message?: string
+  }
+  const status = e?.status
+  const type =
+    e?.error?.error?.type ??
+    e?.error?.type ??
+    e?.type
+  if (status === 429 || type === 'rate_limit_error') {
+    return 'L\'IA est temporairement surchargée. Réessaie dans une minute.'
+  }
+  if (type === 'context_length_exceeded' || /context.*length|too.*long/i.test(e?.message ?? '')) {
+    return 'Contexte trop large — sélectionne quelques membres au lieu de toute l\'équipe.'
+  }
+  if (status === 401 || type === 'authentication_error') {
+    return 'Configuration IA invalide. Préviens un admin.'
+  }
+  if (status === 400 || type === 'invalid_request_error') {
+    return 'Requête invalide. Détails dans les logs serveur.'
+  }
+  if (status === 529 || type === 'overloaded_error') {
+    return 'L\'IA est temporairement surchargée. Réessaie dans une minute.'
+  }
+  return 'Erreur lors de la génération. Détails dans les logs serveur.'
+}
+
 export const chatRouter = Router()
 
 chatRouter.post('/', requireAuth, async (req, res) => {
@@ -124,8 +199,20 @@ chatRouter.post('/', requireAuth, async (req, res) => {
   const allRatings = getAllEvaluations()
 
   let contextBlock = ''
+  let contextDowngraded = false
   if (contextSlugs.length === 0) {
-    // Global context — team aggregate + every member's skill-level data
+    // Global context — team aggregate + every member's skill summary.
+    //
+    // Demo bug (April 2026): the original code emitted the full
+    // descriptor-rich detail for every submitted member × all 178
+    // catalog skills, producing ~250 KB of system prompt for a 10-member
+    // team. Anthropic rejected with context_length_exceeded and the
+    // user saw a generic "Erreur lors de la génération".
+    //
+    // Now we emit a compact "top strengths + weak spots" summary per
+    // member. The full descriptor-rich detail is reserved for the
+    // single-member context where the budget genuinely fits. See plan
+    // §Item 1.
     const team = computeTeamAggregate()
     if (team && team.submittedCount > 0) {
       contextBlock = `\n\nContexte global de l'équipe (${team.submittedCount}/${team.teamSize} évaluations) :\n`
@@ -133,13 +220,27 @@ chatRouter.post('/', requireAuth, async (req, res) => {
         `- ${c.categoryLabel} : moyenne ${c.teamAvgRank.toFixed(1)}/5`
       ).join('\n')
 
-      // Add every submitted member's skill-level detail
       for (const m of team.members) {
         if (!m.submittedAt) continue
         const memberRatings = allRatings[m.slug]?.ratings
         if (!memberRatings) continue
         contextBlock += `\n\n── ${m.name} (${m.role}) ──\n`
-        contextBlock += buildSkillDetail(memberRatings)
+        contextBlock += buildCompactSkillSummary(memberRatings)
+      }
+
+      // Pre-flight token estimate (~3 chars/token for French). If even
+      // the compact summary blows past 150 K input tokens (a 30+ member
+      // team), drop to aggregate-only and flag the downgrade in the
+      // response so the UI can render a hint.
+      const TOKEN_BUDGET = 150_000
+      const estimatedTokens = (SYSTEM_BASE.length + contextBlock.length) / 3
+      if (estimatedTokens > TOKEN_BUDGET) {
+        contextDowngraded = true
+        contextBlock = `\n\nContexte global de l'équipe (${team.submittedCount}/${team.teamSize} évaluations) :\n`
+        contextBlock += team.categories.map(c =>
+          `- ${c.categoryLabel} : moyenne ${c.teamAvgRank.toFixed(1)}/5`
+        ).join('\n')
+        contextBlock += '\n\n(Détails par membre omis — équipe trop large pour le budget contexte.)'
       }
     }
   } else {
@@ -160,7 +261,7 @@ chatRouter.post('/', requireAuth, async (req, res) => {
     }
   }
 
-  console.log('[CHAT] Context: %d profiles, prompt ~%d chars', contextSlugs.length, SYSTEM_BASE.length + contextBlock.length)
+  console.log('[CHAT] Context: %d profiles, prompt ~%d chars, downgraded=%s', contextSlugs.length, SYSTEM_BASE.length + contextBlock.length, contextDowngraded)
 
   const systemPrompt = SYSTEM_BASE + contextBlock
 
@@ -192,12 +293,19 @@ chatRouter.post('/', requireAuth, async (req, res) => {
     db.prepare('INSERT INTO chat_usage (user_id) VALUES (?)').run(user.id)
 
     const remaining = DAILY_LIMIT - count.cnt - 1
-    res.write(`data: ${JSON.stringify({ done: true, remaining })}\n\n`)
+    // contextDowngraded is metadata (codex P4: hidden state in generated
+    // text would be bad UX). The frontend can render a small hint badge
+    // when this flag is true.
+    res.write(`data: ${JSON.stringify({ done: true, remaining, contextDowngraded })}\n\n`)
     res.end()
   } catch (err) {
+    // Log the raw error so we have ground truth on every failure (was
+    // previously swallowed). The user-facing message is mapped via
+    // mapAnthropicError to surface the actual cause (rate limit /
+    // context length / auth / …) instead of a generic catch-all.
     console.error('[CHAT] Stream error:', err)
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ error: 'Erreur lors de la génération' })}\n\n`)
+      res.write(`data: ${JSON.stringify({ error: mapAnthropicError(err) })}\n\n`)
       res.end()
     }
   }

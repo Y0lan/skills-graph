@@ -32,6 +32,8 @@ import { TRANSITION_MAP, NOTES_REQUIRED, getAllowedTransitions, isSkipTransition
 import { isStatut } from '../../src/lib/constants.js'
 import { validatePartialFichePatch, validateMergedFiche } from '../../src/lib/stage-fiches/schemas.js'
 import { requireSameOrigin } from '../middleware/require-origin.js'
+import { requireInternalToken } from '../middleware/require-internal-token.js'
+import { sendDailyRecap } from '../lib/daily-recap.js'
 
 interface ParsedIntake {
   fields: Record<string, string>
@@ -1210,6 +1212,79 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
 })
 
 // Add note to candidature
+/**
+ * PATCH /api/recruitment/candidatures/:id/canal
+ *
+ * Updates the candidature\'s acquisition channel (cabinet / site /
+ * candidature_directe / reseau). Backed by the existing canal column
+ * (CHECK-constrained at schema level).
+ *
+ * Audit: emits a `canal_change` event (NOT status_change — codex P11:
+ * canal is orthogonal to stage progression and stage replay logic
+ * shouldn\'t see these rows). The notes field stores a French diff
+ * line for the timeline UI.
+ *
+ * Surfaces the change on the SSE bus so the pipeline page\'s open
+ * tabs and the detail page reflect the toggle without manual reload.
+ */
+const VALID_CANALS = ['cabinet', 'site', 'candidature_directe', 'reseau'] as const
+type CanalValue = typeof VALID_CANALS[number]
+const CANAL_LABEL_FR: Record<CanalValue, string> = {
+  cabinet: 'cabinet',
+  site: 'site',
+  candidature_directe: 'candidature directe',
+  reseau: 'réseau',
+}
+
+protectedRouter.patch('/candidatures/:id/canal', mutationRateLimit, (req, res) => {
+  const body = req.body as { canal?: unknown }
+  const canal = body?.canal
+  if (typeof canal !== 'string' || !VALID_CANALS.includes(canal as CanalValue)) {
+    res.status(400).json({ error: `canal invalide (attendu : ${VALID_CANALS.join(', ')})` })
+    return
+  }
+
+  const current = getDb()
+    .prepare('SELECT canal FROM candidatures WHERE id = ?')
+    .get(req.params.id) as { canal: string } | undefined
+  if (!current) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+
+  // No-op if unchanged — no audit row for visual-only re-renders.
+  if (current.canal === canal) {
+    res.json({ canal: current.canal, changed: false })
+    return
+  }
+
+  const user = getUser(req)
+  const userSlug = user.slug || 'unknown'
+
+  getDb().transaction(() => {
+    getDb()
+      .prepare('UPDATE candidatures SET canal = ?, updated_at = datetime(\'now\') WHERE id = ?')
+      .run(canal, req.params.id)
+    const fromLabel = CANAL_LABEL_FR[current.canal as CanalValue] ?? current.canal
+    const toLabel = CANAL_LABEL_FR[canal as CanalValue] ?? canal
+    getDb()
+      .prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
+        VALUES (?, 'canal_change', ?, ?)
+      `)
+      .run(req.params.id, `Canal changé de ${fromLabel} → ${toLabel}`, userSlug)
+  })()
+
+  recruitmentBus.publish('canal_changed', {
+    candidatureId: String(req.params.id),
+    canalFrom: current.canal,
+    canalTo: canal,
+    byUserSlug: userSlug,
+  })
+
+  res.json({ canal, changed: true })
+})
+
 protectedRouter.post('/candidatures/:id/notes', mutationRateLimit, (req, res) => {
   const { notes } = req.body
   if (!notes || typeof notes !== 'string') {
@@ -1670,6 +1745,221 @@ function formatFicheValue(v: unknown): string {
   if (Array.isArray(v)) return v.length === 0 ? '_vide_' : v.join(', ')
   return JSON.stringify(v)
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// v5.2 — Reminders manuels: recruiter-set "rappelle-moi" entries
+// ═══════════════════════════════════════════════════════════════════════
+//
+// The recruiter writes "rappel-moi le 30 avril sur Pierre". The
+// daily-recap cron emails them a digest of due reminders + auto-
+// derived alerts from candidature_stage_data. AuthZ: requireLead.
+// remind_at is stored as Pacific/Noumea wall-clock (YYYY-MM-DDTHH:mm)
+// per the v5.1 R5 convention, so the cron's "next 24h" window query
+// can use plain string comparison (the wall-clock format sorts
+// correctly lexicographically when compared at the same TZ). This
+// avoids a UTC conversion the recruiter would never see anyway.
+
+protectedRouter.get('/candidatures/:id/reminders', (req, res) => {
+  const cand = getDb().prepare('SELECT id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  const rows = getDb().prepare(`
+    SELECT id, remind_at AS remindAt, body_md AS bodyMd, is_done AS isDone, created_by AS createdBy, created_at AS createdAt, done_at AS doneAt
+      FROM candidature_reminders
+     WHERE candidature_id = ?
+     ORDER BY is_done ASC, remind_at ASC
+  `).all(req.params.id) as Array<{ id: number; remindAt: string; bodyMd: string; isDone: number; createdBy: string; createdAt: string; doneAt: string | null }>
+  res.json(rows.map(r => ({ ...r, isDone: !!r.isDone })))
+})
+
+protectedRouter.post('/candidatures/:id/reminders', mutationRateLimit, (req, res) => {
+  const body = req.body as { remindAt?: unknown; bodyMd?: unknown }
+  const remindAt = typeof body.remindAt === 'string' ? body.remindAt.trim() : ''
+  const bodyMd = typeof body.bodyMd === 'string' ? body.bodyMd.trim() : ''
+  if (!remindAt || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(remindAt)) {
+    res.status(400).json({ error: 'remindAt invalide (format AAAA-MM-JJTHH:MM attendu)' })
+    return
+  }
+  if (bodyMd.length > 2000) {
+    res.status(400).json({ error: 'Note trop longue (2000 caractères max)' })
+    return
+  }
+  const cand = getDb().prepare('SELECT id, candidate_id FROM candidatures WHERE id = ?').get(req.params.id) as { id: string; candidate_id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidature introuvable' })
+    return
+  }
+  const user = getUser(req)
+  const row = getDb().prepare(`
+    INSERT INTO candidature_reminders (candidature_id, candidate_id, remind_at, body_md, created_by)
+    VALUES (?, ?, ?, ?, ?)
+    RETURNING id, remind_at AS remindAt, body_md AS bodyMd, is_done AS isDone, created_by AS createdBy, created_at AS createdAt, done_at AS doneAt
+  `).get(cand.id, cand.candidate_id, remindAt, bodyMd.slice(0, 2000), user.slug || 'unknown') as { id: number; remindAt: string; bodyMd: string; isDone: number; createdBy: string; createdAt: string; doneAt: string | null }
+  res.status(201).json({ ...row, isDone: !!row.isDone })
+})
+
+protectedRouter.patch('/candidatures/:id/reminders/:reminderId', mutationRateLimit, (req, res) => {
+  const reminderId = Number(req.params.reminderId)
+  if (!Number.isFinite(reminderId)) {
+    res.status(400).json({ error: 'reminderId invalide' })
+    return
+  }
+  const body = req.body as { remindAt?: unknown; bodyMd?: unknown; isDone?: unknown }
+  const existing = getDb().prepare('SELECT id, candidature_id FROM candidature_reminders WHERE id = ?').get(reminderId) as { id: number; candidature_id: string } | undefined
+  if (!existing || existing.candidature_id !== req.params.id) {
+    res.status(404).json({ error: 'Rappel introuvable' })
+    return
+  }
+  const updates: string[] = []
+  const params: unknown[] = []
+  if (typeof body.remindAt === 'string') {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(body.remindAt)) {
+      res.status(400).json({ error: 'remindAt invalide' })
+      return
+    }
+    updates.push('remind_at = ?')
+    params.push(body.remindAt)
+  }
+  if (typeof body.bodyMd === 'string') {
+    if (body.bodyMd.length > 2000) {
+      res.status(400).json({ error: 'Note trop longue' })
+      return
+    }
+    updates.push('body_md = ?')
+    params.push(body.bodyMd)
+  }
+  if (typeof body.isDone === 'boolean') {
+    updates.push('is_done = ?')
+    updates.push("done_at = CASE WHEN ? THEN datetime('now') ELSE NULL END")
+    params.push(body.isDone ? 1 : 0)
+    params.push(body.isDone ? 1 : 0)
+  }
+  if (updates.length === 0) {
+    res.status(400).json({ error: 'Au moins un champ requis' })
+    return
+  }
+  params.push(reminderId)
+  getDb().prepare(`UPDATE candidature_reminders SET ${updates.join(', ')} WHERE id = ?`).run(...params)
+  const row = getDb().prepare(`
+    SELECT id, remind_at AS remindAt, body_md AS bodyMd, is_done AS isDone, created_by AS createdBy, created_at AS createdAt, done_at AS doneAt
+      FROM candidature_reminders WHERE id = ?
+  `).get(reminderId) as { id: number; remindAt: string; bodyMd: string; isDone: number; createdBy: string; createdAt: string; doneAt: string | null }
+  res.json({ ...row, isDone: !!row.isDone })
+})
+
+protectedRouter.delete('/candidatures/:id/reminders/:reminderId', mutationRateLimit, (req, res) => {
+  const reminderId = Number(req.params.reminderId)
+  const existing = getDb().prepare('SELECT id, candidature_id FROM candidature_reminders WHERE id = ?').get(reminderId) as { id: number; candidature_id: string } | undefined
+  if (!existing || existing.candidature_id !== req.params.id) {
+    res.status(404).json({ error: 'Rappel introuvable' })
+    return
+  }
+  getDb().prepare('DELETE FROM candidature_reminders WHERE id = ?').run(reminderId)
+  res.status(204).end()
+})
+
+// ═══════════════════════════════════════════════════════════════════════
+// v5.3 — Candidate tags: cross-candidature labels
+// ═══════════════════════════════════════════════════════════════════════
+//
+// Tags live at the candidate level so they survive multi-poste applications.
+// Routes:
+//   GET    /candidates/:id/tags          → list tags for a candidate
+//   POST   /candidates/:id/tags          → add tag (body: {tag})
+//   DELETE /candidates/:id/tags/:tag     → remove tag
+//   GET    /tags                         → list all tags + usage counts (for filter UI)
+//
+// Tag normalization: lowercase + trim + slug-ish. Empty / >32 chars rejected.
+
+function normalizeTag(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  // Codex round-2 P3: visually identical strings should collide on the
+  // DB primary key, otherwise users create "café" twice (one composed,
+  // one decomposed) and filtering / deletion by visible label gets
+  // unreliable. Apply NFC, strip zero-width + bidi controls, lowercase,
+  // collapse whitespace.
+  const stripped = raw
+    .normalize('NFC')
+    // Zero-width: ZWSP, ZWNJ, ZWJ, BOM. Bidi: LRM, RLM, LRE/RLE/LRO/RLO/PDF, LRI/RLI/FSI/PDI.
+    // eslint-disable-next-line no-misleading-character-class
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+  if (!stripped || stripped.length > 32) return null
+  // Block control chars (U+0000 - U+001F + U+007F).
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F]/.test(stripped)) return null
+  return stripped
+}
+
+protectedRouter.get('/candidates/:id/tags', (req, res) => {
+  const cand = getDb().prepare('SELECT id FROM candidates WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidat introuvable' })
+    return
+  }
+  const tags = getDb().prepare(`
+    SELECT tag, created_by AS createdBy, created_at AS createdAt
+      FROM candidate_tags WHERE candidate_id = ?
+     ORDER BY tag ASC
+  `).all(req.params.id) as Array<{ tag: string; createdBy: string; createdAt: string }>
+  res.json(tags)
+})
+
+protectedRouter.post('/candidates/:id/tags', mutationRateLimit, (req, res) => {
+  const tag = normalizeTag((req.body as { tag?: unknown })?.tag)
+  if (!tag) {
+    res.status(400).json({ error: 'tag requis (1-32 caractères)' })
+    return
+  }
+  const cand = getDb().prepare('SELECT id FROM candidates WHERE id = ?').get(req.params.id) as { id: string } | undefined
+  if (!cand) {
+    res.status(404).json({ error: 'Candidat introuvable' })
+    return
+  }
+  const user = getUser(req)
+  try {
+    getDb().prepare(`
+      INSERT INTO candidate_tags (candidate_id, tag, created_by) VALUES (?, ?, ?)
+    `).run(cand.id, tag, user.slug || 'unknown')
+  } catch (err) {
+    // UNIQUE PK constraint: tag already exists. Idempotent → 200.
+    if (err instanceof Error && err.message.includes('UNIQUE')) {
+      res.status(200).json({ tag, alreadyExists: true })
+      return
+    }
+    throw err
+  }
+  res.status(201).json({ tag })
+})
+
+protectedRouter.delete('/candidates/:id/tags/:tag', mutationRateLimit, (req, res) => {
+  // Codex P3: Express has already decoded the route param. Calling
+  // decodeURIComponent again throws `URI malformed` for tags that
+  // contain a literal '%' (e.g. "50%"), making them undeletable.
+  // Just pass the already-decoded value through normalizeTag.
+  const rawParam = Array.isArray(req.params.tag) ? req.params.tag[0] : req.params.tag
+  const tag = normalizeTag(rawParam)
+  if (!tag) {
+    res.status(400).json({ error: 'tag invalide' })
+    return
+  }
+  getDb().prepare('DELETE FROM candidate_tags WHERE candidate_id = ? AND tag = ?').run(req.params.id, tag)
+  res.status(204).end()
+})
+
+protectedRouter.get('/tags', (_req, res) => {
+  const rows = getDb().prepare(`
+    SELECT tag, COUNT(*) AS count
+      FROM candidate_tags
+     GROUP BY tag
+     ORDER BY count DESC, tag ASC
+  `).all() as Array<{ tag: string; count: number }>
+  res.json(rows)
+})
 
 // ═══════════════════════════════════════════════════════════════════════
 // CV Intelligence Phase 10 — shortlist + batch outreach
@@ -3473,6 +3763,298 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
   }
 })
 
+// ─── v5.3 — Resend Inbound webhook (unauthenticated, verified by Svix) ──
+//
+// Closes the "every email in the timeline" promise from the v5 plan.
+// When a candidate replies to a recruiter mail at recrutement@sinapse.nc,
+// Resend Inbound parses the message and POSTs the structured payload
+// here. We:
+//   1. Verify Svix signature (or plain secret in basic mode).
+//   2. Match the From: address against `candidates.email`.
+//   3. For each candidature this candidate has, log a `candidature_events`
+//      row of type='email_received' with the body in `content_md` and
+//      headers/payload snapshot in `email_snapshot`.
+//   4. Emit SSE so any open candidature page surfaces the new event live.
+//
+// DNS work the user must do separately (NOT something this code can
+// automate):
+//   - Set up MX records for the receiving alias on Cloud DNS:
+//       recrutement.sinapse.nc.  IN MX 10  inbound.resend.com.
+//   - Configure the alias as an inbound parse rule in Resend dashboard,
+//     pointing the webhook to https://radar.sinapse.nc/api/recruitment/webhooks/resend-inbound
+//   - Set RESEND_INBOUND_WEBHOOK_SECRET in the cluster secret.
+//
+// Without those steps the endpoint exists but no traffic ever arrives.
+// See docs/inbound-email-setup.md (created in this same PR) for the
+// full DNS + Resend dashboard walkthrough.
+
+const RESEND_INBOUND_WEBHOOK_SECRET = process.env.RESEND_INBOUND_WEBHOOK_SECRET
+
+interface InboundEmailPayload {
+  type?: string
+  data?: {
+    from?: string | { email?: string; name?: string }
+    to?: string[] | string
+    subject?: string
+    text?: string
+    html?: string
+    /** Resend exposes this in two shapes depending on plan / endpoint
+     *  version: a flat key→value map, OR an array of `{name, value}`
+     *  pairs. We handle both via `readAuthResultsHeader`. */
+    headers?: Record<string, string> | Array<{ name?: string; value?: string }>
+    messageId?: string
+    inReplyTo?: string
+    receivedAt?: string
+    attachments?: Array<{ filename?: string; contentType?: string }>
+    /** Authentication results from the receiving MTA (Resend Inbound).
+     *  Shape varies by plan; we accept any of the parsed shapes, the
+     *  aliased one, or the raw `Authentication-Results` header. */
+    spf?: { result?: string }
+    dkim?: { result?: string; domain?: string }
+    dmarc?: { result?: string }
+    auth?: { spf?: string; dkim?: string; dmarc?: string }
+  }
+}
+
+/**
+ * Codex P1 fix (round 2): Svix verification proves the webhook came
+ * from Resend, NOT that the sender owns `data.from`. Treat the From:
+ * identity as verified ONLY when:
+ *
+ *   1. **DMARC pass** — DMARC validates From: alignment with DKIM/SPF.
+ *      This is the strongest single signal.
+ *   2. OR **DKIM pass AND DKIM domain aligned with From: domain** —
+ *      a DKIM signature only proves the signing domain. Without
+ *      domain alignment to the visible `From:`, an attacker can DKIM-
+ *      sign with their own domain and still spoof `From: candidate@
+ *      sinapse.nc` (codex round-2 P1).
+ *
+ * Anything else (SPF only, DKIM with misaligned domain, no signal)
+ * is treated as unverified. The handler 200s and skips the match —
+ * Resend won't retry, the recruiter can audit in the Resend dashboard.
+ */
+function rootDomain(host: string | null | undefined): string | null {
+  if (!host) return null
+  const cleaned = host.trim().toLowerCase().replace(/^.*@/, '')
+  if (!cleaned) return null
+  // Use the last 2 labels for matching ("sinapse.nc" stays whole;
+  // "mail.sinapse.nc" matches "sinapse.nc"). Not perfect for ccTLDs
+  // like .co.uk but covers the recruitment use case.
+  const parts = cleaned.split('.').filter(Boolean)
+  return parts.slice(-2).join('.')
+}
+
+function readAuthResultsHeader(headers: InboundEmailPayload['data'] extends infer D
+  ? D extends { headers?: infer H } ? H : never
+  : never): string | null {
+  if (!headers) return null
+  // Object form: lowercase or canonical key.
+  if (typeof headers === 'object' && !Array.isArray(headers)) {
+    const obj = headers as Record<string, string>
+    return obj['authentication-results'] ?? obj['Authentication-Results'] ?? null
+  }
+  // Array form: [{ name, value }] (Resend Inbound real shape).
+  if (Array.isArray(headers)) {
+    for (const h of headers as Array<{ name?: string; value?: string }>) {
+      if (h?.name && h.name.toLowerCase() === 'authentication-results' && typeof h.value === 'string') {
+        return h.value
+      }
+    }
+  }
+  return null
+}
+
+function isInboundFromVerified(data: NonNullable<InboundEmailPayload['data']>): boolean {
+  const fromAddr = pickEmailAddress(data.from)
+  const fromDomain = rootDomain(fromAddr)
+  if (!fromDomain) return false
+
+  // (1) DMARC pass — strongest signal, From: alignment built-in.
+  const dmarcResult = data.dmarc?.result?.toLowerCase()
+  if (dmarcResult === 'pass') return true
+
+  const authDmarc = data.auth?.dmarc?.toLowerCase() ?? ''
+  if (authDmarc.includes('pass')) return true
+
+  // (2) DKIM pass AND domain alignment with From:.
+  const dkimResult = data.dkim?.result?.toLowerCase()
+  const dkimDomain = rootDomain(data.dkim?.domain)
+  if (dkimResult === 'pass' && dkimDomain && dkimDomain === fromDomain) return true
+
+  // (3) Raw Authentication-Results header — parse for `dmarc=pass` or
+  //     `dkim=pass header.d=<aligned>`.
+  const authHeader = readAuthResultsHeader(data.headers as never) ?? null
+  if (authHeader) {
+    const lower = authHeader.toLowerCase()
+    if (/dmarc\s*=\s*pass/.test(lower)) return true
+    // Try to extract a header.d=<domain> for the dkim=pass token.
+    const dkimMatch = lower.match(/dkim\s*=\s*pass[^;]*?header\.d=([a-z0-9.-]+)/)
+    if (dkimMatch) {
+      const headerDomain = rootDomain(dkimMatch[1])
+      if (headerDomain && headerDomain === fromDomain) return true
+    }
+  }
+
+  return false
+}
+
+function pickEmailAddress(v: unknown): string | null {
+  if (typeof v === 'string') {
+    // Strip "Name <email>" wrapper if present
+    const m = v.match(/<([^>]+)>/)
+    return (m ? m[1] : v).trim().toLowerCase() || null
+  }
+  if (v && typeof v === 'object' && 'email' in v && typeof (v as { email: unknown }).email === 'string') {
+    return ((v as { email: string }).email).trim().toLowerCase() || null
+  }
+  return null
+}
+
+recruitmentRouter.post('/webhooks/resend-inbound', express.raw({ type: 'application/json' }), (req, res) => {
+  if (!RESEND_INBOUND_WEBHOOK_SECRET) {
+    res.status(500).json({ error: 'Inbound webhook secret not configured' })
+    return
+  }
+
+  let payload: InboundEmailPayload
+  const svixId = req.headers['svix-id'] as string | undefined
+  const svixTimestamp = req.headers['svix-timestamp'] as string | undefined
+  const svixSignature = req.headers['svix-signature'] as string | undefined
+
+  if (svixId && svixTimestamp && svixSignature) {
+    try {
+      const rawBody = (req as { rawBody?: string }).rawBody
+        ?? (Buffer.isBuffer(req.body) ? req.body.toString('utf-8') : JSON.stringify(req.body))
+      const wh = new Webhook(RESEND_INBOUND_WEBHOOK_SECRET)
+      payload = wh.verify(rawBody, {
+        'svix-id': svixId,
+        'svix-timestamp': svixTimestamp,
+        'svix-signature': svixSignature,
+      }) as InboundEmailPayload
+    } catch {
+      console.error('[INBOUND_AUTH] Verification failed')
+      res.status(401).json({ error: 'Invalid webhook signature' })
+      return
+    }
+  } else {
+    const secret = req.headers['x-webhook-secret'] || (req.headers['authorization'] as string | undefined)?.replace('Bearer ', '')
+    if (!secret || secret !== RESEND_INBOUND_WEBHOOK_SECRET) {
+      res.status(401).json({ error: 'Invalid webhook secret' })
+      return
+    }
+    payload = Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString('utf-8')) as InboundEmailPayload : (req.body as InboundEmailPayload)
+  }
+
+  const data = payload.data
+  if (!data) {
+    res.status(400).json({ error: 'Missing data field' })
+    return
+  }
+
+  const fromEmail = pickEmailAddress(data.from)
+  if (!fromEmail) {
+    // Empty / unparseable From is a Resend Inbound bug — accept (200) so
+    // they don't retry a permanent failure, but don't log anything.
+    console.warn('[INBOUND] No parseable from address; skipping')
+    res.status(200).json({ ok: true, matched: 0, reason: 'no from' })
+    return
+  }
+
+  // Codex P1: require DKIM/DMARC pass before matching the From address
+  // to a candidate. Without this, an attacker forging a candidate's
+  // address could log fake replies. Fail-closed.
+  if (!isInboundFromVerified(data)) {
+    console.warn(`[INBOUND] Sender authentication failed for ${fromEmail}; refusing to log to candidate timeline`)
+    res.status(200).json({ ok: true, matched: 0, reason: 'sender authentication failed' })
+    return
+  }
+
+  // Match candidate by email (case-insensitive).
+  const candidate = getDb().prepare(
+    'SELECT id, name FROM candidates WHERE LOWER(email) = ?',
+  ).get(fromEmail) as { id: string; name: string } | undefined
+
+  if (!candidate) {
+    // Unmatched: probably a spam reply or someone forwarding. Log and
+    // 200 — no need to retry.
+    console.log(`[INBOUND] No candidate matched for ${fromEmail}`)
+    res.status(200).json({ ok: true, matched: 0, reason: 'no candidate match' })
+    return
+  }
+
+  const subject = typeof data.subject === 'string' ? data.subject.slice(0, 500) : '(sans objet)'
+  const body = typeof data.text === 'string'
+    ? data.text.slice(0, 100_000)
+    : typeof data.html === 'string'
+      ? data.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 100_000)
+      : ''
+
+  const contentMd = `**${escapeMdBold(subject)}**\n\n${body}`.trim()
+
+  const snapshot = JSON.stringify({
+    messageId: data.messageId ?? null,
+    inReplyTo: data.inReplyTo ?? null,
+    from: fromEmail,
+    to: Array.isArray(data.to) ? data.to.join(', ') : data.to ?? null,
+    subject,
+    receivedAt: data.receivedAt ?? new Date().toISOString(),
+    attachments: data.attachments?.map(a => ({ filename: a.filename, contentType: a.contentType })) ?? [],
+  })
+
+  // Find every candidature for this candidate (multi-poste = multiple rows;
+  // we attach the inbound mail to every candidature so it surfaces on
+  // each candidature's timeline).
+  const candidatures = getDb().prepare(
+    'SELECT id, statut FROM candidatures WHERE candidate_id = ?',
+  ).all(candidate.id) as Array<{ id: string; statut: string }>
+
+  if (candidatures.length === 0) {
+    res.status(200).json({ ok: true, matched: 0, reason: 'candidate has no candidatures' })
+    return
+  }
+
+  // Idempotency guard: if we already received this messageId for this
+  // candidature, don't double-log (Resend may retry). Cheap check via
+  // JSON_EXTRACT on the snapshot.
+  const messageId = data.messageId ?? null
+  let logged = 0
+  const insert = getDb().prepare(`
+    INSERT INTO candidature_events (candidature_id, type, content_md, email_snapshot, stage, created_by, notes)
+    VALUES (?, 'email_received', ?, ?, ?, 'inbound', ?)
+  `)
+  const dupCheck = messageId
+    ? getDb().prepare(`
+        SELECT id FROM candidature_events
+         WHERE candidature_id = ? AND type = 'email_received'
+           AND json_extract(email_snapshot, '$.messageId') = ?
+         LIMIT 1
+      `)
+    : null
+
+  for (const cand of candidatures) {
+    if (dupCheck && messageId) {
+      const dup = dupCheck.get(cand.id, messageId) as { id: number } | undefined
+      if (dup) continue
+    }
+    insert.run(cand.id, contentMd.slice(0, 100_000), snapshot, cand.statut, subject)
+    logged++
+    // SSE so open candidature pages refresh live.
+    recruitmentBus.publish('status_changed', {
+      candidatureId: cand.id,
+      statutFrom: cand.statut,
+      statutTo: cand.statut, // unchanged — used as a timeline-refresh ping
+      byUserSlug: 'inbound',
+    })
+  }
+
+  res.status(200).json({ ok: true, matched: candidatures.length, logged })
+})
+
+function escapeMdBold(s: string): string {
+  // Strip ** that would break the leading bold subject line.
+  return s.replace(/\*/g, '∗')
+}
+
 // ─── Resend Webhook (unauthenticated, verified by Svix or plain secret) ──
 
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET
@@ -3909,6 +4491,86 @@ protectedRouter.post('/reports/cross-poste-comparison', (req, res) => {
     roleCategories,
     candidatures: enriched,
     mode: 'cross-poste-baseline',
+  })
+})
+
+// ─── Internal cron endpoints (require shared-token, no user session) ─
+//
+// k8s CronJob hits POST /api/recruitment/jobs/daily-recap once per day
+// at 21:00 UTC (08:00 Pacific/Noumea). Auth: Bearer ${INTERNAL_CRON_TOKEN}.
+// The endpoint is idempotent — running twice in a day just re-sends the
+// digest with the same content.
+recruitmentRouter.post('/jobs/daily-recap', requireInternalToken, async (req, res) => {
+  try {
+    // Codex round-2 P2: when the cron POSTs from inside the cluster,
+    // `req.get('host')` is `skill-radar:8080` — useless in an email
+    // link. Walk the env chain in order of "public-ness":
+    //   1. APP_PUBLIC_ORIGIN  (preferred — set explicitly on prod)
+    //   2. BETTER_AUTH_URL    (always set, points at the user-facing host)
+    //   3. CORS_ORIGIN        (also user-facing)
+    // Last fallback to the request host is only safe in local dev.
+    const baseUrl = process.env.APP_PUBLIC_ORIGIN?.trim()
+      ?? process.env.BETTER_AUTH_URL?.trim()
+      ?? process.env.CORS_ORIGIN?.trim()
+      ?? `${req.protocol}://${req.get('host')}`
+    const result = await sendDailyRecap({ baseUrl })
+    res.json(result)
+  } catch (err) {
+    console.error('[daily-recap] failed:', err)
+    res.status(500).json({ error: 'Daily recap failed', detail: err instanceof Error ? err.message : String(err) })
+  }
+})
+
+/**
+ * Audit endpoint — answers Yolan's "y'en a d'autre?" question.
+ *
+ * Lists candidates whose `ai_suggestions` blob still contains keys that
+ * are NOT in the catalog. Caused by Anthropic CV extraction emitting
+ * skill IDs that don't exist in our skills table (e.g. "oracle" when
+ * the catalog only has "postgresql"). After v5.x, the multipass
+ * reconcile pass filters at write time, so this list shrinks toward
+ * zero — but legacy candidates persist until their CVs are re-extracted
+ * or they reload the form (read-time filter strips on the way out).
+ *
+ * The data is still in the DB; this endpoint just makes it visible so
+ * the catalog owner can decide which keys deserve real catalog entries
+ * vs. genuine hallucinations to ignore.
+ *
+ * Pure read; no mutation.
+ */
+protectedRouter.get('/_audit/unknown-skill-keys', (_req, res) => {
+  const validSkillIds = new Set(
+    getSkillCategories().flatMap(c => c.skills.map(s => s.id))
+  )
+  const rows = getDb().prepare(`
+    SELECT id, name, ai_suggestions
+    FROM candidates
+    WHERE ai_suggestions IS NOT NULL AND ai_suggestions <> '{}'
+  `).all() as { id: string; name: string; ai_suggestions: string }[]
+
+  const candidates: { id: string; name: string; unknownKeys: string[] }[] = []
+  const keyFrequency: Record<string, number> = {}
+
+  for (const row of rows) {
+    const suggestions = safeJsonParse<Record<string, unknown>>(row.ai_suggestions, {})
+    const unknownKeys = Object.keys(suggestions).filter(k => !validSkillIds.has(k))
+    if (unknownKeys.length === 0) continue
+    candidates.push({ id: row.id, name: row.name, unknownKeys })
+    for (const k of unknownKeys) {
+      keyFrequency[k] = (keyFrequency[k] ?? 0) + 1
+    }
+  }
+
+  // Sort frequency descending so the worst drift offenders appear first.
+  const sortedFrequency = Object.fromEntries(
+    Object.entries(keyFrequency).sort((a, b) => b[1] - a[1])
+  )
+
+  res.json({
+    candidatesAffected: candidates.length,
+    totalUnknownKeys: Object.keys(keyFrequency).length,
+    keyFrequency: sortedFrequency,
+    candidates,
   })
 })
 
