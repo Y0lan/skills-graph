@@ -1328,6 +1328,18 @@ export function initDatabase(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
+  // Partial unique index that backstops the inbound-email idempotency
+  // check (codex post-deploy P2). Two simultaneous Resend deliveries
+  // with the same messageId would otherwise both pass the
+  // check-then-insert dup guard. The index lets us use
+  // INSERT OR IGNORE for an atomic dedup at the DB level.
+  // SQLite supports JSON1 expressions in unique indexes since 3.9.
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_candidature_events_inbound_msgid
+    ON candidature_events(candidature_id, json_extract(email_snapshot, '$.messageId'))
+    WHERE type = 'email_received'
+      AND json_extract(email_snapshot, '$.messageId') IS NOT NULL
+  `)
   db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_documents ON candidature_documents(candidature_id)')
 
   // Better Auth tables are created by auth.runMigrations() in index.ts

@@ -2647,6 +2647,9 @@ protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
   const offStageData = recruitmentBus.subscribe('stage_data_changed', (p) => {
     if (p.candidatureId === candidatureId) send('stage_data_changed', p)
   })
+  const offCanal = recruitmentBus.subscribe('canal_changed', (p) => {
+    if (p.candidatureId === candidatureId) send('canal_changed', p)
+  })
 
   // Heartbeat — comment line, ignored by EventSource but keeps proxies happy.
   const heartbeat = setInterval(() => {
@@ -2659,6 +2662,7 @@ protectedRouter.get('/candidatures/:id/events/stream', (req, res) => {
     offExtraction()
     offStatus()
     offStageData()
+    offCanal()
   }
   req.on('close', cleanup)
   req.on('error', cleanup)
@@ -3798,17 +3802,20 @@ interface InboundEmailPayload {
     subject?: string
     text?: string
     html?: string
-    /** Resend exposes this in two shapes depending on plan / endpoint
-     *  version: a flat key→value map, OR an array of `{name, value}`
-     *  pairs. We handle both via `readAuthResultsHeader`. */
+    /** Raw inbound headers as the email arrived. NOT trusted for
+     *  sender authentication — see isInboundFromVerified, which only
+     *  uses Resend\'s own parsed dkim/dmarc/auth fields. Kept around
+     *  in case future code wants to surface the raw headers in audit
+     *  UI. */
     headers?: Record<string, string> | Array<{ name?: string; value?: string }>
     messageId?: string
     inReplyTo?: string
     receivedAt?: string
     attachments?: Array<{ filename?: string; contentType?: string }>
-    /** Authentication results from the receiving MTA (Resend Inbound).
-     *  Shape varies by plan; we accept any of the parsed shapes, the
-     *  aliased one, or the raw `Authentication-Results` header. */
+    /** Authentication results from Resend\'s upstream MTA. Trusted
+     *  because Resend populates these fields from its own verification,
+     *  unlike the raw `headers.Authentication-Results` which is just
+     *  whatever the sender included. */
     spf?: { result?: string }
     dkim?: { result?: string; domain?: string }
     dmarc?: { result?: string }
@@ -3844,30 +3851,19 @@ function rootDomain(host: string | null | undefined): string | null {
   return parts.slice(-2).join('.')
 }
 
-function readAuthResultsHeader(headers: InboundEmailPayload['data'] extends infer D
-  ? D extends { headers?: infer H } ? H : never
-  : never): string | null {
-  if (!headers) return null
-  // Object form: lowercase or canonical key.
-  if (typeof headers === 'object' && !Array.isArray(headers)) {
-    const obj = headers as Record<string, string>
-    return obj['authentication-results'] ?? obj['Authentication-Results'] ?? null
-  }
-  // Array form: [{ name, value }] (Resend Inbound real shape).
-  if (Array.isArray(headers)) {
-    for (const h of headers as Array<{ name?: string; value?: string }>) {
-      if (h?.name && h.name.toLowerCase() === 'authentication-results' && typeof h.value === 'string') {
-        return h.value
-      }
-    }
-  }
-  return null
-}
-
 function isInboundFromVerified(data: NonNullable<InboundEmailPayload['data']>): boolean {
   const fromAddr = pickEmailAddress(data.from)
   const fromDomain = rootDomain(fromAddr)
   if (!fromDomain) return false
+
+  // Trust ONLY Resend\'s own parsed auth results. The raw
+  // `Authentication-Results` header lives in `data.headers`, which is
+  // the email\'s own header set as Resend received it — an attacker
+  // can include a forged `Authentication-Results: ... dmarc=pass`
+  // header in their malicious email and we would have accepted it.
+  // The fields below (data.dmarc, data.dkim, data.auth) are populated
+  // by Resend\'s upstream verification, not by the sender, so they\'re
+  // safe to trust. See codex post-deploy review (P1).
 
   // (1) DMARC pass — strongest signal, From: alignment built-in.
   const dmarcResult = data.dmarc?.result?.toLowerCase()
@@ -3880,20 +3876,6 @@ function isInboundFromVerified(data: NonNullable<InboundEmailPayload['data']>): 
   const dkimResult = data.dkim?.result?.toLowerCase()
   const dkimDomain = rootDomain(data.dkim?.domain)
   if (dkimResult === 'pass' && dkimDomain && dkimDomain === fromDomain) return true
-
-  // (3) Raw Authentication-Results header — parse for `dmarc=pass` or
-  //     `dkim=pass header.d=<aligned>`.
-  const authHeader = readAuthResultsHeader(data.headers as never) ?? null
-  if (authHeader) {
-    const lower = authHeader.toLowerCase()
-    if (/dmarc\s*=\s*pass/.test(lower)) return true
-    // Try to extract a header.d=<domain> for the dkim=pass token.
-    const dkimMatch = lower.match(/dkim\s*=\s*pass[^;]*?header\.d=([a-z0-9.-]+)/)
-    if (dkimMatch) {
-      const headerDomain = rootDomain(dkimMatch[1])
-      if (headerDomain && headerDomain === fromDomain) return true
-    }
-  }
 
   return false
 }
@@ -4013,30 +3995,29 @@ recruitmentRouter.post('/webhooks/resend-inbound', express.raw({ type: 'applicat
     return
   }
 
-  // Idempotency guard: if we already received this messageId for this
-  // candidature, don't double-log (Resend may retry). Cheap check via
-  // JSON_EXTRACT on the snapshot.
+  // Idempotency: when messageId is set, a partial unique index on
+  // (candidature_id, json_extract(email_snapshot, '$.messageId'))
+  // WHERE type='email_received' makes INSERT OR IGNORE atomic — two
+  // overlapping Resend deliveries with the same messageId can\'t both
+  // succeed (codex post-deploy P2 — check-then-insert was racy).
+  // For payloads without a messageId we fall back to a non-IGNORE
+  // insert, accepting that retries may dedup imperfectly in that
+  // edge case.
   const messageId = data.messageId ?? null
   let logged = 0
-  const insert = getDb().prepare(`
+  const insertWithIgnore = getDb().prepare(`
+    INSERT OR IGNORE INTO candidature_events (candidature_id, type, content_md, email_snapshot, stage, created_by, notes)
+    VALUES (?, 'email_received', ?, ?, ?, 'inbound', ?)
+  `)
+  const insertNoDedup = getDb().prepare(`
     INSERT INTO candidature_events (candidature_id, type, content_md, email_snapshot, stage, created_by, notes)
     VALUES (?, 'email_received', ?, ?, ?, 'inbound', ?)
   `)
-  const dupCheck = messageId
-    ? getDb().prepare(`
-        SELECT id FROM candidature_events
-         WHERE candidature_id = ? AND type = 'email_received'
-           AND json_extract(email_snapshot, '$.messageId') = ?
-         LIMIT 1
-      `)
-    : null
 
   for (const cand of candidatures) {
-    if (dupCheck && messageId) {
-      const dup = dupCheck.get(cand.id, messageId) as { id: number } | undefined
-      if (dup) continue
-    }
-    insert.run(cand.id, contentMd.slice(0, 100_000), snapshot, cand.statut, subject)
+    const stmt = messageId ? insertWithIgnore : insertNoDedup
+    const result = stmt.run(cand.id, contentMd.slice(0, 100_000), snapshot, cand.statut, subject)
+    if (result.changes === 0) continue // hit the unique index — already logged
     logged++
     // SSE so open candidature pages refresh live.
     recruitmentBus.publish('status_changed', {

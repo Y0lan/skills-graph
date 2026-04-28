@@ -394,6 +394,16 @@ export default function CandidateDetailPage() {
         setStageDataRefetchSignal(s => s + 1)
       }
     },
+    onCanalChanged: (subscribedId, p) => {
+      // Update the candidatures list so the page-level header
+      // (CandidaturePosteHeader → CanalToggle) re-derives priorNonCabinet
+      // from the fresh canal value. Without this, a stale tab\'s
+      // optimistic state could overwrite a newer canal value with its
+      // old fallback (codex post-deploy P2).
+      setCandidatures(prev => prev.map(c => c.id === subscribedId
+        ? { ...c, canal: p.canalTo }
+        : c))
+    },
   })
 
   // Refresh candidate + candidatures on window focus. The SSE stream only

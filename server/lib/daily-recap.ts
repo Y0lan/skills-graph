@@ -320,7 +320,7 @@ function leadEmails(): string[] {
   if (RECRUITMENT_LEADS.length === 0) return []
   const db = getDb()
   const rows = db.prepare(`
-    SELECT email FROM users WHERE slug IN (${RECRUITMENT_LEADS.map(() => '?').join(',')})
+    SELECT email FROM user WHERE slug IN (${RECRUITMENT_LEADS.map(() => '?').join(',')})
   `).all(...RECRUITMENT_LEADS) as Array<{ email: string }>
   return rows.map(r => r.email).filter((e): e is string => typeof e === 'string' && e.includes('@'))
 }

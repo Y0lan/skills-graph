@@ -25,6 +25,11 @@ export interface CandidatureEventHandlers {
   /** v5.1 — fired when a stage fiche (PATCH /stages/:stage/data) is mutated.
    *  Workspace listens to invalidate the matching `useStageFicheData` query. */
   onStageDataChanged?: (candidatureId: string, payload: { stage: string; updatedAt: string; byUserSlug: string }) => void
+  /** v5.x — fired when a recruiter flips the cabinet/direct toggle.
+   *  Open candidature detail panes + the pipeline page should refetch
+   *  to pick up the new canal value (and let CanalToggle\'s
+   *  priorNonCabinet re-derive from props). */
+  onCanalChanged?: (candidatureId: string, payload: { canalFrom: string; canalTo: string; byUserSlug: string }) => void
 }
 
 export function useCandidatureEventStream(candidatureId: string | undefined, handlers: CandidatureEventHandlers): void {
@@ -78,6 +83,13 @@ export function useCandidatureEventStream(candidatureId: string | undefined, han
         try {
           const data = JSON.parse((e as MessageEvent).data) as { stage: string; updatedAt: string; byUserSlug: string }
           handlersRef.current.onStageDataChanged?.(subscribedId, data)
+        } catch { /* malformed */ }
+      })
+
+      es.addEventListener('canal_changed', (e) => {
+        try {
+          const data = JSON.parse((e as MessageEvent).data) as { canalFrom: string; canalTo: string; byUserSlug: string }
+          handlersRef.current.onCanalChanged?.(subscribedId, data)
         } catch { /* malformed */ }
       })
 

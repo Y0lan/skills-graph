@@ -91,9 +91,9 @@ export default function CandidateFormPage() {
         }
         // Per Yolan (April 2026): the candidate's self-eval form starts
         // EMPTY. The CV-derived ratings on candidates.ai_suggestions are
-        // the recruiter\'s "first glance" preview; they should not bias
+        // the recruiter's "first glance" preview; they should not bias
         // the candidate by appearing as starting answers. Subsumes the
-        // earlier prefill-safety-net logic (oracle drift) — there\'s no
+        // earlier prefill-safety-net logic (oracle drift) — there's no
         // prefill to filter anymore.
         setExistingRatings({ ratings: {}, experience: {}, skippedCategories: [], declinedCategories: [] })
       })

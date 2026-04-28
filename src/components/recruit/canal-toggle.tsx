@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Building2, UserSquare, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -42,6 +42,17 @@ export default function CanalToggle({ candidatureId, canal, onCanalChanged }: Ca
   const [priorNonCabinet, setPriorNonCabinet] = useState<Exclude<Canal, 'cabinet'>>(
     canal !== 'cabinet' ? canal : 'candidature_directe'
   )
+
+  // Re-sync to the latest prop value when the parent refetches (e.g.
+  // after a canal_changed SSE event from another tab). Without this,
+  // a stale tab\'s optimistic state could overwrite a newer canal
+  // value with its old fallback (codex post-deploy P2).
+  useEffect(() => {
+    setOptimistic(canal)
+    if (canal !== 'cabinet') {
+      setPriorNonCabinet(canal)
+    }
+  }, [canal])
 
   const isCabinet = optimistic === 'cabinet'
 
