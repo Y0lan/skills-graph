@@ -104,16 +104,28 @@ describe('PATCH /api/recruitment/candidatures/:id/canal', () => {
     expect(events[0].created_by).toBe('yolan-maldonado')
   })
 
-  it('preserves prior non-cabinet canal on round-trip cabinet → off', async () => {
-    // Frontend remembers the prior canal in component state. The
-    // backend just stores whatever it receives; both site → cabinet
-    // and cabinet → site are pure UPDATEs.
-    const cid = seedCandidature('reseau')
+  it('handles every 4-state transition (cabinet/site/candidature_directe/reseau)', async () => {
+    // 4-state canal picker — recruiter explicitly chooses each value;
+    // the backend just stores whatever it receives. Verify all 4 land
+    // and all 4 → other transitions audit a canal_change row.
+    const cid = seedCandidature('site')
     const app = await buildApp()
-    await supertest(app).patch(`/api/recruitment/candidatures/${cid}/canal`).send({ canal: 'cabinet' })
-    await supertest(app).patch(`/api/recruitment/candidatures/${cid}/canal`).send({ canal: 'reseau' })
-    const row = getDb().prepare('SELECT canal FROM candidatures WHERE id = ?').get(cid) as { canal: string }
-    expect(row.canal).toBe('reseau')
+
+    for (const target of ['cabinet', 'reseau', 'candidature_directe', 'site'] as const) {
+      const res = await supertest(app)
+        .patch(`/api/recruitment/candidatures/${cid}/canal`)
+        .send({ canal: target })
+      expect(res.status).toBe(200)
+      const row = getDb().prepare('SELECT canal FROM candidatures WHERE id = ?').get(cid) as { canal: string }
+      expect(row.canal).toBe(target)
+    }
+
+    const events = getDb().prepare(
+      `SELECT type FROM candidature_events WHERE candidature_id = ?`
+    ).all(cid) as { type: string }[]
+    // Started on site, transitioned through 4 values → 4 audit rows.
+    expect(events.filter(e => e.type === 'canal_change')).toHaveLength(4)
+    expect(events.every(e => e.type === 'canal_change')).toBe(true)
   })
 
   it('rejects invalid canal values', async () => {

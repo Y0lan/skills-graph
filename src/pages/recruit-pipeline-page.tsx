@@ -227,9 +227,11 @@ export default function RecruitPipelinePage() {
   const [filterSearch, setFilterSearch] = useState<string>('')
   const [editingPoste, setEditingPoste] = useState<Poste | null>(null)
   const [filterStatut, setFilterStatut] = useState<string>('all')
-  // v5.x — quick canal filter (cabinet vs direct&autres). Demo ask:
-  // "pouvoir filtrer par celles qui viennent d'un cabinet de recrutement".
-  const [filterCanal, setFilterCanal] = useState<'all' | 'cabinet' | 'direct'>('all')
+  // v5.x — canal filter, 4 distinct values + "all". Refined from the
+  // initial binary cabinet/direct toggle to expose the schema\'s full
+  // 4-state vocabulary (cabinet / sinapse.nc / candidature directe /
+  // réseau) so recruiters can isolate "réseau" candidates etc.
+  const [filterCanal, setFilterCanal] = useState<'all' | 'cabinet' | 'site' | 'candidature_directe' | 'reseau'>('all')
   // v5.x — location filter (Nouméa / NC reste / France / International /
   // Inconnu). Demo ask: "pouvoir filtrer les candidatures par celle qui
   // sont de Nouméa et celle ailleurs de Nouvelle-Calédonie", refined to
@@ -473,8 +475,7 @@ export default function RecruitPipelinePage() {
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
     if (!statutMatchesStageFilter(c.statut, filterStage)) return false
-    if (filterCanal === 'cabinet' && c.canal !== 'cabinet') return false
-    if (filterCanal === 'direct' && c.canal === 'cabinet') return false
+    if (filterCanal !== 'all' && c.canal !== filterCanal) return false
     if (filterLocation !== 'all') {
       const bucket = classifyLocation(
         c.previewProfile?.city ?? null,
@@ -1061,11 +1062,11 @@ export default function RecruitPipelinePage() {
               {filterStatut !== 'all' && chipClear(() => setFilterStatut('all'), 'Statut')}
             </span>
 
-            {/* Canal chip — quick filter cabinet vs direct&autres. Demo
-                ask (April 2026): "pouvoir filtrer par celles qui viennent
-                d\'un cabinet de recrutement". */}
+            {/* Canal chip — 4-state filter exposing the schema\'s full
+                vocabulary. Lets the recruiter isolate any single
+                acquisition channel. */}
             <span className="inline-flex items-stretch">
-              <Select value={filterCanal} onValueChange={(v) => setFilterCanal((v ?? 'all') as 'all' | 'cabinet' | 'direct')}>
+              <Select value={filterCanal} onValueChange={(v) => setFilterCanal((v ?? 'all') as 'all' | 'cabinet' | 'site' | 'candidature_directe' | 'reseau')}>
                 <SelectTrigger
                   className={`${filterCanal === 'all' ? chipEmpty : `${chipActive} rounded-r-none border-r-0`}`}
                   aria-label="Filtrer par canal"
@@ -1073,17 +1074,17 @@ export default function RecruitPipelinePage() {
                   <SelectValue>
                     {filterCanal === 'all' ? (
                       <span className="inline-flex items-center gap-1"><Building2 className="h-3 w-3" />Canal</span>
-                    ) : filterCanal === 'cabinet' ? (
-                      <>Canal <span className="text-muted-foreground">:</span> Cabinet</>
                     ) : (
-                      <>Canal <span className="text-muted-foreground">:</span> Direct &amp; autres</>
+                      <>Canal <span className="text-muted-foreground">:</span> {CANAL_LABELS[filterCanal] ?? filterCanal}</>
                     )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tous les canaux</SelectItem>
-                  <SelectItem value="cabinet">Cabinet de recrutement</SelectItem>
-                  <SelectItem value="direct">Direct &amp; autres (site, candidature directe, réseau)</SelectItem>
+                  <SelectItem value="cabinet">Cabinet</SelectItem>
+                  <SelectItem value="site">sinapse.nc</SelectItem>
+                  <SelectItem value="candidature_directe">Candidature directe</SelectItem>
+                  <SelectItem value="reseau">Réseau</SelectItem>
                 </SelectContent>
               </Select>
               {filterCanal !== 'all' && chipClear(() => setFilterCanal('all'), 'Canal')}

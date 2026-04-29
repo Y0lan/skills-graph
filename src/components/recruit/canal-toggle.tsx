@@ -1,29 +1,46 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Building2, UserSquare, Loader2 } from 'lucide-react'
+import { Building2, Globe, UserSquare, Users, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 /**
- * Cabinet vs Direct toggle for a candidature.
+ * 4-state canal picker for a candidature.
  *
- * Demo ask (April 2026): "tu peux ajouter une case à coché pour qu'on
- * puisse noter les candidats comme venant d'un cabinet de recrutement
- * ou pas au top d'un profil ?". Yolan wants this prominently at the
- * top of the candidature header, not buried in the meta line.
+ * Demo ask (April 2026, refined): Yolan wants to flag a candidate as
+ * coming from a recruitment cabinet at the top of the profile, AND
+ * distinguish the other three sources (sinapse.nc website, candidature
+ * directe, réseau) — not just "cabinet vs not".
+ *
+ * Schema: `candidatures.canal` is CHECK-constrained to the 4 values.
+ * The PATCH endpoint accepts any of them; this picker just exposes
+ * them as a compact dropdown that fits inline in the header.
  *
  * Design choices:
- * - Two-segment lucide-icon toggle (no emojis, codex P19 — match the
- *   rest of the recruit UI).
- * - Toggling cabinet → off remembers the prior canal in component
- *   state so we can restore site/réseau/candidature_directe rather
- *   than always defaulting (codex P12).
- * - Optimistic update; on server error we toast + roll back.
- *
- * The PATCH endpoint emits a `canal_change` event on the SSE bus so
- * the pipeline page picks up the change live.
+ * - Compact `<Select>` matching the pipeline filter chip style. Lucide
+ *   icons keep the active value scannable at a glance (no emojis per
+ *   the existing UI convention).
+ * - Optimistic update; rollback + toast on server error.
+ * - useEffect re-syncs `optimistic` from the prop so an SSE
+ *   `canal_changed` event from another tab refreshes this one\'s
+ *   visible state without losing user input.
  */
 
 type Canal = 'cabinet' | 'site' | 'candidature_directe' | 'reseau'
+
+const CANAL_OPTIONS: { value: Canal; label: string; Icon: typeof Building2 }[] = [
+  { value: 'cabinet',             label: 'Cabinet',             Icon: Building2 },
+  { value: 'site',                label: 'sinapse.nc',          Icon: Globe },
+  { value: 'candidature_directe', label: 'Candidature directe', Icon: UserSquare },
+  { value: 'reseau',              label: 'Réseau',              Icon: Users },
+]
+
+const ICON_BY_CANAL: Record<Canal, typeof Building2> = Object.fromEntries(
+  CANAL_OPTIONS.map(o => [o.value, o.Icon])
+) as Record<Canal, typeof Building2>
+
+const LABEL_BY_CANAL: Record<Canal, string> = Object.fromEntries(
+  CANAL_OPTIONS.map(o => [o.value, o.label])
+) as Record<Canal, string>
 
 export interface CanalToggleProps {
   candidatureId: string
@@ -36,29 +53,18 @@ export interface CanalToggleProps {
 export default function CanalToggle({ candidatureId, canal, onCanalChanged }: CanalToggleProps) {
   const [optimistic, setOptimistic] = useState<Canal>(canal)
   const [submitting, setSubmitting] = useState(false)
-  // Remember the prior non-cabinet canal so toggling cabinet → off can
-  // restore it. If we never saw a non-cabinet value, default to
-  // candidature_directe (the canonical "not from a cabinet" bucket).
-  const [priorNonCabinet, setPriorNonCabinet] = useState<Exclude<Canal, 'cabinet'>>(
-    canal !== 'cabinet' ? canal : 'candidature_directe'
-  )
 
   // Re-sync to the latest prop value when the parent refetches (e.g.
-  // after a canal_changed SSE event from another tab). Without this,
-  // a stale tab\'s optimistic state could overwrite a newer canal
-  // value with its old fallback (codex post-deploy P2).
+  // after a canal_changed SSE event from another tab). Prevents a
+  // stale tab\'s optimistic state from overwriting a newer canal
+  // value (codex post-deploy P2).
   useEffect(() => {
     setOptimistic(canal)
-    if (canal !== 'cabinet') {
-      setPriorNonCabinet(canal)
-    }
   }, [canal])
 
-  const isCabinet = optimistic === 'cabinet'
-
-  const patch = useCallback(async (next: Canal) => {
+  const patch = useCallback(async (target: Canal) => {
     setSubmitting(true)
-    setOptimistic(next)
+    setOptimistic(target)
     try {
       const r = await fetch(
         `/api/recruitment/candidatures/${encodeURIComponent(candidatureId)}/canal`,
@@ -66,7 +72,7 @@ export default function CanalToggle({ candidatureId, canal, onCanalChanged }: Ca
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ canal: next }),
+          body: JSON.stringify({ canal: target }),
         },
       )
       if (!r.ok) {
@@ -84,60 +90,36 @@ export default function CanalToggle({ candidatureId, canal, onCanalChanged }: Ca
     }
   }, [candidatureId, canal, onCanalChanged])
 
-  const onClickCabinet = useCallback(() => {
-    if (submitting || isCabinet) return
-    // Going to cabinet: remember the current canal as the fallback for
-    // a future toggle-off (so site stays site, réseau stays réseau).
-    // The early return guarantees optimistic !== 'cabinet' here.
-    setPriorNonCabinet(optimistic as Exclude<Canal, 'cabinet'>)
-    void patch('cabinet')
-  }, [submitting, isCabinet, optimistic, patch])
+  const onChange = useCallback((next: Canal | null) => {
+    if (!next || next === optimistic) return
+    void patch(next)
+  }, [optimistic, patch])
 
-  const onClickDirect = useCallback(() => {
-    if (submitting || !isCabinet) return
-    void patch(priorNonCabinet)
-  }, [submitting, isCabinet, priorNonCabinet, patch])
+  const ActiveIcon = ICON_BY_CANAL[optimistic]
 
   return (
-    <div
-      className="inline-flex items-center rounded-md border border-border/60 bg-muted/20 p-0.5 text-xs"
-      role="group"
-      aria-label="Canal d'acquisition du candidat"
-    >
-      <button
-        type="button"
-        onClick={onClickCabinet}
-        disabled={submitting}
-        aria-pressed={isCabinet}
-        aria-label="Cabinet de recrutement"
-        title="Candidat venu via un cabinet de recrutement"
-        className={cn(
-          'inline-flex items-center gap-1 rounded px-2 py-1 transition-colors',
-          isCabinet
-            ? 'bg-card text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground',
-        )}
+    <Select value={optimistic} onValueChange={onChange} disabled={submitting}>
+      <SelectTrigger
+        className="h-7 px-2.5 text-xs gap-1.5 border-border/60 bg-muted/20 hover:bg-muted/30 transition-colors"
+        aria-label="Canal d'acquisition du candidat"
       >
-        {submitting && isCabinet ? <Loader2 className="h-3 w-3 animate-spin" /> : <Building2 className="h-3 w-3" />}
-        Cabinet
-      </button>
-      <button
-        type="button"
-        onClick={onClickDirect}
-        disabled={submitting}
-        aria-pressed={!isCabinet}
-        aria-label="Direct (site, candidature directe ou réseau)"
-        title="Candidat venu en direct (site, candidature directe ou réseau)"
-        className={cn(
-          'inline-flex items-center gap-1 rounded px-2 py-1 transition-colors',
-          !isCabinet
-            ? 'bg-card text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground',
+        {submitting ? (
+          <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+        ) : (
+          <ActiveIcon className="h-3 w-3 shrink-0" />
         )}
-      >
-        {submitting && !isCabinet ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserSquare className="h-3 w-3" />}
-        Direct
-      </button>
-    </div>
+        <SelectValue>{LABEL_BY_CANAL[optimistic]}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {CANAL_OPTIONS.map(({ value, label, Icon }) => (
+          <SelectItem key={value} value={value}>
+            <span className="inline-flex items-center gap-2">
+              <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+              {label}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
