@@ -2,7 +2,13 @@ import express, { Router } from 'express'
 import crypto from 'crypto'
 import { Readable } from 'stream'
 import busboy from 'busboy'
-import rateLimit from 'express-rate-limit'
+import {
+  intakeRateLimit,
+  mutationRateLimit,
+  uploadRateLimit,
+  heavyRateLimit,
+  recalcRateLimit,
+} from '../lib/rate-limits.js'
 import Anthropic from '@anthropic-ai/sdk'
 import archiver from 'archiver'
 import { getDb } from '../lib/db.js'
@@ -12,6 +18,18 @@ import { previewizeEmailHtml } from '../lib/brand.js'
 import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown, calculatePosteCompatibility, calculateEquipeCompatibility } from '../lib/compatibility.js'
 import { rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
 import { loadEffectiveRatings, mergeEffectiveRatings } from '../lib/effective-ratings.js'
+import { buildPreview } from '../lib/preview-builder.js'
+import {
+  AI_EMAIL_SYSTEM_PROMPT,
+  getEmailPrompt,
+  recordDeliverabilityEvent,
+} from '../lib/email-helpers.js'
+import {
+  type InboundEmailPayload,
+  pickEmailAddress,
+  isInboundFromVerified,
+  escapeMdBold,
+} from '../lib/email-inbound-helpers.js'
 import { extractPosteRequirements, MissingApiKeyError, type PosteRequirement } from '../lib/poste-requirements-extraction.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip, triggerDocumentScan } from '../lib/document-service.js'
@@ -106,45 +124,8 @@ function parseMultipartIntake(
 export const recruitmentRouter = Router()
 
 // ─── Public intake endpoint (from Drupal webhook) ──────────────────
-const intakeRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de candidatures. Réessayez dans une minute.' },
-})
-
-const mutationRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
-})
-
-const uploadRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de fichiers. Réessayez dans une minute.' },
-})
-
-const heavyRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
-})
-
-const recalcRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 2,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Recalcul en cours. Réessayez dans une minute.' },
-})
+// Rate limiters live in lib/rate-limits.ts so the post-split route
+// submodules can share one canonical set of buckets.
 
 const WEBHOOK_SECRET = process.env.DRUPAL_WEBHOOK_SECRET
 
@@ -679,68 +660,8 @@ protectedRouter.get('/candidatures', (req, res) => {
   const skillRows = getDb().prepare('SELECT id, label FROM skills').all() as { id: string; label: string }[]
   const skillLabelById = new Map(skillRows.map(s => [s.id, s.label]))
 
-  type PreviewProfile = {
-    city: string | null
-    country: string | null
-    currentRole: string | null
-    currentCompany: string | null
-    totalExperienceYears: number | null
-    noticePeriodDays: number | null
-    topSkills: Array<{ skillId: string; skillLabel: string; rating: number }>
-  } | null
-
-  const buildPreview = (
-    aiProfileRaw: string | null,
-    roleAwareRaw: string | null,
-    baselineRaw: string | null,
-    manualRaw: string | null,
-  ): PreviewProfile => {
-    // Effective Ratings Module — current-poste mode. Was previously
-    // an either/or (roleAware OR baseline), which silently dropped
-    // both the AI baseline (when role-aware was non-empty) and the
-    // candidate\'s manual ratings (always — they weren\'t fetched).
-    // The preview profile\'s "topSkills" now agrees with the score
-    // computed against the candidature.
-    const { ratings } = mergeEffectiveRatings(
-      { ai: baselineRaw, roleAware: roleAwareRaw, manual: manualRaw },
-      'current-poste',
-    )
-
-    const hasAnyProfile = aiProfileRaw !== null && aiProfileRaw !== ''
-    const hasAnyRatings = Object.keys(ratings).length > 0
-    if (!hasAnyProfile && !hasAnyRatings) return null
-
-    const aiProfile = hasAnyProfile ? safeJsonParse<Record<string, unknown>>(aiProfileRaw, {}) : {}
-    const location = (aiProfile?.location ?? {}) as Record<string, { value?: unknown }>
-    const currentRole = (aiProfile?.currentRole ?? {}) as Record<string, { value?: unknown }>
-    const availability = (aiProfile?.availability ?? {}) as Record<string, { value?: unknown }>
-    const totalExp = (aiProfile?.totalExperienceYears ?? {}) as { value?: unknown }
-
-    const topSkills = Object.entries(ratings)
-      .filter(([, r]) => typeof r === 'number' && r > 0)
-      .map(([skillId, rating]) => ({
-        skillId,
-        skillLabel: skillLabelById.get(skillId) ?? skillId,
-        rating: rating as number,
-      }))
-      .sort((a, b) => b.rating - a.rating)
-      .slice(0, 3)
-
-    const asString = (v: unknown): string | null =>
-      typeof v === 'string' && v.length > 0 ? v : null
-    const asNumber = (v: unknown): number | null =>
-      typeof v === 'number' && Number.isFinite(v) ? v : null
-
-    return {
-      city: asString(location.city?.value),
-      country: asString(location.country?.value),
-      currentRole: asString(currentRole.role?.value),
-      currentCompany: asString(currentRole.company?.value),
-      totalExperienceYears: asNumber(totalExp.value),
-      noticePeriodDays: asNumber(availability.noticePeriodDays?.value),
-      topSkills,
-    }
-  }
+  // PreviewProfile shape + builder live in lib/preview-builder.ts so
+  // any future route that surfaces a candidature row can reuse them.
 
   res.json(rows.map(r => ({
     id: r.id,
@@ -766,7 +687,13 @@ protectedRouter.get('/candidatures', (req, res) => {
     lastEventAt: r.last_event_at,
     enteredStatusAt: r.entered_status_at ?? r.created_at,
     docsSlotCount: r.docs_slot_count ?? 0,
-    previewProfile: buildPreview(r.ai_profile, r.role_aware_suggestions, r.ai_suggestions, r.manual_ratings),
+    previewProfile: buildPreview({
+      aiProfileRaw: r.ai_profile,
+      roleAwareRaw: r.role_aware_suggestions,
+      baselineRaw: r.ai_suggestions,
+      manualRaw: r.manual_ratings,
+      skillLabelById,
+    }),
   })))
 })
 
@@ -3567,42 +3494,9 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
 })
 
 // ─── AI Email Draft ─────────────────────────────────────────────────
-
-const AI_EMAIL_SYSTEM_PROMPT = `Tu es un recruteur professionnel chez SINAPSE, une ESN basée en Nouvelle-Calédonie. Rédige des emails professionnels en français. Sois chaleureux mais professionnel. Ne fabrique pas de détails sur le candidat qui ne sont pas dans le contexte fourni.
-
-Réponds au format suivant exactement :
-SUJET: <sujet de l'email>
-CORPS:
-<corps de l'email en texte simple>`
-
-function stripPii(text: string | undefined | null): string {
-  if (!text) return ''
-  return text
-    .replace(/[\w.-]+@[\w.-]+\.\w+/g, '[email masqué]')
-    .replace(/(\+?\d[\d\s.-]{7,})/g, '[téléphone masqué]')
-}
-
-function getEmailPrompt(statut: string, candidateName: string, role: string, candidateContext?: string): string {
-  const contextBlock = candidateContext
-    ? `\n\nContexte candidat :\n${stripPii(candidateContext).slice(0, 4000)}`
-    : ''
-
-  switch (statut) {
-    case 'refuse':
-      return `Rédige un email de refus poli pour ${candidateName}, candidat(e) au poste de ${role}. Remercie pour le temps consacré, sois empathique mais clair.${contextBlock}`
-    case 'embauche':
-      return `Rédige un email de bienvenue/offre pour ${candidateName}, recruté(e) au poste de ${role}. Félicite et montre l'enthousiasme de l'équipe.${contextBlock}`
-    case 'proposition':
-      return `Rédige un email de proposition d'embauche pour ${candidateName} au poste de ${role}. Exprime l'intérêt et invite à discuter des modalités.${contextBlock}`
-    case 'preselectionne':
-      return `Rédige un email informant ${candidateName} que sa candidature au poste de ${role} a été présélectionnée. Bonne nouvelle, prochaines étapes à venir.${contextBlock}`
-    case 'entretien_1':
-    case 'entretien_2':
-      return `Rédige un email de convocation à un entretien pour ${candidateName}, candidat(e) au poste de ${role}. Invite à proposer des créneaux.${contextBlock}`
-    default:
-      return `Rédige un email de mise à jour de statut pour ${candidateName}, candidat(e) au poste de ${role}. Le statut passe à "${statut}".${contextBlock}`
-  }
-}
+// AI_EMAIL_SYSTEM_PROMPT, stripPii, getEmailPrompt live in
+// lib/email-helpers.ts so the post-split transitions.ts submodule
+// can import them without forking the prompt template.
 
 protectedRouter.post('/ai-email-draft', heavyRateLimit, async (req, res) => {
   const { statut, candidateName, role, candidateContext } = req.body
@@ -3819,103 +3713,10 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
 
 const RESEND_INBOUND_WEBHOOK_SECRET = process.env.RESEND_INBOUND_WEBHOOK_SECRET
 
-interface InboundEmailPayload {
-  type?: string
-  data?: {
-    from?: string | { email?: string; name?: string }
-    to?: string[] | string
-    subject?: string
-    text?: string
-    html?: string
-    /** Raw inbound headers as the email arrived. NOT trusted for
-     *  sender authentication — see isInboundFromVerified, which only
-     *  uses Resend\'s own parsed dkim/dmarc/auth fields. Kept around
-     *  in case future code wants to surface the raw headers in audit
-     *  UI. */
-    headers?: Record<string, string> | Array<{ name?: string; value?: string }>
-    messageId?: string
-    inReplyTo?: string
-    receivedAt?: string
-    attachments?: Array<{ filename?: string; contentType?: string }>
-    /** Authentication results from Resend\'s upstream MTA. Trusted
-     *  because Resend populates these fields from its own verification,
-     *  unlike the raw `headers.Authentication-Results` which is just
-     *  whatever the sender included. */
-    spf?: { result?: string }
-    dkim?: { result?: string; domain?: string }
-    dmarc?: { result?: string }
-    auth?: { spf?: string; dkim?: string; dmarc?: string }
-  }
-}
-
-/**
- * Codex P1 fix (round 2): Svix verification proves the webhook came
- * from Resend, NOT that the sender owns `data.from`. Treat the From:
- * identity as verified ONLY when:
- *
- *   1. **DMARC pass** — DMARC validates From: alignment with DKIM/SPF.
- *      This is the strongest single signal.
- *   2. OR **DKIM pass AND DKIM domain aligned with From: domain** —
- *      a DKIM signature only proves the signing domain. Without
- *      domain alignment to the visible `From:`, an attacker can DKIM-
- *      sign with their own domain and still spoof `From: candidate@
- *      sinapse.nc` (codex round-2 P1).
- *
- * Anything else (SPF only, DKIM with misaligned domain, no signal)
- * is treated as unverified. The handler 200s and skips the match —
- * Resend won't retry, the recruiter can audit in the Resend dashboard.
- */
-function rootDomain(host: string | null | undefined): string | null {
-  if (!host) return null
-  const cleaned = host.trim().toLowerCase().replace(/^.*@/, '')
-  if (!cleaned) return null
-  // Use the last 2 labels for matching ("sinapse.nc" stays whole;
-  // "mail.sinapse.nc" matches "sinapse.nc"). Not perfect for ccTLDs
-  // like .co.uk but covers the recruitment use case.
-  const parts = cleaned.split('.').filter(Boolean)
-  return parts.slice(-2).join('.')
-}
-
-function isInboundFromVerified(data: NonNullable<InboundEmailPayload['data']>): boolean {
-  const fromAddr = pickEmailAddress(data.from)
-  const fromDomain = rootDomain(fromAddr)
-  if (!fromDomain) return false
-
-  // Trust ONLY Resend\'s own parsed auth results. The raw
-  // `Authentication-Results` header lives in `data.headers`, which is
-  // the email\'s own header set as Resend received it — an attacker
-  // can include a forged `Authentication-Results: ... dmarc=pass`
-  // header in their malicious email and we would have accepted it.
-  // The fields below (data.dmarc, data.dkim, data.auth) are populated
-  // by Resend\'s upstream verification, not by the sender, so they\'re
-  // safe to trust. See codex post-deploy review (P1).
-
-  // (1) DMARC pass — strongest signal, From: alignment built-in.
-  const dmarcResult = data.dmarc?.result?.toLowerCase()
-  if (dmarcResult === 'pass') return true
-
-  const authDmarc = data.auth?.dmarc?.toLowerCase() ?? ''
-  if (authDmarc.includes('pass')) return true
-
-  // (2) DKIM pass AND domain alignment with From:.
-  const dkimResult = data.dkim?.result?.toLowerCase()
-  const dkimDomain = rootDomain(data.dkim?.domain)
-  if (dkimResult === 'pass' && dkimDomain && dkimDomain === fromDomain) return true
-
-  return false
-}
-
-function pickEmailAddress(v: unknown): string | null {
-  if (typeof v === 'string') {
-    // Strip "Name <email>" wrapper if present
-    const m = v.match(/<([^>]+)>/)
-    return (m ? m[1] : v).trim().toLowerCase() || null
-  }
-  if (v && typeof v === 'object' && 'email' in v && typeof (v as { email: unknown }).email === 'string') {
-    return ((v as { email: string }).email).trim().toLowerCase() || null
-  }
-  return null
-}
+// InboundEmailPayload + rootDomain + pickEmailAddress +
+// isInboundFromVerified live in lib/email-inbound-helpers.ts. Codex
+// post-plan P1 #4 — kept the post-split admin.ts submodule from
+// forking copies.
 
 recruitmentRouter.post('/webhooks/resend-inbound', express.raw({ type: 'application/json' }), (req, res) => {
   if (!RESEND_INBOUND_WEBHOOK_SECRET) {
@@ -4056,10 +3857,7 @@ recruitmentRouter.post('/webhooks/resend-inbound', express.raw({ type: 'applicat
   res.status(200).json({ ok: true, matched: candidatures.length, logged })
 })
 
-function escapeMdBold(s: string): string {
-  // Strip ** that would break the leading bold subject line.
-  return s.replace(/\*/g, '∗')
-}
+// escapeMdBold lives in lib/email-inbound-helpers.ts.
 
 // ─── Resend Webhook (unauthenticated, verified by Svix or plain secret) ──
 
@@ -4223,45 +4021,7 @@ recruitmentRouter.post('/webhooks/resend', express.raw({ type: 'application/json
   res.status(200).json({ ok: true })
 })
 
-/** Shared helper: look up the originating email_sent event by messageId, then
- * insert a deliverability event (open / click / delivered / bounced / etc.)
- * with idempotency by messageId in notes. */
-function recordDeliverabilityEvent(
-  payload: Record<string, unknown>,
-  eventType: 'email_clicked' | 'email_delivered' | 'email_complained' | 'email_delay' | 'email_failed',
-  buildNotes: (emailId: string) => string,
-): void {
-  try {
-    const data = payload.data as Record<string, unknown>
-    const emailId = data.email_id as string | undefined
-    if (!emailId) return
-
-    const found = getDb().prepare(`
-      SELECT ce.candidature_id
-      FROM candidature_events ce
-      WHERE ce.type IN ('email_sent', 'email_scheduled')
-      AND json_extract(ce.email_snapshot, '$.messageId') = ?
-    `).get(emailId) as { candidature_id: string } | undefined
-
-    if (!found) return
-
-    const existing = getDb().prepare(`
-      SELECT id FROM candidature_events
-      WHERE candidature_id = ? AND type = ?
-      AND notes LIKE ?
-    `).get(found.candidature_id, eventType, `%${emailId}%`) as { id: number } | undefined
-
-    if (!existing) {
-      getDb().prepare(`
-        INSERT INTO candidature_events (candidature_id, type, notes, created_by)
-        VALUES (?, ?, ?, 'system')
-      `).run(found.candidature_id, eventType, buildNotes(emailId))
-      console.log(`[Webhook] Recorded ${eventType} for candidature ${found.candidature_id}`)
-    }
-  } catch {
-    console.error(`[WEBHOOK] Error processing ${eventType} event`)
-  }
-}
+// recordDeliverabilityEvent lives in lib/email-helpers.ts.
 
 // ─── Pipeline Health Check ──────────────────────────────────────────
 
