@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge'
 import InitialsBadge from '@/components/ui/initials-badge'
-import { Mail, Phone, MapPin, Globe, Github } from 'lucide-react'
-import { formatPhone } from '@/lib/utils'
+import { Mail, Phone, MapPin, Globe, Github, ChevronDown, FileText } from 'lucide-react'
+import { formatPhone, cn } from '@/lib/utils'
 import type { AiProfile } from './candidate-profile-card'
 
 interface CandidateLike {
@@ -117,9 +117,21 @@ export default function CandidateIdentityStrip({
                 onClick={onToggleProfile}
                 aria-expanded={profileExpanded}
                 aria-controls="candidate-profile-disclosure"
-                className="ml-auto text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                className={cn(
+                  'ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
+                  profileExpanded
+                    ? 'border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                    : 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/20',
+                )}
               >
-                {profileExpanded ? 'Masquer le profil détaillé ▾' : 'Voir le profil détaillé ▸'}
+                <FileText className="h-3.5 w-3.5" />
+                {profileExpanded ? 'Masquer message + profil' : 'Voir message + profil détaillé'}
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 transition-transform',
+                    profileExpanded && 'rotate-180',
+                  )}
+                />
               </button>
             )}
           </div>

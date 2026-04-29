@@ -98,7 +98,10 @@ export default function NoteEditDialog({
           maxLength={5000}
           disabled={saving}
           autoFocus
-          className="text-sm resize-y"
+          // Cap height at ~50vh so a long pasted note doesn\'t balloon
+          // the textarea past the viewport — Save / Annuler must stay
+          // visible without scrolling. Recruiter feedback (April 2026).
+          className="text-sm resize-y max-h-[50vh] overflow-y-auto"
           placeholder="Écrivez votre note en markdown…"
         />
         <DialogFooter className="gap-2 sm:gap-2">

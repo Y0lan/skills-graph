@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -326,6 +326,58 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
       return { ...prev, [c.id]: { ...entry, events: entry.events.map(e => e.id === real.id ? real : e) } }
     })
   }
+
+  const removeEvent = (eventId: number) => {
+    setEvents(prev => prev.filter(e => e.id !== eventId))
+    setCandidatureDataMap(prev => {
+      const entry = prev[c.id]
+      if (!entry) return prev
+      return { ...prev, [c.id]: { ...entry, events: entry.events.filter(e => e.id !== eventId) } }
+    })
+  }
+
+  /**
+   * Delete a note event after confirmation. Optimistic: drop from
+   * local state immediately, rollback if the server call fails.
+   * Recruiter feedback (April 2026) — without this they could only
+   * edit a wrong note, not remove it.
+   */
+  const handleDeleteNote = useCallback(async (event: CandidatureEvent) => {
+    if (typeof event.id !== 'number') return
+    if (!window.confirm('Supprimer cette note ? Cette action est irréversible.')) return
+    const eventId = event.id
+    // Snapshot for rollback before optimistic removal.
+    const snapshot = event
+    removeEvent(eventId)
+    try {
+      const res = await fetch(
+        `/api/recruitment/candidatures/${encodeURIComponent(c.id)}/events/note/${encodeURIComponent(String(eventId))}`,
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${res.status}`)
+      }
+      toast.success('Note supprimée')
+    } catch (err) {
+      // Rollback BOTH the flat events state AND candidatureDataMap.
+      // The map is the source of truth after the user switches
+      // candidatures and returns; if we only restore setEvents the
+      // note disappears on next visit (coderabbit catch).
+      const reinsert = (list: CandidatureEvent[]) => [snapshot, ...list].sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      setEvents(prev => reinsert(prev))
+      setCandidatureDataMap(prev => {
+        const entry = prev[c.id]
+        if (!entry) return prev
+        return { ...prev, [c.id]: { ...entry, events: reinsert(entry.events) } }
+      })
+      toast.error(err instanceof Error ? err.message : 'Erreur — note non supprimée')
+    }
+  // removeEvent is locally-defined and stable across renders; eslint doesn\'t see that.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.id])
   const replaceDocumentEventId = (docId: string, eventId: number | null) => {
     setDocuments(prev => prev.map(d => d.id === docId ? { ...d, event_id: eventId } : d))
     setCandidatureDataMap(prev => {
@@ -787,6 +839,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
             onRollbackTemp: rollbackTempEvent,
           }}
           onEditNote={setEditingNote}
+          onDeleteNote={handleDeleteNote}
           onReassignDoc={setReassigningDoc}
           filter={timelineFilter}
           candidatureId={c.id}

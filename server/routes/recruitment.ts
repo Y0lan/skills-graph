@@ -1412,6 +1412,47 @@ protectedRouter.patch('/candidatures/:id/events/note/:eventId', mutationRateLimi
 })
 
 /**
+ * Delete a manual note from a candidature\'s timeline. Companion to
+ * the PATCH endpoint above: same scope (only `type='note'` rows
+ * deletable), same auth (requireLead via protectedRouter), same
+ * rate-limit bucket. Documents that point at this event via
+ * `event_id` get their FK cleared instead of cascading-deleting the
+ * doc itself.
+ *
+ * Recruiter feedback (April 2026): the timeline only had an edit
+ * button, not delete — recruiters who pasted the wrong content into
+ * a note had to live with the typo or rewrite it as a no-op edit.
+ */
+protectedRouter.delete('/candidatures/:id/events/note/:eventId', mutationRateLimit, (req, res) => {
+  const eventId = Number(req.params.eventId)
+  if (!Number.isFinite(eventId) || eventId <= 0) {
+    res.status(400).json({ error: 'eventId invalide' })
+    return
+  }
+
+  const existing = getDb().prepare(`
+    SELECT id, type, candidature_id FROM candidature_events WHERE id = ?
+  `).get(eventId) as { id: number; type: string; candidature_id: string } | undefined
+  if (!existing || existing.candidature_id !== req.params.id) {
+    res.status(404).json({ error: 'Note introuvable' })
+    return
+  }
+  if (existing.type !== 'note') {
+    res.status(400).json({ error: 'Seules les notes peuvent être supprimées' })
+    return
+  }
+
+  // Detach any documents that reference this note (the doc itself
+  // stays, just gets reassigned by its time-window heuristic).
+  getDb().transaction(() => {
+    getDb().prepare('UPDATE candidature_documents SET event_id = NULL WHERE event_id = ?').run(eventId)
+    getDb().prepare('DELETE FROM candidature_events WHERE id = ?').run(eventId)
+  })()
+
+  res.json({ ok: true, deletedId: eventId })
+})
+
+/**
  * Reassign a document to a different stage by repointing its `event_id`
  * FK. The recruiter chose "Déplacer vers une autre étape" on a doc card.
  * Server picks the most recent status_change event matching the requested

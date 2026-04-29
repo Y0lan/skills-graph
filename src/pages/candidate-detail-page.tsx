@@ -741,6 +741,23 @@ export default function CandidateDetailPage() {
 
         {/* ══════════ ABOVE THE FOLD ══════════ */}
 
+        {/* v5.x — candidature posture header at the very top: Yolan
+            wants to know "what poste, what statut, what canal, when"
+            from the first glance, before the identity card. Was
+            previously sandwiched between the application message and
+            the profile disclosure; recruiter feedback was that it
+            disappeared on long pages. Now it's the page-level banner. */}
+        {selectedCandidature && (
+          <CandidaturePosteHeader
+            candidature={selectedCandidature}
+            isPending={!candidate.submittedAt}
+            submitted={!!candidate.submittedAt}
+            analysed={!!candidate.submittedAt && !!candidate.aiReport}
+            events={selectedEvents}
+            stageDataRefetchSignal={stageDataRefetchSignal}
+          />
+        )}
+
         {/* Identity hero — avatar + name + contact + top skills + meta. */}
         <CandidateIdentityStrip
           candidate={candidate}
@@ -759,41 +776,30 @@ export default function CandidateDetailPage() {
           </div>
         )}
 
-        {/* v5.1.x A.3 (re-positioned per codex /design-review):
-            MESSAGE DU CANDIDAT lives at the TOP, between the
-            tags bar and the profile-card disclosure — visible in
-            the 5-second scan, never lost between operational rails. */}
-        {candidate && (
+        {/* Fallback for candidates with NO extracted profile yet —
+            the message still needs to surface above the operational
+            workspace. Once the CV is extracted, the message folds
+            into the profile disclosure below. */}
+        {!candidate.aiProfile && candidate?.notes && (
           <CandidateApplicationMessage
             notes={candidate.notes ?? null}
             filterPosteTitre={selectedCandidature?.posteTitre ?? ''}
           />
         )}
 
-        {/* v5.2 (post-design-review): candidature posture header lifted
-            from inside <CandidatureWorkspace> to here, so the recruiter
-            sees "Dev Java Senior · Postulé · sinapse.nc · 24/04 · YM
-            Activité il y a 3 j" within the first viewport. The
-            workspace below keeps the operational rails (DOSSIER,
-            command bar, scores, historique). */}
-        {selectedCandidature && (
-          <CandidaturePosteHeader
-            candidature={selectedCandidature}
-            isPending={!candidate.submittedAt}
-            submitted={!!candidate.submittedAt}
-            analysed={!!candidate.submittedAt && !!candidate.aiReport}
-            events={selectedEvents}
-            stageDataRefetchSignal={stageDataRefetchSignal}
-          />
-        )}
-
-        {/* Full LinkedIn-style profile card — lives RIGHT UNDER the
-            identity strip as a disclosure so it's easy to find but
-            doesn't clutter the scan. The id matches `aria-controls` on
-            the toggle in CandidateIdentityStrip so screen readers can
-            navigate the disclosure properly. */}
+        {/* Full LinkedIn-style profile card + the application message
+            live INSIDE the disclosure when the profile exists.
+            Recruiter feedback (April 2026): when the message was at
+            the top and ran long, the "voir le profil détaillé"
+            toggle clicked but produced no visible change unless the
+            user scrolled past the message. Fold them together: one
+            toggle, both surfaces. */}
         {candidate.aiProfile && profileExpanded && (
-          <div className="mb-6" id="candidate-profile-disclosure">
+          <div className="mb-6 space-y-4" id="candidate-profile-disclosure">
+            <CandidateApplicationMessage
+              notes={candidate.notes ?? null}
+              filterPosteTitre={selectedCandidature?.posteTitre ?? ''}
+            />
             <CandidateProfileCard
               candidateId={candidate.id}
               profile={candidate.aiProfile as unknown as AiProfile}

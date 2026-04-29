@@ -4,7 +4,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2, Pencil, FolderInput } from 'lucide-react'
+import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Download, Loader2, Pencil, FolderInput, Trash2 } from 'lucide-react'
 import QuickNoteComposer from './quick-note-composer'
 import { eventCategory, type EventCategory } from '@/lib/recruitment-events'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -559,6 +559,7 @@ export interface StageComposerHooks {
  *  from this component so the inline editor can be swapped without
  *  touching the timeline rendering. */
 export type OnEditNote = (event: CandidatureEvent) => void
+export type OnDeleteNote = (event: CandidatureEvent) => void
 
 /** v4.5: optional reassign hook for document cards. The folder-arrow
  *  button on a document calls this with the doc; the caller opens the
@@ -583,6 +584,11 @@ export interface CandidateHistoryByStageProps {
   composer?: StageComposerHooks
   /** Pencil-edit hook on note rows. */
   onEditNote?: OnEditNote
+  /** Trash-delete hook on note rows. Recruiter feedback (April 2026)
+   *  — without this they could only edit a wrong note, not remove
+   *  it; correcting a paste accident meant rewriting the entire body
+   *  as a no-op edit. */
+  onDeleteNote?: OnDeleteNote
   /** Folder-arrow reassign hook on document cards. */
   onReassignDoc?: OnReassignDoc
   /** v4.6: filter category for the rendered timeline. Defaults to 'all'.
@@ -598,7 +604,7 @@ export interface CandidateHistoryByStageProps {
   stageDataRefetchSignal?: number
 }
 
-export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onReassignDoc, filter = 'all', candidatureId, stageDataRefetchSignal }: CandidateHistoryByStageProps) {
+export default function CandidateHistoryByStage({ events, documents = [], currentStatut, composer, onEditNote, onDeleteNote, onReassignDoc, filter = 'all', candidatureId, stageDataRefetchSignal }: CandidateHistoryByStageProps) {
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   // Reset loading when a new doc opens so the spinner is consistent.
@@ -835,6 +841,21 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                                 title="Modifier cette note"
                               >
                                 <Pencil className="h-3 w-3" />
+                              </Button>
+                            )}
+                            {onDeleteNote && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className={onEditNote
+                                  ? 'h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive'
+                                  : 'ml-auto h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive'
+                                }
+                                onClick={() => onDeleteNote(e)}
+                                aria-label="Supprimer cette note"
+                                title="Supprimer cette note"
+                              >
+                                <Trash2 className="h-3 w-3" />
                               </Button>
                             )}
                           </div>
