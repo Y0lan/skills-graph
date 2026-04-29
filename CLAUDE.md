@@ -55,6 +55,8 @@ TypeScript 5.x (frontend + backend): Follow standard conventions
 
 6. **Locked profile fields are inviolable.** `persistMergedProfile` and `setProfileFieldLock` both operate inside SQLite transactions. Never overwrite a field with `humanLockedAt IS NOT NULL`. Re-extraction preserves locks.
 
-7. **Full architecture reference**: `docs/cv-extraction.md`.
+7. **Effective Ratings Module is the ONLY ratings merge.** `server/lib/effective-ratings.ts` (`mergeEffectiveRatings`, `loadEffectiveRatings`) owns the `manual > role-aware > AI baseline` precedence. Every site that scores or displays "the candidate's effective ratings" must go through this Module. Inline `{ ...aiSuggestions, ...ratings }` spreads, `roleAware ?? ai` either/or shapes, or any other re-derivation are forbidden — `effective-ratings-guardrail.test.ts` greps the codebase and fails CI on regressions. Two modes: `current-poste` (default — includes role-aware) and `cross-poste-baseline` (drops role-aware because it was calibrated to a different poste).
+
+8. **Full architecture reference**: `docs/cv-extraction.md`.
 
 <!-- MANUAL ADDITIONS END -->

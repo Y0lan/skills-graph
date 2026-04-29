@@ -75,14 +75,14 @@ describe('loadEffectiveRatings — merge order', () => {
     db.prepare('UPDATE candidatures SET role_aware_suggestions = ? WHERE id = ?')
       .run(JSON.stringify({ java: 4, typescript: 3 }), 'cdt-merge')
 
-    const { ratings, sources } = loadEffectiveRatings('cdt-merge')
+    const { ratings, availableSources } = loadEffectiveRatings('cdt-merge')
     expect(ratings).toEqual({
       java: 4,            // role_aware overrides ai
       python: 4,          // manual overrides ai
       kubernetes: 1,      // ai baseline preserved — this is the whole bug
       typescript: 3,      // role_aware introduces
     })
-    expect(sources).toEqual({ ai: true, roleAware: true, manual: true })
+    expect(availableSources).toEqual({ ai: true, roleAware: true, manual: true })
   })
 
   it('returns empty when every source is empty JSON', () => {
@@ -90,15 +90,15 @@ describe('loadEffectiveRatings — merge order', () => {
     db.prepare('UPDATE candidates SET ratings = ?, ai_suggestions = ? WHERE id = ?')
       .run('{}', '{}', 'cand-merge')
     db.prepare('UPDATE candidatures SET role_aware_suggestions = NULL WHERE id = ?').run('cdt-merge')
-    const { ratings, sources } = loadEffectiveRatings('cdt-merge')
+    const { ratings, availableSources } = loadEffectiveRatings('cdt-merge')
     expect(ratings).toEqual({})
-    expect(sources).toEqual({ ai: false, roleAware: false, manual: false })
+    expect(availableSources).toEqual({ ai: false, roleAware: false, manual: false })
   })
 
   it('returns empty ratings for an unknown candidatureId (does not throw)', () => {
-    const { ratings, sources } = loadEffectiveRatings('does-not-exist')
+    const { ratings, availableSources } = loadEffectiveRatings('does-not-exist')
     expect(ratings).toEqual({})
-    expect(sources.ai).toBe(false)
+    expect(availableSources.ai).toBe(false)
   })
 })
 

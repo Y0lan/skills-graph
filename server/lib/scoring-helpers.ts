@@ -1,71 +1,20 @@
 import { getDb } from './db.js'
-import { safeJsonParse } from './types.js'
 import {
   calculatePosteCompatibility,
   calculateEquipeCompatibility,
   calculateGlobalScore,
 } from './compatibility.js'
+import { loadEffectiveRatings } from './effective-ratings.js'
 
-/**
- * Single source of truth for "what ratings do we score this candidature with?"
- *
- * Codex P0 #2 fix: scoring previously lived inline in 5 places
- * (cv-pipeline.ts, recruitment.ts /recalculate, intake-service.ts,
- * evaluate.ts, compat/:metric breakdown handler) with THREE different
- * merge strategies. That's how the pill ended up at 18% while the modal
- * said 19%. All paths now share this helper.
- *
- * Merge order, most general to most specific (later keys win):
- *   1. ai_suggestions       — CV baseline, widest coverage
- *   2. role_aware_suggestions — per-candidature, calibrated to the fiche
- *   3. ratings              — manual form submission, the human's truth
- *
- * Example: CV extraction yields { java:3, python:2, kubernetes:1 },
- * role-aware for an Architecte SI poste yields { java:4, typescript:3 },
- * candidate manually sets { python:4 }. Effective =
- *   { java:4, python:4, kubernetes:1, typescript:3 }
- * The either/or logic we used before would have dropped python and
- * kubernetes entirely when role-aware was populated.
- */
-export interface EffectiveRatings {
-  ratings: Record<string, number>
-  sources: {
-    ai: boolean
-    roleAware: boolean
-    manual: boolean
-  }
-}
-
-export function loadEffectiveRatings(candidatureId: string): EffectiveRatings {
-  const row = getDb().prepare(`
-    SELECT
-      cand.ratings AS manual,
-      cand.ai_suggestions AS ai,
-      c.role_aware_suggestions AS role_aware
-    FROM candidatures c
-    JOIN candidates cand ON cand.id = c.candidate_id
-    WHERE c.id = ?
-  `).get(candidatureId) as {
-    manual: string | null
-    ai: string | null
-    role_aware: string | null
-  } | undefined
-
-  if (!row) return { ratings: {}, sources: { ai: false, roleAware: false, manual: false } }
-
-  const ai = safeJsonParse<Record<string, number>>(row.ai ?? '{}', {})
-  const roleAware = safeJsonParse<Record<string, number>>(row.role_aware ?? '{}', {})
-  const manual = safeJsonParse<Record<string, number>>(row.manual ?? '{}', {})
-
-  return {
-    ratings: { ...ai, ...roleAware, ...manual },
-    sources: {
-      ai: Object.keys(ai).length > 0,
-      roleAware: Object.keys(roleAware).length > 0,
-      manual: Object.keys(manual).length > 0,
-    },
-  }
-}
+// Re-exported so existing callers can keep importing from this module
+// during the transition. The canonical home is now ./effective-ratings.
+export { loadEffectiveRatings, mergeEffectiveRatings } from './effective-ratings.js'
+export type {
+  EffectiveRatings,
+  EffectiveRatingsMode,
+  EffectiveRatingsSources,
+  RawRatingColumns,
+} from './effective-ratings.js'
 
 /** Load the softSkills score currently stored on this candidature (or
  *  the candidate's first stored value if this candidature doesn't have

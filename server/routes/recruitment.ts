@@ -10,7 +10,8 @@ import { requireLead } from '../middleware/require-lead.js'
 import { sendCandidateDeclined, sendTransitionEmail, cancelScheduledEmail, getEmailTemplate, renderTransitionEmail } from '../lib/email.js'
 import { previewizeEmailHtml } from '../lib/brand.js'
 import { getGapAnalysis, calculateGlobalScore, calculateMultiPosteCompatibility, getBonusSkills, getPosteCompatBreakdown, getEquipeCompatBreakdown, calculatePosteCompatibility, calculateEquipeCompatibility } from '../lib/compatibility.js'
-import { loadEffectiveRatings, rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
+import { rescoreCandidature, rescorePoste } from '../lib/scoring-helpers.js'
+import { loadEffectiveRatings, mergeEffectiveRatings } from '../lib/effective-ratings.js'
 import { extractPosteRequirements, MissingApiKeyError, type PosteRequirement } from '../lib/poste-requirements-extraction.js'
 import { getSoftSkillBreakdown } from '../lib/soft-skill-scoring.js'
 import { uploadDocument, getDocumentForDownload, generateCandidatureZip, triggerDocumentScan } from '../lib/document-service.js'
@@ -561,7 +562,7 @@ protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
     SELECT c.id, c.candidate_id, c.poste_id, c.statut, c.canal,
       c.taux_compatibilite_poste, c.taux_compatibilite_equipe, c.taux_soft_skills,
       c.soft_skill_alerts, c.taux_global, c.notes_directeur,
-      c.created_at, c.updated_at,
+      c.created_at, c.updated_at, c.role_aware_suggestions,
       cand.name, cand.email, cand.ratings, cand.ai_suggestions,
       cand.cv_text IS NOT NULL as has_cv,
       (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
@@ -576,16 +577,21 @@ protectedRouter.get('/postes/:posteId/comparison', (req, res) => {
              c.id ASC
   `).all(posteId) as (CandidatureRow & {
     name: string; email: string | null;
-    ratings: string; ai_suggestions: string | null;
+    ratings: string; ai_suggestions: string | null; role_aware_suggestions: string | null;
     has_cv: number; has_lettre: number | null; evaluation_submitted: string | null;
     last_event_at: string | null
   })[]
 
   const enriched = rows.map((r, idx) => {
-    const ratings = safeJsonParse<Record<string, number>>(r.ratings ?? '{}', {})
-    const aiSuggestions = safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
-    // Manual ratings override AI suggestions — same precedence as compare page.
-    const effective = { ...aiSuggestions, ...ratings }
+    // Effective Ratings Module — current-poste mode: includes manual,
+    // role-aware, AI baseline. Used to live as a 2-source spread
+    // (no role-aware) inline here, which drifted from the score the
+    // rescore pipeline computed against this same candidature. The
+    // Module is the single source of truth.
+    const { ratings: effective } = mergeEffectiveRatings(
+      { ai: r.ai_suggestions, roleAware: r.role_aware_suggestions, manual: r.ratings },
+      'current-poste',
+    )
     const gaps = computeRoleGaps(effective, categories, roleCategories)
     return {
       id: r.id,
@@ -626,7 +632,7 @@ protectedRouter.get('/candidatures', (req, res) => {
   let sql = `
     SELECT c.*, cand.name, cand.email, cand.cv_text IS NOT NULL as has_cv,
       (SELECT 1 FROM candidature_documents cd WHERE cd.candidature_id = c.id AND cd.type = 'lettre' AND cd.deleted_at IS NULL LIMIT 1) as has_lettre,
-      cand.ai_suggestions, cand.ai_profile, cand.submitted_at as evaluation_submitted,
+      cand.ai_suggestions, cand.ratings AS manual_ratings, cand.ai_profile, cand.submitted_at as evaluation_submitted,
       p.titre as poste_titre, p.pole as poste_pole,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id) as last_event_at,
       (SELECT MAX(ce.created_at) FROM candidature_events ce WHERE ce.candidature_id = c.id AND ce.type = 'status_change' AND ce.statut_to = c.statut) as entered_status_at,
@@ -659,7 +665,7 @@ protectedRouter.get('/candidatures', (req, res) => {
 
   const rows = getDb().prepare(sql).all(...params) as (CandidatureRow & {
     name: string; email: string | null; has_cv: number; has_lettre: number | null;
-    ai_suggestions: string | null; ai_profile: string | null;
+    ai_suggestions: string | null; manual_ratings: string | null; ai_profile: string | null;
     evaluation_submitted: string | null;
     poste_titre: string; poste_pole: string;
     taux_soft_skills: number | null; soft_skill_alerts: string | null; taux_global: number | null;
@@ -683,10 +689,22 @@ protectedRouter.get('/candidatures', (req, res) => {
     topSkills: Array<{ skillId: string; skillLabel: string; rating: number }>
   } | null
 
-  const buildPreview = (aiProfileRaw: string | null, roleAwareRaw: string | null, baselineRaw: string | null): PreviewProfile => {
-    const roleAware = safeJsonParse<Record<string, number>>(roleAwareRaw, {})
-    const baseline = safeJsonParse<Record<string, number>>(baselineRaw, {})
-    const ratings = Object.keys(roleAware).length > 0 ? roleAware : baseline
+  const buildPreview = (
+    aiProfileRaw: string | null,
+    roleAwareRaw: string | null,
+    baselineRaw: string | null,
+    manualRaw: string | null,
+  ): PreviewProfile => {
+    // Effective Ratings Module — current-poste mode. Was previously
+    // an either/or (roleAware OR baseline), which silently dropped
+    // both the AI baseline (when role-aware was non-empty) and the
+    // candidate\'s manual ratings (always — they weren\'t fetched).
+    // The preview profile\'s "topSkills" now agrees with the score
+    // computed against the candidature.
+    const { ratings } = mergeEffectiveRatings(
+      { ai: baselineRaw, roleAware: roleAwareRaw, manual: manualRaw },
+      'current-poste',
+    )
 
     const hasAnyProfile = aiProfileRaw !== null && aiProfileRaw !== ''
     const hasAnyRatings = Object.keys(ratings).length > 0
@@ -748,7 +766,7 @@ protectedRouter.get('/candidatures', (req, res) => {
     lastEventAt: r.last_event_at,
     enteredStatusAt: r.entered_status_at ?? r.created_at,
     docsSlotCount: r.docs_slot_count ?? 0,
-    previewProfile: buildPreview(r.ai_profile, r.role_aware_suggestions, r.ai_suggestions),
+    previewProfile: buildPreview(r.ai_profile, r.role_aware_suggestions, r.ai_suggestions, r.manual_ratings),
   })))
 })
 
@@ -1990,6 +2008,7 @@ protectedRouter.get('/postes/:posteId/shortlist', (req, res) => {
             c.role_aware_suggestions,
             cand.id AS candidate_id,
             cand.name,
+            cand.ratings AS manual_ratings,
             cand.ai_suggestions,
             cand.ai_profile
        FROM candidatures c
@@ -2004,15 +2023,21 @@ protectedRouter.get('/postes/:posteId/shortlist', (req, res) => {
     taux_soft_skills: number | null; taux_global: number
     role_aware_suggestions: string | null
     candidate_id: string; name: string
+    manual_ratings: string | null
     ai_suggestions: string | null; ai_profile: string | null
   }>
 
   const items = rows.map(r => {
-    // Prefer role-aware suggestions when computing top-3 skills (they're
-    // calibrated to THIS poste). Fall back to baseline suggestions.
-    const rating = r.role_aware_suggestions
-      ? safeJsonParse<Record<string, number>>(r.role_aware_suggestions, {})
-      : safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
+    // Effective Ratings Module — current-poste mode for the top-3
+    // skills display. The old code was an either/or
+    // (`r.role_aware_suggestions ? roleAware : ai`), which dropped
+    // any manual ratings the candidate set on their self-eval. The
+    // breakdown drawer now renders the same merged ratings the
+    // scoring pipeline computed against — pill-vs-modal drift fixed.
+    const { ratings: rating } = mergeEffectiveRatings(
+      { ai: r.ai_suggestions, roleAware: r.role_aware_suggestions, manual: r.manual_ratings },
+      'current-poste',
+    )
     const top3 = Object.entries(rating)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
@@ -4424,11 +4449,17 @@ protectedRouter.post('/reports/cross-poste-comparison', (req, res) => {
   }>
 
   const enriched = rows.map(r => {
-    const ratings = safeJsonParse<Record<string, number>>(r.ratings ?? '{}', {})
-    const aiSuggestions = safeJsonParse<Record<string, number>>(r.ai_suggestions ?? '{}', {})
-    // Baseline-only — role_aware_suggestions intentionally NOT
-    // included (they were generated against r.poste_id, not target).
-    const effective = { ...aiSuggestions, ...ratings }
+    // Effective Ratings Module — cross-poste-baseline mode.
+    // role_aware_suggestions are intentionally excluded because they
+    // were calibrated to r.poste_id (the candidature\'s OWN poste),
+    // not targetPoste.id (the comparison target). Including them
+    // would tilt the cross-poste score toward the candidate\'s
+    // current poste, which is exactly what cross-poste comparison
+    // is trying to factor out.
+    const { ratings: effective } = mergeEffectiveRatings(
+      { ai: r.ai_suggestions, roleAware: null, manual: r.ratings },
+      'cross-poste-baseline',
+    )
 
     const tauxPoste = calculatePosteCompatibility(effective, targetPoste.id)
     const tauxEquipe = calculateEquipeCompatibility(effective, targetPoste.role_id)
