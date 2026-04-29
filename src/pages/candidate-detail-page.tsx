@@ -39,6 +39,7 @@ import {
 } from '@/components/ui/dialog'
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, AlertTriangle, Mail, AlertCircle, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
+import { mergeCandidateRatings } from '@/lib/effective-ratings-client'
 import { useCandidateData } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
@@ -601,11 +602,19 @@ export default function CandidateDetailPage() {
 
   const topSkills = useMemo(() => {
     if (!candidate) return []
-    const source =
-      (candidate.ratings && Object.keys(candidate.ratings).length > 0)
-        ? candidate.ratings
-        : (candidate.aiSuggestions ?? {})
-    if (!source || Object.keys(source).length === 0) return []
+    // Effective Ratings Module mirror — candidate scope (manual >
+    // ai). Role-aware lives on the candidature, not the candidate,
+    // and this display is the candidate\'s overall top-5 skills
+    // independent of which candidature is selected. Was previously
+    // an either/or that silently dropped the AI baseline whenever
+    // the candidate had any manual ratings — same drift class the
+    // backend Module fixed at four sites. See
+    // src/lib/effective-ratings-client.ts.
+    const source = mergeCandidateRatings({
+      ai: candidate.aiSuggestions,
+      manual: candidate.ratings,
+    })
+    if (Object.keys(source).length === 0) return []
     const labelById = new Map<string, string>()
     categories.forEach(cat => cat.skills.forEach(s => labelById.set(s.id, s.label)))
     return Object.entries(source)
