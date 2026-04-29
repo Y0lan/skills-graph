@@ -11,7 +11,7 @@ process.env.DATA_DIR = tmpDir
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
 const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
-const { startRun, finishRun, listRuns, getRunPayload } = await import('../lib/extraction-runs.js')
+const { startRun, finishRun, listRuns, getRunPayload, withExtractionRun } = await import('../lib/extraction-runs.js')
 
 function preSeed() {
   const db = new Database(DB_PATH)
@@ -106,5 +106,110 @@ describe('extraction-runs', () => {
     const run = runs.find(r => r.id === runId)!
     expect(run.posteSnapshot).toMatchObject({ titre: 'Dev', description: 'short' })
     expect(run.catalogVersion).toBe('5.1.0')
+  })
+
+  // ─── withExtractionRun lifecycle wrapper ──────────────────────────────
+
+  it('withExtractionRun closes the row as success + records token counts', async () => {
+    const cid = seedCandidate()
+    const outcome = await withExtractionRun<{ ok: true }>(
+      { candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm' },
+      async () => ({
+        status: 'success',
+        payload: { ok: true },
+        inputTokens: 123,
+        outputTokens: 45,
+      }),
+    )
+    expect(outcome.status).toBe('success')
+    if (outcome.status === 'success') expect(outcome.payload.ok).toBe(true)
+    const runs = listRuns(cid)
+    const run = runs.find(r => r.id === outcome.runId)!
+    expect(run.status).toBe('success')
+    expect(run.inputTokens).toBe(123)
+    expect(run.outputTokens).toBe(45)
+    expect(getRunPayload(outcome.runId)).toEqual({ ok: true })
+  })
+
+  it('withExtractionRun closes the row as partial when the body returns partial', async () => {
+    const cid = seedCandidate()
+    const outcome = await withExtractionRun<{ items: number }>(
+      { candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm' },
+      async () => ({
+        status: 'partial',
+        payload: { items: 3 },
+        error: 'half the categories failed',
+        inputTokens: 50,
+        outputTokens: 10,
+      }),
+    )
+    expect(outcome.status).toBe('partial')
+    const run = listRuns(cid).find(r => r.id === outcome.runId)!
+    expect(run.status).toBe('partial')
+    expect(run.error).toMatch(/half the categories/i)
+    expect(run.inputTokens).toBe(50)
+  })
+
+  it('withExtractionRun closes the row as failed when the body returns failed (no throw)', async () => {
+    const cid = seedCandidate()
+    const outcome = await withExtractionRun(
+      { candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm' },
+      async () => ({ status: 'failed' as const, error: 'returned null' }),
+    )
+    expect(outcome.status).toBe('failed')
+    const run = listRuns(cid).find(r => r.id === outcome.runId)!
+    expect(run.status).toBe('failed')
+    expect(run.error).toBe('returned null')
+  })
+
+  it('withExtractionRun closes the row as failed AND rethrows when the body throws', async () => {
+    const cid = seedCandidate()
+    let thrown: Error | null = null
+    let runId: string | null = null
+    const tracker = listRuns(cid).length
+    try {
+      await withExtractionRun(
+        { candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm' },
+        async (id) => {
+          runId = id
+          throw new Error('boom')
+        },
+      )
+    } catch (err) {
+      thrown = err as Error
+    }
+    expect(thrown).not.toBeNull()
+    expect(thrown!.message).toBe('boom')
+    expect(runId).not.toBeNull()
+    const newRuns = listRuns(cid)
+    expect(newRuns.length).toBe(tracker + 1)
+    const run = newRuns.find(r => r.id === runId!)!
+    expect(run.status).toBe('failed')
+    expect(run.error).toBe('boom')
+  })
+
+  // ─── startRun race fix (codex post-plan P2 #8) ───────────────────────
+
+  it('startRun assigns unique monotonic run_index under concurrent calls', async () => {
+    const cid = seedCandidate()
+    // Five parallel startRun calls for the SAME candidate. Pre-fix:
+    // SELECT MAX + INSERT was non-transactional, so two parallel
+    // calls could compute the same nextIndex. Fix: wrap in a
+    // db.transaction. Assert all 5 received unique run_index values.
+    const runIds = await Promise.all(
+      [0, 1, 2, 3, 4].map(() => Promise.resolve().then(() => startRun({
+        candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm',
+      }))),
+    )
+    const runs = listRuns(cid).filter(r => runIds.includes(r.id))
+    const indexes = runs.map(r => r.runIndex).sort((a, b) => a - b)
+    // 5 unique values
+    expect(new Set(indexes).size).toBe(5)
+    // Monotonic — each greater than the last
+    for (let i = 1; i < indexes.length; i++) {
+      expect(indexes[i]).toBeGreaterThan(indexes[i - 1])
+    }
+    // Cleanup so other tests' run_index expectations stay stable.
+    for (const id of runIds) finishRun({ runId: id, status: 'success' })
   })
 })

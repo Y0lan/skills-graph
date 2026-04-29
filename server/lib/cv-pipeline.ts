@@ -5,7 +5,7 @@ import { getSkillCategories } from './catalog.js'
 import { rescoreCandidature } from './scoring-helpers.js'
 import type { ExtractionStatus } from './types.js'
 import { putAsset } from './asset-storage.js'
-import { startRun, finishRun, type ExtractionRunStatus } from './extraction-runs.js'
+import { startRun, finishRun, withExtractionRun, type ExtractionRunStatus } from './extraction-runs.js'
 import { pruneExtractionRuns } from './extraction-retention.js'
 import { extractCandidateProfile } from './cv-profile-extraction.js'
 import { persistMergedProfile } from './profile-merge.js'
@@ -189,39 +189,51 @@ export async function processCvForCandidate(
     let profileDegraded = false
     let profileThrewMsg: string | null = null
     const lettreFetch = await fetchLatestLettreText(candidateId)
-    const profileRunId = startRun({
-      candidateId,
-      kind: 'profile',
-      promptVersion: PROMPT_VERSION,
-      model: EXTRACTION_MODEL,
-      cvAssetId: cvAsset.id,
-      lettreAssetId: lettreFetch.assetId,
-    })
+    // Profile run lifecycle delegated to withExtractionRun — the
+    // wrapper closes the row in the right state (success / partial /
+    // failed) automatically. Caller-owned side effects
+    // (profileFailed flag, profileDegraded flag, persistMergedProfile)
+    // stay visible at this site. The wrapper passes runId to the
+    // inner function because persistMergedProfile uses it as an FK.
     try {
-      const profileResult = await extractCandidateProfile(cvText, lettreFetch.text)
-      if (profileResult) {
-        const merged = persistMergedProfile(candidateId, profileResult.profile, profileRunId)
-        // Degraded = parsed OK but effectively empty. This is a *signal-level*
-        // failure the scoring step can't see — surfaces via status=partial so
-        // the recruiter gets a Relancer button instead of a silent succeed.
-        profileDegraded = isProfileDegraded(merged)
-        finishRun({
-          runId: profileRunId,
-          status: profileDegraded ? 'partial' : 'success',
-          payload: profileResult.profile,
-          inputTokens: profileResult.inputTokens,
-          outputTokens: profileResult.outputTokens,
-          error: profileDegraded ? 'profile extraction returned near-empty result' : undefined,
-        })
-      } else {
-        profileFailed = true
-        finishRun({ runId: profileRunId, status: 'failed', error: 'Profile extraction returned null' })
-      }
+      await withExtractionRun(
+        {
+          candidateId,
+          kind: 'profile',
+          promptVersion: PROMPT_VERSION,
+          model: EXTRACTION_MODEL,
+          cvAssetId: cvAsset.id,
+          lettreAssetId: lettreFetch.assetId,
+        },
+        async (profileRunId) => {
+          const profileResult = await extractCandidateProfile(cvText, lettreFetch.text)
+          if (!profileResult) {
+            profileFailed = true
+            return { status: 'failed', error: 'Profile extraction returned null' }
+          }
+          const merged = persistMergedProfile(candidateId, profileResult.profile, profileRunId)
+          profileDegraded = isProfileDegraded(merged)
+          if (profileDegraded) {
+            return {
+              status: 'partial',
+              payload: profileResult.profile,
+              error: 'profile extraction returned near-empty result',
+              inputTokens: profileResult.inputTokens,
+              outputTokens: profileResult.outputTokens,
+            }
+          }
+          return {
+            status: 'success',
+            payload: profileResult.profile,
+            inputTokens: profileResult.inputTokens,
+            outputTokens: profileResult.outputTokens,
+          }
+        },
+      )
     } catch (err) {
       profileFailed = true
       profileThrewMsg = err instanceof Error ? err.message : String(err)
       console.error(`[cv-pipeline] profile extraction failed for ${candidateId}:`, err)
-      finishRun({ runId: profileRunId, status: 'failed', error: profileThrewMsg })
     }
 
     // 6b. For each candidature with a fiche de poste, run a role-aware
@@ -428,47 +440,63 @@ async function runRoleAwarePasses(params: {
 
   for (const t of targets) {
     const snapshot = { titre: t.titre, description: t.description }
-    const runId = startRun({
-      candidateId: params.candidateId,
-      candidatureId: t.candidature_id,
-      kind: 'skills_role_aware',
-      posteId: t.poste_id,
-      posteSnapshot: snapshot,
-      promptVersion: PROMPT_VERSION,
-      model: EXTRACTION_MODEL,
-      cvAssetId: params.cvAssetId,
-    })
+    // Per-candidature role-aware run lifecycle delegated to
+    // withExtractionRun. Caller-owned side effects (the UPDATE
+    // candidatures, failures.push) stay visible.
+    type RoleAwarePayload = {
+      ratings: Record<string, number>
+      reasoning: Record<string, string>
+      questions: Record<string, string>
+      failedCategories: string[]
+    }
     try {
-      const roleAware = await extractSkillsFromCv(params.cvText, params.catalog, {
-        posteId: t.poste_id,
-        titre: t.titre,
-        description: t.description,
-      })
-      if (!roleAware) {
-        finishRun({ runId, status: 'failed', error: 'role-aware extraction returned null' })
-        failures.push(t.candidature_id)
-        continue
-      }
-      update.run(
-        JSON.stringify(roleAware.ratings),
-        JSON.stringify(roleAware.reasoning),
-        JSON.stringify(roleAware.questions),
-        t.candidature_id,
-      )
-      finishRun({
-        runId,
-        status: roleAware.failedCategories.length > 0 ? 'partial' : 'success',
-        payload: {
-          ratings: roleAware.ratings,
-          reasoning: roleAware.reasoning,
-          questions: roleAware.questions,
-          failedCategories: roleAware.failedCategories,
+      const outcome = await withExtractionRun<RoleAwarePayload>(
+        {
+          candidateId: params.candidateId,
+          candidatureId: t.candidature_id,
+          kind: 'skills_role_aware',
+          posteId: t.poste_id,
+          posteSnapshot: snapshot,
+          promptVersion: PROMPT_VERSION,
+          model: EXTRACTION_MODEL,
+          cvAssetId: params.cvAssetId,
         },
-      })
+        async () => {
+          const roleAware = await extractSkillsFromCv(params.cvText, params.catalog, {
+            posteId: t.poste_id,
+            titre: t.titre,
+            description: t.description,
+          })
+          if (!roleAware) {
+            return { status: 'failed', error: 'role-aware extraction returned null' }
+          }
+          update.run(
+            JSON.stringify(roleAware.ratings),
+            JSON.stringify(roleAware.reasoning),
+            JSON.stringify(roleAware.questions),
+            t.candidature_id,
+          )
+          const payload: RoleAwarePayload = {
+            ratings: roleAware.ratings,
+            reasoning: roleAware.reasoning,
+            questions: roleAware.questions,
+            failedCategories: roleAware.failedCategories,
+          }
+          if (roleAware.failedCategories.length > 0) {
+            return {
+              status: 'partial',
+              payload,
+              error: `role-aware partial — ${roleAware.failedCategories.length} categories failed`,
+            }
+          }
+          return { status: 'success', payload }
+        },
+      )
+      if (outcome.status === 'failed') {
+        failures.push(t.candidature_id)
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
       console.error(`[cv-pipeline] role-aware failed for candidature ${t.candidature_id}:`, err)
-      finishRun({ runId, status: 'failed', error: msg })
       failures.push(t.candidature_id)
     }
   }

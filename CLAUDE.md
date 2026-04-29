@@ -57,6 +57,8 @@ TypeScript 5.x (frontend + backend): Follow standard conventions
 
 7. **Effective Ratings Module is the ONLY ratings merge.** `server/lib/effective-ratings.ts` (`mergeEffectiveRatings`, `loadEffectiveRatings`) owns the `manual > role-aware > AI baseline` precedence. Every site that scores or displays "the candidate's effective ratings" must go through this Module. Inline `{ ...aiSuggestions, ...ratings }` spreads, `roleAware ?? ai` either/or shapes, or any other re-derivation are forbidden — `effective-ratings-guardrail.test.ts` greps the codebase and fails CI on regressions. Two modes: `current-poste` (default — includes role-aware) and `cross-poste-baseline` (drops role-aware because it was calibrated to a different poste).
 
-8. **Full architecture reference**: `docs/cv-extraction.md`.
+8. **`withExtractionRun` is the ONLY lifecycle for single-LLM-call extractions.** `server/lib/extraction-runs.ts` exposes the wrapper; every Anthropic call that opens a `cv_extraction_runs` row goes through it. Direct `startRun`/`finishRun` imports outside the wrapper, `extraction-watchdog.ts` (timeout sweep), and `cv-pipeline.ts` (the long-running `skills_baseline` orchestration run that spans baseline + multipass + profile + role-aware + scoring across ~170 lines) are forbidden — `extraction-runs-guardrail.test.ts` fails CI on regressions. The wrapper returns a discriminated `ExtractionRunResult<T>` (`success` / `partial` / `failed`); callers pattern-match and decide their own side effects (mark candidate failed, push to failures[], return null). `startRun` itself is now transactional so concurrent webhooks for the same candidate can\'t produce duplicate `run_index` values.
+
+9. **Full architecture reference**: `docs/cv-extraction.md`.
 
 <!-- MANUAL ADDITIONS END -->
