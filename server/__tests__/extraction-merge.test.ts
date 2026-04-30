@@ -5,7 +5,7 @@ const F = (value: unknown, confidence = 0.9): { value: unknown; confidence: numb
 
 describe('mergeExtractions', () => {
   describe('additive strategy', () => {
-    it('adds fields that did not exist before', () => {
+    it('adds fields that did not exist before', async () => {
       const existing: ExtractedFields = { phone: F('+33 1') }
       const incoming: ExtractedFields = { phone: F('+33 1'), city: F('Paris') }
       const r = mergeExtractions(existing, incoming, new Set(), 'additive')
@@ -13,7 +13,7 @@ describe('mergeExtractions', () => {
       expect(r.diff.city).toEqual({ kind: 'added', newValue: 'Paris', confidence: 0.9 })
     })
 
-    it('does NOT overwrite an existing non-empty field', () => {
+    it('does NOT overwrite an existing non-empty field', async () => {
       const existing: ExtractedFields = { phone: F('+33 1') }
       const incoming: ExtractedFields = { phone: F('+33 2') }
       const r = mergeExtractions(existing, incoming, new Set(), 'additive')
@@ -21,14 +21,14 @@ describe('mergeExtractions', () => {
       expect(r.diff.phone).toEqual({ kind: 'unchanged' })
     })
 
-    it('overwrites a previously-empty field', () => {
+    it('overwrites a previously-empty field', async () => {
       const existing: ExtractedFields = { phone: F('') }
       const incoming: ExtractedFields = { phone: F('+33 1') }
       const r = mergeExtractions(existing, incoming, new Set(), 'additive')
       expect(r.merged.phone).toEqual(F('+33 1'))
     })
 
-    it('skips locked fields entirely', () => {
+    it('skips locked fields entirely', async () => {
       const existing: ExtractedFields = { phone: F('+33 1') }
       const incoming: ExtractedFields = { phone: F('+33 2') }
       const r = mergeExtractions(existing, incoming, new Set(['phone']), 'additive')
@@ -43,7 +43,7 @@ describe('mergeExtractions', () => {
   })
 
   describe('replace strategy', () => {
-    it('overwrites every non-locked field', () => {
+    it('overwrites every non-locked field', async () => {
       const existing: ExtractedFields = { phone: F('+33 1'), city: F('Paris') }
       const incoming: ExtractedFields = { phone: F('+33 2'), city: F('Lyon') }
       const r = mergeExtractions(existing, incoming, new Set(), 'replace')
@@ -51,7 +51,7 @@ describe('mergeExtractions', () => {
       expect(r.merged.city).toEqual(F('Lyon'))
     })
 
-    it('still respects locked fields', () => {
+    it('still respects locked fields', async () => {
       const existing: ExtractedFields = { phone: F('+33 1'), city: F('Paris') }
       const incoming: ExtractedFields = { phone: F('+33 2'), city: F('Lyon') }
       const r = mergeExtractions(existing, incoming, new Set(['city']), 'replace')
@@ -59,7 +59,7 @@ describe('mergeExtractions', () => {
       expect(r.merged.city).toEqual(F('Paris'))
     })
 
-    it('reports unchanged when value is identical', () => {
+    it('reports unchanged when value is identical', async () => {
       const existing: ExtractedFields = { phone: F('+33 1') }
       const incoming: ExtractedFields = { phone: F('+33 1') }
       const r = mergeExtractions(existing, incoming, new Set(), 'replace')
@@ -68,7 +68,7 @@ describe('mergeExtractions', () => {
   })
 
   describe('recruiter-curated strategy', () => {
-    it('does NOT mutate merged for non-locked changes — surfaces diff only', () => {
+    it('does NOT mutate merged for non-locked changes — surfaces diff only', async () => {
       const existing: ExtractedFields = { phone: F('+33 1') }
       const incoming: ExtractedFields = { phone: F('+33 2') }
       const r = mergeExtractions(existing, incoming, new Set(), 'recruiter-curated')
@@ -76,7 +76,7 @@ describe('mergeExtractions', () => {
       expect(r.diff.phone).toEqual({ kind: 'updated', oldValue: '+33 1', newValue: '+33 2', confidence: 0.9 })
     })
 
-    it('still adds fields that did not exist before', () => {
+    it('still adds fields that did not exist before', async () => {
       const existing: ExtractedFields = {}
       const incoming: ExtractedFields = { phone: F('+33 1') }
       const r = mergeExtractions(existing, incoming, new Set(), 'recruiter-curated')
@@ -86,7 +86,7 @@ describe('mergeExtractions', () => {
 })
 
 describe('applyRecruiterDecisions', () => {
-  it('applies only accepted fields', () => {
+  it('applies only accepted fields', async () => {
     const existing: ExtractedFields = { phone: F('+33 1'), city: F('Paris') }
     const incoming: ExtractedFields = { phone: F('+33 2'), city: F('Lyon') }
     const out = applyRecruiterDecisions(existing, incoming, new Set(['phone']), new Set())
@@ -94,14 +94,14 @@ describe('applyRecruiterDecisions', () => {
     expect(out.city).toEqual(F('Paris'))
   })
 
-  it('skips locked fields even if explicitly accepted', () => {
+  it('skips locked fields even if explicitly accepted', async () => {
     const existing: ExtractedFields = { phone: F('+33 1') }
     const incoming: ExtractedFields = { phone: F('+33 2') }
     const out = applyRecruiterDecisions(existing, incoming, new Set(['phone']), new Set(['phone']))
     expect(out.phone).toEqual(F('+33 1'))
   })
 
-  it('ignores incoming with empty value', () => {
+  it('ignores incoming with empty value', async () => {
     const existing: ExtractedFields = { phone: F('+33 1') }
     const incoming: ExtractedFields = { phone: F('') }
     const out = applyRecruiterDecisions(existing, incoming, new Set(['phone']), new Set())

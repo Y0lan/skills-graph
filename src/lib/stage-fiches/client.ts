@@ -3,7 +3,7 @@ import type { Statut } from '../constants'
 /**
  * Fetch / patch helpers for the stage-fiche endpoints, plus
  * localStorage draft persistence so a recruiter mid-typing through a
- * GKE Recreate deploy doesn't lose their work (codex Y6 correction).
+ * Cloud Run revision change doesn't lose their work.
  *
  * The server enforces optimistic-lock via `If-Match: <updatedAt>`. This
  * client always passes the last-known `updatedAt` it has — passing

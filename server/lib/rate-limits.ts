@@ -1,5 +1,4 @@
-import rateLimit from 'express-rate-limit'
-
+import rateLimit from 'express-rate-limit';
 /**
  * Rate limiters for the recruitment route family.
  *
@@ -21,43 +20,38 @@ import rateLimit from 'express-rate-limit'
  *   ceiling, this is the per-minute one.
  * - `recalcRateLimit` — full-pipeline recalculate. 2/min; expensive.
  */
-
 export const intakeRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de candidatures. Réessayez dans une minute.' },
-})
-
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Trop de candidatures. Réessayez dans une minute.' },
+});
 export const mutationRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
-})
-
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
+});
 export const uploadRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de fichiers. Réessayez dans une minute.' },
-})
-
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Trop de fichiers. Réessayez dans une minute.' },
+});
 export const heavyRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
-})
-
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
+});
 export const recalcRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 2,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Recalcul en cours. Réessayez dans une minute.' },
-})
+    windowMs: 60 * 1000,
+    max: 2,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Recalcul en cours. Réessayez dans une minute.' },
+});

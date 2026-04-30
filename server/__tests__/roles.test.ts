@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 // Create temp dir and set DATA_DIR before db module resolves its const
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'roles-test-'))
@@ -23,7 +23,7 @@ const {
   softDeleteRole,
   getRoleCategories,
   getDb,
-  DB_PATH,
+  TEST_DATABASE_HANDLE,
 } = dbModule
 
 /**
@@ -33,7 +33,7 @@ const {
  * prior run; in a fresh test DB we must create them up front.
  */
 function preSeedCategories() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -71,18 +71,18 @@ function preSeedCategories() {
 }
 
 describe('Role DB helpers', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeedCategories()
-    initDatabase()
+    await initDatabase()
   })
 
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('getRoles() returns the seeded recruitment roles, all wired to a poste', () => {
-    const roles = getRoles()
+  it('getRoles() returns the seeded recruitment roles, all wired to a poste', async () => {
+    const roles = await getRoles()
     const ids = roles.map(r => r.id).sort()
     expect(ids).toEqual(expect.arrayContaining([
       'architecte-si',
@@ -99,14 +99,14 @@ describe('Role DB helpers', () => {
     }
   })
 
-  it('legacy team-skill-radar roles are no longer exposed', () => {
+  it('legacy team-skill-radar roles are no longer exposed', async () => {
     for (const legacyId of ['dev-full-stack', 'devops', 'qa-engineer', 'analyste-fonctionnel']) {
-      expect(getRole(legacyId)).toBeNull()
+      expect(await getRole(legacyId)).toBeNull()
     }
   })
 
-  it('getRole("architecte-si") returns the architecte role with correct category IDs', () => {
-    const role = getRole('architecte-si')
+  it('getRole("architecte-si") returns the architecte role with correct category IDs', async () => {
+    const role = await getRole('architecte-si')
     expect(role).not.toBeNull()
     expect(role!.id).toBe('architecte-si')
     expect(role!.label).toBe('Architecte SI Logiciel')
@@ -125,13 +125,13 @@ describe('Role DB helpers', () => {
     expect(role!.categoryIds).toHaveLength(6)
   })
 
-  it('getRole("nonexistent") returns null', () => {
-    const role = getRole('nonexistent')
+  it('getRole("nonexistent") returns null', async () => {
+    const role = await getRole('nonexistent')
     expect(role).toBeNull()
   })
 
-  it('createRole() creates a new role with categories', () => {
-    const role = createRole('test-role', 'Test Role', ['core-engineering', 'frontend-ui'], 'tester')
+  it('createRole() creates a new role with categories', async () => {
+    const role = await createRole('test-role', 'Test Role', ['core-engineering', 'frontend-ui'], 'tester')
     expect(role.id).toBe('test-role')
     expect(role.label).toBe('Test Role')
     expect(role.createdBy).toBe('tester')
@@ -141,45 +141,43 @@ describe('Role DB helpers', () => {
     expect(role.categoryIds).toHaveLength(2)
 
     // Verify it appears in getRoles()
-    const all = getRoles()
+    const all = await getRoles()
     expect(all.find(r => r.id === 'test-role')).toBeDefined()
   })
 
-  it('createRole() with duplicate ID throws (SQLite UNIQUE)', () => {
-    expect(() => {
-      createRole('architecte-si', 'Duplicate', ['core-engineering'], 'tester')
-    }).toThrow()
+  it('createRole() with duplicate ID throws', async () => {
+    await expect(createRole('architecte-si', 'Duplicate', ['core-engineering'], 'tester')).rejects.toThrow()
   })
 
-  it('updateRole() updates label and categories', () => {
-    const updated = updateRole('test-role', 'Updated Role', ['core-engineering'])
+  it('updateRole() updates label and categories', async () => {
+    const updated = await updateRole('test-role', 'Updated Role', ['core-engineering'])
     expect(updated).not.toBeNull()
     expect(updated!.label).toBe('Updated Role')
     expect(updated!.categoryIds).toEqual(['core-engineering'])
   })
 
-  it('updateRole() with nonexistent ID returns null', () => {
-    const result = updateRole('does-not-exist', 'Whatever', ['core-engineering'])
+  it('updateRole() with nonexistent ID returns null', async () => {
+    const result = await updateRole('does-not-exist', 'Whatever', ['core-engineering'])
     expect(result).toBeNull()
   })
 
-  it('softDeleteRole() marks role as deleted', () => {
-    const deleted = softDeleteRole('test-role')
+  it('softDeleteRole() marks role as deleted', async () => {
+    const deleted = await softDeleteRole('test-role')
     expect(deleted).toBe(true)
 
     // Verify it no longer appears via getRole
-    const role = getRole('test-role')
+    const role = await getRole('test-role')
     expect(role).toBeNull()
   })
 
-  it('softDeleteRole() — deleted role not returned by getRoles()', () => {
+  it('softDeleteRole() — deleted role not returned by getRoles()', async () => {
     // test-role was soft-deleted in the previous test
-    const all = getRoles()
+    const all = await getRoles()
     expect(all.find(r => r.id === 'test-role')).toBeUndefined()
   })
 
-  it('getRoleCategories() returns correct category IDs', () => {
-    const cats = getRoleCategories('tech-lead-java')
+  it('getRoleCategories() returns correct category IDs', async () => {
+    const cats = await getRoleCategories('tech-lead-java')
     expect(cats).toEqual(
       expect.arrayContaining([
         'core-engineering',

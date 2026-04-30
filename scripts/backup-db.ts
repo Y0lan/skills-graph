@@ -1,25 +1,33 @@
-import path from 'path'
-import fs from 'fs'
-import Database from 'better-sqlite3'
+import fs from 'fs';
+import path from 'path';
+import { execFileSync } from 'child_process';
 
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
-const DB_PATH = path.join(DATA_DIR, 'ratings.db')
-const BACKUP_DIR = path.join(DATA_DIR, 'backups')
-
-if (!fs.existsSync(DB_PATH)) {
-  console.error(`[BACKUP] Database not found: ${DB_PATH}`)
-  process.exit(1)
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+  console.error('[BACKUP] DATABASE_URL is required');
+  process.exit(1);
 }
 
-fs.mkdirSync(BACKUP_DIR, { recursive: true })
+const backupDir = process.env.BACKUP_DIR || path.join(process.cwd(), 'server', 'data', 'backups');
+fs.mkdirSync(backupDir, { recursive: true });
 
-const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-const backupName = `ratings-${timestamp}.db`
-const backupPath = path.join(BACKUP_DIR, backupName)
+const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+const backupName = `skill-radar-${timestamp}.dump`;
+const backupPath = path.join(backupDir, backupName);
 
-const db = new Database(DB_PATH, { readonly: true })
-db.backup(backupPath)
-db.close()
+try {
+  execFileSync('pg_dump', [
+    '--format=custom',
+    '--no-owner',
+    '--no-acl',
+    '--file',
+    backupPath,
+    databaseUrl,
+  ], { stdio: 'inherit' });
+} catch {
+  console.error('[BACKUP] pg_dump failed');
+  process.exit(1);
+}
 
-const size = (fs.statSync(backupPath).size / 1024).toFixed(1)
-console.log(`[BACKUP] Created: ${backupName} (${size} KB)`)
+const size = (fs.statSync(backupPath).size / 1024).toFixed(1);
+console.log(`[BACKUP] Created: ${backupName} (${size} KB)`);

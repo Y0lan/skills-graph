@@ -13,5 +13,6 @@
     "verbatimModuleSyntax": false,
     "jsx": "react-jsx"
   },
-  "include": ["server/**/*.ts", "server/**/*.tsx", "scripts/**/*.ts", "src/data/team-roster.ts"]
+  "include": ["server/**/*.ts", "server/**/*.tsx", "src/data/team-roster.ts"],
+  "exclude": ["server/__tests__/**"]
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 /**
  * Scheduled-email lifecycle:
@@ -185,7 +185,7 @@ describe('findPendingScheduledEmails query shape', () => {
     return out
   }
 
-  it('returns an open email_scheduled with no superseding event', () => {
+  it('returns an open email_scheduled with no superseding event', async () => {
     insertEvent('cand-1', 'status_change')
     insertEvent('cand-1', 'email_scheduled', 'msg_A')
 
@@ -194,28 +194,28 @@ describe('findPendingScheduledEmails query shape', () => {
     expect(results[0].messageId).toBe('msg_A')
   })
 
-  it('excludes scheduled emails that have been sent', () => {
+  it('excludes scheduled emails that have been sent', async () => {
     insertEvent('cand-2', 'status_change')
     insertEvent('cand-2', 'email_scheduled', 'msg_B')
     insertEvent('cand-2', 'email_sent', 'msg_B')
     expect(pending('cand-2', 0)).toHaveLength(0)
   })
 
-  it('excludes scheduled emails that have been cancelled', () => {
+  it('excludes scheduled emails that have been cancelled', async () => {
     insertEvent('cand-3', 'status_change')
     insertEvent('cand-3', 'email_scheduled', 'msg_C')
     insertEvent('cand-3', 'email_cancelled', 'msg_C')
     expect(pending('cand-3', 0)).toHaveLength(0)
   })
 
-  it('excludes scheduled emails that have been marked failed', () => {
+  it('excludes scheduled emails that have been marked failed', async () => {
     insertEvent('cand-4', 'status_change')
     insertEvent('cand-4', 'email_scheduled', 'msg_D')
     insertEvent('cand-4', 'email_failed', 'msg_D')
     expect(pending('cand-4', 0)).toHaveLength(0)
   })
 
-  it('keeps a scheduled email whose messageId differs from a later sent one (no false supersedes)', () => {
+  it('keeps a scheduled email whose messageId differs from a later sent one (no false supersedes)', async () => {
     // Earlier scheduled email was sent (msg_E1); a NEW scheduled one (msg_E2) is pending.
     insertEvent('cand-5', 'status_change')
     insertEvent('cand-5', 'email_scheduled', 'msg_E1')
@@ -229,7 +229,7 @@ describe('findPendingScheduledEmails query shape', () => {
     expect(results[0].messageId).toBe('msg_E2')
   })
 
-  it('filters out scheduled events that predate the given status-change cursor', () => {
+  it('filters out scheduled events that predate the given status-change cursor', async () => {
     insertEvent('cand-6', 'email_scheduled', 'msg_OLD') // id=1, before cursor
     const cursor = (db.prepare('SELECT last_insert_rowid() as id').get() as { id: number }).id
     insertEvent('cand-6', 'status_change')

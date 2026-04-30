@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import request from 'supertest'
-import type Database from 'better-sqlite3'
 import { createTestDb } from './helpers/test-db'
 import { createTestApp } from './helpers/app'
 import type express from 'express'
+import type Database from './helpers/postgres-sync-test-db'
 
 const TEST_SLUG = 'yolan-maldonado'
 const OTHER_SLUG = 'steven-nguyen'
@@ -12,11 +12,11 @@ const OTHER_SLUG = 'steven-nguyen'
 let SKILL_ID: string
 
 describe('Skill-up & History API', () => {
-  let db: Database.Database
+  let db: Database
   let app: express.Express
 
-  beforeEach(() => {
-    db = createTestDb()
+  beforeEach(async () => {
+    db = await createTestDb()
     app = createTestApp(db)
 
     // Get a real skill ID from the seeded catalog
@@ -227,7 +227,7 @@ describe('Skill-up & History API', () => {
 
   // ─── Initial history seeding ────────────────────────────────
 
-  it('verifies initial history seeding populates skill_changes from evaluations', () => {
+  it('verifies initial history seeding populates skill_changes from evaluations', async () => {
     // The initial seeding happens in db.ts initDatabase()
     // In this test DB, skill_changes starts empty and we seed manually
     const insert = db.prepare('INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, 0, ?, ?)')

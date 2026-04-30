@@ -10,5 +10,9 @@ export default defineConfig({
   test: {
     include: ['server/__tests__/**/*.test.ts', 'tests/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
     environmentMatchGlobs: [['src/**', 'jsdom']],
+    globalSetup: ['./tests/helpers/postgres-global-setup.ts'],
+    setupFiles: ['./tests/helpers/postgres-setup.ts'],
+    fileParallelism: false,
+    testTimeout: 60_000,
   },
 })

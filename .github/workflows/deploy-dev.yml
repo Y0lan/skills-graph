@@ -1,4 +1,4 @@
-name: Deploy to GKE (Dev)
+name: Build Dev Image
 
 on:
   push:
@@ -26,6 +26,7 @@ jobs:
       - run: npm test
 
   build:
+    needs: test
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -63,54 +64,3 @@ jobs:
           cache-to: |
             type=registry,ref=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:buildcache,mode=max
             type=gha,mode=max
-
-  deploy-dev:
-    needs: [test, build]
-    runs-on: ubuntu-latest
-    environment: dev
-    steps:
-      - uses: actions/checkout@v4
-
-      - id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: projects/625956894258/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: github-deploy@premier-socle-sinapse.iam.gserviceaccount.com
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Install gke-gcloud-auth-plugin
-        run: gcloud components install gke-gcloud-auth-plugin --quiet
-
-      - name: Get GKE credentials
-        run: |
-          gcloud container clusters get-credentials cloud-sinapse \
-            --region asia-northeast1 \
-            --project premier-socle-sinapse
-
-      - name: Deploy to GKE (dev)
-        run: |
-          kubectl -n apps set image deployment/skill-radar \
-            skill-radar=asia-northeast1-docker.pkg.dev/premier-socle-sinapse/cloud-sinapse/skill-radar:dev-${{ github.sha }}
-          kubectl -n apps rollout status deployment/skill-radar --timeout=600s
-
-      - name: Smoke test
-        run: |
-          kubectl -n apps port-forward deploy/skill-radar 9090:8080 &
-          PF_PID=$!
-          sleep 3
-          # Keep a generous budget — Litestream restore on a cold pod can take
-          # tens of seconds for a large DB. rollout-status waits for Ready but
-          # port-forward + curl has its own races worth buffering against.
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health" 2>/dev/null || echo "000")
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              kill $PF_PID 2>/dev/null || true
-              exit 0
-            fi
-            echo "Attempt $i: HTTP $STATUS — retrying in 4s..."
-            sleep 4
-          done
-          kill $PF_PID 2>/dev/null || true
-          echo "Health check failed after 10 attempts" && exit 1

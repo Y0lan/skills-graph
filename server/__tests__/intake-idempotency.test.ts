@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 /**
  * Regression guard for the "Drupal queue retried after radar came back up"
- * case. Two successive processIntake() calls with the same submission_id
+ * case. Two successive processIntake() calls with the same submission_uuid
  * must produce: one candidate, one candidature, one email — regardless of
  * how many times the queue replays.
  *
@@ -35,11 +35,11 @@ vi.mock('./document-service.js', () => ({
   triggerDocumentScan: vi.fn().mockResolvedValue(undefined),
 }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { processIntake } = await import('../lib/intake-service.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -52,17 +52,17 @@ function preSeed() {
   db.close()
 }
 
-describe('processIntake — drupal_submission_id idempotency', () => {
-  beforeAll(() => {
+describe('processIntake — submission_uuid idempotency', () => {
+  beforeAll(async () => {
     preSeed()
-    initDatabase()
+    await initDatabase()
   })
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('second call with same submission_id returns duplicate=true and creates zero new rows', async () => {
+  it('second call with same submission_uuid returns duplicate=true and creates zero new rows', async () => {
     const submissionId = 'webform-sub-uuid-aaa-111'
     const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
 
@@ -77,7 +77,7 @@ describe('processIntake — drupal_submission_id idempotency', () => {
       prenom: 'Marie',
       email: 'marie.dupont@example.com',
       poste_vise: posteId,
-      submission_id: submissionId,
+      submission_uuid: submissionId,
     }, null, null)
     expect(first).toMatchObject({ ok: true, updated: false })
     expect((first as { duplicate?: boolean }).duplicate).toBeFalsy()
@@ -90,13 +90,13 @@ describe('processIntake — drupal_submission_id idempotency', () => {
     expect(afterFirst.candidates).toBe(before.candidates + 1)
     expect(afterFirst.candidatures).toBe(before.candidatures + 1)
 
-    // Simulate queue replay — same submission_id, same everything.
+    // Simulate queue replay — same submission_uuid, same everything.
     const second = await processIntake({
       nom: 'Dupont',
       prenom: 'Marie',
       email: 'marie.dupont@example.com',
       poste_vise: posteId,
-      submission_id: submissionId,
+      submission_uuid: submissionId,
     }, null, null)
     expect(second).toMatchObject({ ok: true, duplicate: true })
     expect((second as { candidatureId: string }).candidatureId).toBe(firstCandidatureId)
@@ -109,7 +109,7 @@ describe('processIntake — drupal_submission_id idempotency', () => {
     expect(afterSecond.candidatures).toBe(afterFirst.candidatures)
   })
 
-  it('stamps drupal_submission_id on the candidature row', async () => {
+  it('stamps submission_uuid on the candidature row', async () => {
     const submissionId = 'webform-sub-uuid-bbb-222'
     const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
 
@@ -118,16 +118,16 @@ describe('processIntake — drupal_submission_id idempotency', () => {
       prenom: 'Paul',
       email: 'paul.martin@example.com',
       poste_vise: posteId,
-      submission_id: submissionId,
+      submission_uuid: submissionId,
     }, null, null)
 
     const row = getDb()
-      .prepare('SELECT drupal_submission_id FROM candidatures WHERE drupal_submission_id = ?')
-      .get(submissionId) as { drupal_submission_id: string } | undefined
-    expect(row?.drupal_submission_id).toBe(submissionId)
+      .prepare('SELECT submission_uuid FROM candidatures WHERE submission_uuid = ?')
+      .get(submissionId) as { submission_uuid: string } | undefined
+    expect(row?.submission_uuid).toBe(submissionId)
   })
 
-  it('still creates when submission_id is absent (admin / legacy path)', async () => {
+  it('still creates when submission_uuid is absent (admin / legacy path)', async () => {
     const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
     const before = (getDb().prepare('SELECT COUNT(*) c FROM candidatures').get() as { c: number }).c
     const res = await processIntake({
@@ -145,7 +145,7 @@ describe('processIntake — drupal_submission_id idempotency', () => {
     // Simulate the multi-pod race: both workers missed the idempotency
     // fast-path, both entered the transaction, loser hit the partial
     // UNIQUE. We prove recovery by pre-inserting a candidature with a
-    // submission_id, then calling processIntake with the same id — the
+    // submission_uuid, then calling processIntake with the same id — the
     // fast-path will return duplicate=true without the race, BUT we also
     // verify the race-recovery branch explicitly by forcing a collision.
     const submissionId = 'webform-sub-uuid-race-xyz'
@@ -161,7 +161,7 @@ describe('processIntake — drupal_submission_id idempotency', () => {
       `race-${Date.now()}@example.com`, 'test',
       new Date(Date.now() + 365 * 86400000).toISOString(),
     )
-    db.prepare(`INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal, drupal_submission_id)
+    db.prepare(`INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal, submission_uuid)
                 VALUES (?, ?, ?, 'postule', 'site', ?)`)
       .run(winningCandidatureId, winningCandidateId, posteId, submissionId)
 
@@ -175,13 +175,13 @@ describe('processIntake — drupal_submission_id idempotency', () => {
       nom: 'Race Winner',
       email: `race-${Date.now()}@example.com`,
       poste_vise: posteId,
-      submission_id: submissionId,
+      submission_uuid: submissionId,
     }, null, null)
     expect(res).toMatchObject({ ok: true, duplicate: true })
     expect((res as { candidatureId: string }).candidatureId).toBe(winningCandidatureId)
   })
 
-  it('partial unique index allows multiple NULL submission_ids', async () => {
+  it('partial unique index allows multiple NULL submission_uuids', async () => {
     const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
     const r1 = await processIntake({
       nom: 'Legacy1', email: `legacy1-${Date.now()}@example.com`, poste_vise: posteId,
@@ -191,7 +191,7 @@ describe('processIntake — drupal_submission_id idempotency', () => {
     }, null, null)
     expect(r1).toMatchObject({ ok: true })
     expect(r2).toMatchObject({ ok: true })
-    const nulls = (getDb().prepare('SELECT COUNT(*) c FROM candidatures WHERE drupal_submission_id IS NULL').get() as { c: number }).c
+    const nulls = (getDb().prepare('SELECT COUNT(*) c FROM candidatures WHERE submission_uuid IS NULL').get() as { c: number }).c
     expect(nulls).toBeGreaterThanOrEqual(2)
   })
 })

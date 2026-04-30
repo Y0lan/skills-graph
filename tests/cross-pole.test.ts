@@ -11,7 +11,7 @@ describe('shared category computation', () => {
     return [...aRated].filter(id => bRated.has(id))
   }
 
-  it('returns only categories where both members rated skills', () => {
+  it('returns only categories where both members rated skills', async () => {
     const memberA = [
       { categoryId: 'soft-skills-delivery', avgRank: 3.5 },
       { categoryId: 'backend-integration', avgRank: 4.0 },
@@ -30,13 +30,13 @@ describe('shared category computation', () => {
     expect(shared).toHaveLength(2)
   })
 
-  it('returns empty array when no overlap', () => {
+  it('returns empty array when no overlap', async () => {
     const memberA = [{ categoryId: 'legacy-ibmi-adelia', avgRank: 3.0 }]
     const memberB = [{ categoryId: 'analyse-fonctionnelle', avgRank: 3.0 }]
     expect(computeSharedCategories(memberA, memberB)).toHaveLength(0)
   })
 
-  it('excludes categories with avgRank 0', () => {
+  it('excludes categories with avgRank 0', async () => {
     const memberA = [
       { categoryId: 'soft-skills-delivery', avgRank: 3.0 },
       { categoryId: 'backend-integration', avgRank: 0 },
@@ -49,7 +49,7 @@ describe('shared category computation', () => {
     expect(shared).toEqual(['soft-skills-delivery'])
   })
 
-  it('java_modernisation vs fonctionnel shares exactly 3 default categories', () => {
+  it('java_modernisation vs fonctionnel shares exactly 3 default categories', async () => {
     // These are the required categories shared between the two poles
     // architecture-governance, soft-skills-delivery, domain-knowledge
     // core-engineering is NOT in fonctionnel
@@ -76,7 +76,7 @@ describe('shared category computation', () => {
 })
 
 describe('declined vs skipped categories', () => {
-  it('declined and skipped are distinct arrays', () => {
+  it('declined and skipped are distinct arrays', async () => {
     const formData = {
       skippedCategories: ['frontend-ui'],
       declinedCategories: ['analyse-fonctionnelle', 'design-ux'],
@@ -86,7 +86,7 @@ describe('declined vs skipped categories', () => {
     expect(formData.declinedCategories).toHaveLength(2)
   })
 
-  it('a category can be declined but not skipped', () => {
+  it('a category can be declined but not skipped', async () => {
     const declined = new Set(['analyse-fonctionnelle'])
     const skipped = new Set(['frontend-ui'])
     expect(declined.has('analyse-fonctionnelle')).toBe(true)
@@ -131,7 +131,7 @@ describe('non-pole category grouping', () => {
     return groups
   }
 
-  it('excludes user pole categories', () => {
+  it('excludes user pole categories', async () => {
     const all = [...new Set(Object.values(poleMapping).flat()), 'infrastructure-systems-network']
     const groups = getNonPoleCategories('java_modernisation', all)
     const allNonPole = groups.flatMap(g => g.categoryIds)
@@ -140,7 +140,7 @@ describe('non-pole category grouping', () => {
     }
   })
 
-  it('places infrastructure-systems-network in transverse', () => {
+  it('places infrastructure-systems-network in transverse', async () => {
     const all = [...new Set(Object.values(poleMapping).flat()), 'infrastructure-systems-network']
     const groups = getNonPoleCategories('java_modernisation', all)
     const transverse = groups.find(g => g.pole === 'transverse')
@@ -148,7 +148,7 @@ describe('non-pole category grouping', () => {
     expect(transverse!.categoryIds).toContain('infrastructure-systems-network')
   })
 
-  it('groups fonctionnel-specific categories under fonctionnel', () => {
+  it('groups fonctionnel-specific categories under fonctionnel', async () => {
     const all = [...new Set(Object.values(poleMapping).flat())]
     const groups = getNonPoleCategories('java_modernisation', all)
     const fonctionnel = groups.find(g => g.pole === 'fonctionnel')

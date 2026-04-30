@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import express from 'express'
 import supertest from 'supertest'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 /**
  * POST /api/recruitment/candidatures/:id/events/note
@@ -41,14 +41,14 @@ vi.mock('../middleware/require-lead.js', async () => {
   }
 })
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 
 function preSeed(): void {
   // initDatabase seeds role_categories that FK into a categories row, which is
   // normally populated by lib/seed-catalog. The seed-catalog module is mocked
   // here (we don't want network or file IO during tests), so we pre-seed the
   // minimum category rows the migration path needs before initDatabase runs.
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -104,15 +104,15 @@ function seedCandidatureFixture(): string {
 }
 
 // Single boot of preSeed + initDatabase shared across both describes —
-// the in-memory better-sqlite3 connection lives inside lib/db.js's
+// the Postgres-backed test connection lives inside lib/db.js's
 // module state, so closing it in one suite's afterAll would leave the
 // next suite trying to open a destroyed handle. Instead we boot once
 // at module scope and clean up via a single afterAll at the bottom.
 preSeed()
-initDatabase()
+await initDatabase()
 
-afterAll(() => {
-  try { getDb().close() } catch { /* ignore */ }
+afterAll(async () => {
+  try { await getDb().close() } catch { /* ignore */ }
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 

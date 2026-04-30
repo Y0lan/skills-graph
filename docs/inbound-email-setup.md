@@ -38,14 +38,14 @@ In the Resend dashboard:
 3. Forward to webhook: `https://radar.sinapse.nc/api/recruitment/webhooks/resend-inbound`
 4. Save the webhook signing secret Resend gives you.
 
-### 3. Set the env var on the cluster
+### 3. Set the secret
 
 ```bash
-# In Infisical (or wherever skill-radar-secrets is managed):
+# In Secret Manager:
 RESEND_INBOUND_WEBHOOK_SECRET=<the secret from step 2>
 ```
 
-Restart the deployment (or wait for the next deploy).
+Deploy a new Cloud Run revision or wait for the next deploy.
 
 ### 4. Wire DNS
 
@@ -78,8 +78,8 @@ If step 1 succeeds but step 2 doesn't:
 - Check the candidate has `email = <sender address>` (case-insensitive,
   exact match — we don't fuzzy-match yet).
 - Check the webhook secret matches.
-- Check `kubectl logs deploy/skill-radar -n public-webapp` for
-  `[INBOUND]` lines.
+- Check Cloud Run logs for `[INBOUND]` lines:
+  `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="skill-radar" AND textPayload:"[INBOUND]"' --freshness=1h --project=premier-socle-sinapse`.
 
 ## Behaviour
 

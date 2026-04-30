@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 /**
  * Regression guard for the "pill says 18%, modal says 19%" drift.
@@ -18,12 +18,12 @@ process.env.RESEND_API_KEY = 're_test_dummy'
 
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { loadEffectiveRatings, rescoreCandidature, rescorePoste } = await import('../lib/scoring-helpers.js')
 const { calculatePosteCompatibility } = await import('../lib/compatibility.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -36,9 +36,9 @@ function preSeed() {
   db.close()
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   preSeed()
-  initDatabase()
+  await initDatabase()
   const db = getDb()
   const posteId = (db.prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
 
@@ -62,20 +62,20 @@ beforeAll(() => {
               VALUES (?, ?, ?, 'postule', 'site')`).run('cdt-rescore', 'cand-rescore', posteId)
 })
 
-afterAll(() => {
-  try { getDb().close() } catch { /* ignore */ }
+afterAll(async () => {
+  try { await getDb().close() } catch { /* ignore */ }
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
 describe('loadEffectiveRatings — merge order', () => {
-  it('merges ai + role_aware + manual with "later wins per-skill"', () => {
+  it('merges ai + role_aware + manual with "later wins per-skill"', async () => {
     const db = getDb()
     db.prepare('UPDATE candidates SET ratings = ?, ai_suggestions = ? WHERE id = ?')
       .run(JSON.stringify({ python: 4 }), JSON.stringify({ java: 3, python: 2, kubernetes: 1 }), 'cand-merge')
     db.prepare('UPDATE candidatures SET role_aware_suggestions = ? WHERE id = ?')
       .run(JSON.stringify({ java: 4, typescript: 3 }), 'cdt-merge')
 
-    const { ratings, availableSources } = loadEffectiveRatings('cdt-merge')
+    const { ratings, availableSources } = await loadEffectiveRatings('cdt-merge')
     expect(ratings).toEqual({
       java: 4,            // role_aware overrides ai
       python: 4,          // manual overrides ai
@@ -85,38 +85,38 @@ describe('loadEffectiveRatings — merge order', () => {
     expect(availableSources).toEqual({ ai: true, roleAware: true, manual: true })
   })
 
-  it('returns empty when every source is empty JSON', () => {
+  it('returns empty when every source is empty JSON', async () => {
     const db = getDb()
     db.prepare('UPDATE candidates SET ratings = ?, ai_suggestions = ? WHERE id = ?')
       .run('{}', '{}', 'cand-merge')
     db.prepare('UPDATE candidatures SET role_aware_suggestions = NULL WHERE id = ?').run('cdt-merge')
-    const { ratings, availableSources } = loadEffectiveRatings('cdt-merge')
+    const { ratings, availableSources } = await loadEffectiveRatings('cdt-merge')
     expect(ratings).toEqual({})
     expect(availableSources).toEqual({ ai: false, roleAware: false, manual: false })
   })
 
-  it('returns empty ratings for an unknown candidatureId (does not throw)', () => {
-    const { ratings, availableSources } = loadEffectiveRatings('does-not-exist')
+  it('returns empty ratings for an unknown candidatureId (does not throw)', async () => {
+    const { ratings, availableSources } = await loadEffectiveRatings('does-not-exist')
     expect(ratings).toEqual({})
     expect(availableSources.ai).toBe(false)
   })
 })
 
 describe('rescoreCandidature — DB side effects', () => {
-  it('writes computed scores onto the candidature row', () => {
-    const result = rescoreCandidature('cdt-rescore')
+  it('writes computed scores onto the candidature row', async () => {
+    const result = await rescoreCandidature('cdt-rescore')
     expect(result.candidatureId).toBe('cdt-rescore')
     const after = getDb().prepare('SELECT taux_compatibilite_poste FROM candidatures WHERE id = ?').get('cdt-rescore') as { taux_compatibilite_poste: number | null }
     expect(typeof after.taux_compatibilite_poste).toBe('number')
   })
 
-  it('throws on unknown candidatureId', () => {
-    expect(() => rescoreCandidature('nope')).toThrow(/not found/)
+  it('throws on unknown candidatureId', async () => {
+    await expect(rescoreCandidature('nope')).rejects.toThrow(/not found/)
   })
 })
 
 describe('posteId-not-roleId regression (codex P0 #1)', () => {
-  it('two postes sharing a role get DIFFERENT scores when they have different requirements', () => {
+  it('two postes sharing a role get DIFFERENT scores when they have different requirements', async () => {
     // Codex's specific attack: before the signature fix,
     // calculatePosteCompatibility took posteRoleId and internally did
     // "SELECT id FROM postes WHERE role_id = ? LIMIT 1" — so two postes
@@ -150,8 +150,8 @@ describe('posteId-not-roleId regression (codex P0 #1)', () => {
     db.prepare('INSERT INTO poste_skill_requirements (poste_id, skill_id, target_level, importance) VALUES (?, ?, ?, ?)').run(posteB.id, 'test-python', 5, 'requis')
 
     const ratings = { 'test-java': 5, 'test-python': 0 }
-    const scoreA = calculatePosteCompatibility(ratings, posteA.id)
-    const scoreB = calculatePosteCompatibility(ratings, posteB.id)
+    const scoreA = await calculatePosteCompatibility(ratings, posteA.id)
+    const scoreB = await calculatePosteCompatibility(ratings, posteB.id)
 
     expect(scoreA).toBeGreaterThanOrEqual(90)
     expect(scoreB).toBeLessThanOrEqual(10)
@@ -160,16 +160,16 @@ describe('posteId-not-roleId regression (codex P0 #1)', () => {
 })
 
 describe('rescorePoste — batch update', () => {
-  it('returns one result per candidature on the poste', () => {
+  it('returns one result per candidature on the poste', async () => {
     const posteId = (getDb().prepare('SELECT id FROM postes LIMIT 1').get() as { id: string }).id
-    const results = rescorePoste(posteId)
+    const results = await rescorePoste(posteId)
     expect(results.length).toBeGreaterThanOrEqual(2)  // cdt-merge + cdt-rescore
     for (const r of results) {
       expect(r.source).toBe('rescore')
     }
   })
 
-  it('returns empty array for a poste with no candidatures', () => {
+  it('returns empty array for a poste with no candidatures', async () => {
     const db = getDb()
     const row = db.prepare(`
       SELECT p.id FROM postes p
@@ -179,7 +179,7 @@ describe('rescorePoste — batch update', () => {
       LIMIT 1
     `).get() as { id: string } | undefined
     if (!row) return
-    const results = rescorePoste(row.id)
+    const results = await rescorePoste(row.id)
     expect(results).toEqual([])
   })
 })

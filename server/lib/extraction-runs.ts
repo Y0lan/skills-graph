@@ -1,125 +1,105 @@
-import crypto from 'crypto'
-import { getDb } from './db.js'
-
-export type ExtractionRunKind =
-  | 'skills_baseline'
-  | 'skills_role_aware'
-  | 'profile'
-  | 'critique'
-  | 'reconcile'
-
-export type ExtractionRunStatus = 'running' | 'success' | 'partial' | 'failed'
-
+import crypto from 'crypto';
+import { getDb } from './db.js';
+export type ExtractionRunKind = 'skills_baseline' | 'skills_role_aware' | 'profile' | 'critique' | 'reconcile';
+export type ExtractionRunStatus = 'running' | 'success' | 'partial' | 'failed';
 export interface StartRunParams {
-  candidateId: string
-  kind: ExtractionRunKind
-  candidatureId?: string | null
-  posteId?: string | null
-  posteSnapshot?: Record<string, unknown> | null
-  catalogVersion?: string | null
-  promptVersion: number
-  model: string
-  cvAssetId?: string | null
-  lettreAssetId?: string | null
+    candidateId: string;
+    kind: ExtractionRunKind;
+    candidatureId?: string | null;
+    posteId?: string | null;
+    posteSnapshot?: Record<string, unknown> | null;
+    catalogVersion?: string | null;
+    promptVersion: number;
+    model: string;
+    cvAssetId?: string | null;
+    lettreAssetId?: string | null;
 }
-
 export interface FinishRunParams {
-  runId: string
-  status: ExtractionRunStatus
-  payload?: unknown
-  error?: string | null
-  inputTokens?: number | null
-  outputTokens?: number | null
+    runId: string;
+    status: ExtractionRunStatus;
+    payload?: unknown;
+    error?: string | null;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
 }
-
+function runInsertParams(id: string, params: StartRunParams): unknown[] {
+    return [
+        id,
+        params.candidateId,
+        params.candidatureId ?? null,
+        params.kind,
+        params.candidateId,
+        params.posteId ?? null,
+        params.posteSnapshot ? JSON.stringify(params.posteSnapshot) : null,
+        params.catalogVersion ?? null,
+        params.promptVersion,
+        params.model,
+        params.cvAssetId ?? null,
+        params.lettreAssetId ?? null,
+    ];
+}
+function waitForRunIndexRetry(attempt: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 10 * 2 ** attempt));
+}
 /**
  * Open a new extraction run and return its id. Assigns a per-candidate
  * monotonic `run_index` so history UI can render a stable timeline.
  */
-export function startRun(params: StartRunParams): string {
-  const db = getDb()
-  const id = crypto.randomUUID()
-  // Wrap SELECT MAX + INSERT in a transaction so two parallel webhooks
-  // for the same candidate can\'t both compute the same run_index.
-  // better-sqlite3 is sync per-call, but extraction call sites awaits
-  // the LLM between starts; without the transaction, two concurrent
-  // pipeline runs interleave SELECT/SELECT/INSERT/INSERT and produce
-  // duplicate run_index values. Codex post-plan P2 #8.
-  const tx = db.transaction((): string => {
-    const nextIndex = ((db.prepare(
-      'SELECT COALESCE(MAX(run_index), 0) AS n FROM cv_extraction_runs WHERE candidate_id = ?',
-    ).get(params.candidateId) as { n: number } | undefined)?.n ?? 0) + 1
-
-    db.prepare(
-      `INSERT INTO cv_extraction_runs (
-         id, candidate_id, candidature_id, kind, run_index,
-         poste_id, poste_snapshot, catalog_version, prompt_version,
-         model, cv_asset_id, lettre_asset_id, status
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running')`,
-    ).run(
-      id,
-      params.candidateId,
-      params.candidatureId ?? null,
-      params.kind,
-      nextIndex,
-      params.posteId ?? null,
-      params.posteSnapshot ? JSON.stringify(params.posteSnapshot) : null,
-      params.catalogVersion ?? null,
-      params.promptVersion,
-      params.model,
-      params.cvAssetId ?? null,
-      params.lettreAssetId ?? null,
-    )
-    return id
-  })
-  return tx()
+export async function startRun(params: StartRunParams): Promise<string> {
+    const db = getDb();
+    const id = crypto.randomUUID();
+    for (let attempt = 0; attempt < 5; attempt++) {
+        const row = await db.prepare<{ id: string }>(`INSERT INTO cv_extraction_runs (
+             id, candidate_id, candidature_id, kind, run_index,
+             poste_id, poste_snapshot, catalog_version, prompt_version,
+             model, cv_asset_id, lettre_asset_id, status
+           )
+           SELECT ?, ?, ?, ?,
+                  COALESCE((SELECT MAX(run_index) FROM cv_extraction_runs WHERE candidate_id = ?), 0) + 1,
+                  ?, ?, ?, ?, ?, ?, ?, 'running'
+           ON CONFLICT DO NOTHING
+           RETURNING id`)
+            .get(...runInsertParams(id, params));
+        if (row) {
+            return row.id;
+        }
+        await waitForRunIndexRetry(attempt);
+    }
+    throw new Error(`Could not allocate extraction run index for candidate ${params.candidateId}`);
 }
-
-export function finishRun(params: FinishRunParams): void {
-  getDb().prepare(
-    `UPDATE cv_extraction_runs
-        SET finished_at = datetime('now'),
+export async function finishRun(params: FinishRunParams): Promise<void> {
+    await getDb().prepare(`UPDATE cv_extraction_runs
+        SET finished_at = now(),
             status = ?,
             payload = ?,
             error = ?,
             input_tokens = ?,
             output_tokens = ?
-      WHERE id = ?`,
-  ).run(
-    params.status,
-    params.payload !== undefined ? JSON.stringify(params.payload) : null,
-    params.error ?? null,
-    params.inputTokens ?? null,
-    params.outputTokens ?? null,
-    params.runId,
-  )
+      WHERE id = ?`).run(params.status, params.payload !== undefined ? JSON.stringify(params.payload) : null, params.error ?? null, params.inputTokens ?? null, params.outputTokens ?? null, params.runId);
 }
-
 export interface ExtractionRunRow {
-  id: string
-  candidateId: string
-  candidatureId: string | null
-  kind: ExtractionRunKind
-  runIndex: number
-  posteId: string | null
-  posteSnapshot: Record<string, unknown> | null
-  catalogVersion: string | null
-  promptVersion: number
-  model: string
-  cvAssetId: string | null
-  lettreAssetId: string | null
-  startedAt: string
-  finishedAt: string | null
-  status: ExtractionRunStatus
-  inputTokens: number | null
-  outputTokens: number | null
-  hasPayload: boolean
-  error: string | null
+    id: string;
+    candidateId: string;
+    candidatureId: string | null;
+    kind: ExtractionRunKind;
+    runIndex: number;
+    posteId: string | null;
+    posteSnapshot: Record<string, unknown> | null;
+    catalogVersion: string | null;
+    promptVersion: number;
+    model: string;
+    cvAssetId: string | null;
+    lettreAssetId: string | null;
+    startedAt: string;
+    finishedAt: string | null;
+    status: ExtractionRunStatus;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    hasPayload: boolean;
+    error: string | null;
 }
-
-export function listRuns(candidateId: string, limit = 50): ExtractionRunRow[] {
-  const rows = getDb().prepare(
-    `SELECT id, candidate_id, candidature_id, kind, run_index,
+export async function listRuns(candidateId: string, limit = 50): Promise<ExtractionRunRow[]> {
+    const rows = await getDb().prepare(`SELECT id, candidate_id, candidature_id, kind, run_index,
             poste_id, poste_snapshot, catalog_version, prompt_version,
             model, cv_asset_id, lettre_asset_id,
             started_at, finished_at, status, input_tokens, output_tokens,
@@ -127,58 +107,59 @@ export function listRuns(candidateId: string, limit = 50): ExtractionRunRow[] {
        FROM cv_extraction_runs
       WHERE candidate_id = ?
       ORDER BY started_at DESC
-      LIMIT ?`,
-  ).all(candidateId, limit) as Array<{
-    id: string
-    candidate_id: string
-    candidature_id: string | null
-    kind: ExtractionRunKind
-    run_index: number
-    poste_id: string | null
-    poste_snapshot: string | null
-    catalog_version: string | null
-    prompt_version: number
-    model: string
-    cv_asset_id: string | null
-    lettre_asset_id: string | null
-    started_at: string
-    finished_at: string | null
-    status: ExtractionRunStatus
-    input_tokens: number | null
-    output_tokens: number | null
-    has_payload: number
-    error: string | null
-  }>
-
-  return rows.map(r => ({
-    id: r.id,
-    candidateId: r.candidate_id,
-    candidatureId: r.candidature_id,
-    kind: r.kind,
-    runIndex: r.run_index,
-    posteId: r.poste_id,
-    posteSnapshot: r.poste_snapshot ? JSON.parse(r.poste_snapshot) : null,
-    catalogVersion: r.catalog_version,
-    promptVersion: r.prompt_version,
-    model: r.model,
-    cvAssetId: r.cv_asset_id,
-    lettreAssetId: r.lettre_asset_id,
-    startedAt: r.started_at,
-    finishedAt: r.finished_at,
-    status: r.status,
-    inputTokens: r.input_tokens,
-    outputTokens: r.output_tokens,
-    hasPayload: !!r.has_payload,
-    error: r.error,
-  }))
+      LIMIT ?`).all(candidateId, limit) as Array<{
+        id: string;
+        candidate_id: string;
+        candidature_id: string | null;
+        kind: ExtractionRunKind;
+        run_index: number;
+        poste_id: string | null;
+        poste_snapshot: string | null;
+        catalog_version: string | null;
+        prompt_version: number;
+        model: string;
+        cv_asset_id: string | null;
+        lettre_asset_id: string | null;
+        started_at: string;
+        finished_at: string | null;
+        status: ExtractionRunStatus;
+        input_tokens: number | null;
+        output_tokens: number | null;
+        has_payload: number;
+        error: string | null;
+    }>;
+    return rows.map(r => ({
+        id: r.id,
+        candidateId: r.candidate_id,
+        candidatureId: r.candidature_id,
+        kind: r.kind,
+        runIndex: r.run_index,
+        posteId: r.poste_id,
+        posteSnapshot: r.poste_snapshot
+            ? (typeof r.poste_snapshot === 'string' ? JSON.parse(r.poste_snapshot) : r.poste_snapshot)
+            : null,
+        catalogVersion: r.catalog_version,
+        promptVersion: r.prompt_version,
+        model: r.model,
+        cvAssetId: r.cv_asset_id,
+        lettreAssetId: r.lettre_asset_id,
+        startedAt: r.started_at,
+        finishedAt: r.finished_at,
+        status: r.status,
+        inputTokens: r.input_tokens,
+        outputTokens: r.output_tokens,
+        hasPayload: !!r.has_payload,
+        error: r.error,
+    }));
 }
-
-export function getRunPayload(runId: string): unknown | null {
-  const row = getDb().prepare('SELECT payload FROM cv_extraction_runs WHERE id = ?').get(runId) as { payload: string | null } | undefined
-  if (!row || !row.payload) return null
-  return JSON.parse(row.payload)
+export async function getRunPayload(runId: string): Promise<unknown | null> {
+    const row = await getDb().prepare('SELECT payload FROM cv_extraction_runs WHERE id = ?').get(runId) as {
+        payload: string | null;
+    } | undefined;
+    if (!row || !row.payload)
+        return null;
+    return typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload;
 }
-
 /**
  * Discriminated result type the wrapper passes to the caller. Lets each
  * call site keep its OWN failure semantics (mark candidate failed,
@@ -189,11 +170,35 @@ export function getRunPayload(runId: string): unknown | null {
  * enough. The wrapper\'s body returns one of these shapes; the caller
  * pattern-matches.
  */
-export type ExtractionRunResult<T> =
-  | { status: 'success'; payload: T; inputTokens?: number | null; outputTokens?: number | null }
-  | { status: 'partial'; payload: T; error: string; inputTokens?: number | null; outputTokens?: number | null }
-  | { status: 'failed'; error: string }
-
+export type ExtractionRunResult<T> = {
+    status: 'success';
+    payload: T;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+} | {
+    status: 'partial';
+    payload: T;
+    error: string;
+    inputTokens?: number | null;
+    outputTokens?: number | null;
+} | {
+    status: 'failed';
+    error: string;
+};
+async function finishRunFromResult<T>(runId: string, result: ExtractionRunResult<T>): Promise<void> {
+    if (result.status === 'failed') {
+        await finishRun({ runId, status: 'failed', error: result.error });
+        return;
+    }
+    await finishRun({
+        runId,
+        status: result.status,
+        payload: result.payload,
+        error: result.status === 'partial' ? result.error : null,
+        inputTokens: result.inputTokens ?? null,
+        outputTokens: result.outputTokens ?? null,
+    });
+}
 /**
  * `withExtractionRun` — opens a `cv_extraction_runs` row, runs the
  * caller\'s LLM/work function, closes the row with the right status
@@ -218,40 +223,19 @@ export type ExtractionRunResult<T> =
  * Throws iff the inner function itself throws — the row is still
  * closed as `failed` in `finally` before the exception propagates.
  */
-export async function withExtractionRun<T>(
-  startParams: StartRunParams,
-  fn: (runId: string) => Promise<ExtractionRunResult<T>>,
-): Promise<ExtractionRunResult<T> & { runId: string }> {
-  const runId = startRun(startParams)
-  let result: ExtractionRunResult<T>
-  try {
-    result = await fn(runId)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    finishRun({ runId, status: 'failed', error: message })
-    throw err
-  }
-
-  if (result.status === 'success') {
-    finishRun({
-      runId,
-      status: 'success',
-      payload: result.payload,
-      inputTokens: result.inputTokens ?? null,
-      outputTokens: result.outputTokens ?? null,
-    })
-  } else if (result.status === 'partial') {
-    finishRun({
-      runId,
-      status: 'partial',
-      payload: result.payload,
-      error: result.error,
-      inputTokens: result.inputTokens ?? null,
-      outputTokens: result.outputTokens ?? null,
-    })
-  } else {
-    finishRun({ runId, status: 'failed', error: result.error })
-  }
-
-  return { ...result, runId }
+export async function withExtractionRun<T>(startParams: StartRunParams, fn: (runId: string) => Promise<ExtractionRunResult<T>>): Promise<ExtractionRunResult<T> & {
+    runId: string;
+}> {
+    const runId = await startRun(startParams);
+    let result: ExtractionRunResult<T>;
+    try {
+        result = await fn(runId);
+    }
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await finishRun({ runId, status: 'failed', error: message });
+        throw err;
+    }
+    await finishRunFromResult(runId, result);
+    return { ...result, runId };
 }

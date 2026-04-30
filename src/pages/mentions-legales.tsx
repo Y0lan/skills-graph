@@ -25,7 +25,7 @@ export default function MentionsLegalesPage() {
           <section>
             <h2 className="text-lg font-semibold">Hébergement</h2>
             <p>
-              Google Cloud Platform (GKE Autopilot)<br />
+              Google Cloud Platform (Cloud Run et Cloud SQL)<br />
               Région : asia-northeast1<br />
               Google Cloud EMEA Limited
             </p>

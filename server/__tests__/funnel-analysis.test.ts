@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'funnel-test-'))
 process.env.DATA_DIR = tmpDir
@@ -10,11 +10,15 @@ process.env.DATA_DIR = tmpDir
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
 const dbModule = await import('../lib/db.js')
-const { initDatabase, getDb, DB_PATH } = dbModule
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = dbModule
 const { buildFunnel, buildFunnelFlow } = await import('../lib/funnel-analysis.js')
 
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+}
+
 function preSeedCategories() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -37,16 +41,16 @@ function preSeedCategories() {
   db.close()
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   preSeedCategories()
-  initDatabase()
+  await initDatabase()
 })
 
-afterAll(() => {
+afterAll(async () => {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch { /* noop */ }
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   const db = getDb()
   db.prepare('DELETE FROM candidature_events').run()
   db.prepare('DELETE FROM candidatures').run()
@@ -61,8 +65,8 @@ function seedRolePoste(opts: { roleId?: string; posteId?: string; pole?: string 
   const pole = opts.pole ?? 'java_modernisation'
   const db = getDb()
   db.prepare(`INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, 'test')`).run(roleId, roleId)
-  db.prepare(`INSERT OR IGNORE INTO postes (id, role_id, titre, pole, created_at) VALUES (?, ?, ?, ?, datetime('now'))`)
-    .run(posteId, roleId, posteId, pole)
+  db.prepare(`INSERT OR IGNORE INTO postes (id, role_id, titre, pole, created_at) VALUES (?, ?, ?, ?, ?)`)
+    .run(posteId, roleId, posteId, pole, new Date().toISOString())
   return posteId
 }
 
@@ -86,8 +90,8 @@ function addEvent(candId: string, from: string, to: string): void {
 }
 
 describe('buildFunnel', () => {
-  it('returns empty result when no candidatures exist', () => {
-    const data = buildFunnel({})
+  it('returns empty result when no candidatures exist', async () => {
+    const data = await buildFunnel({})
     expect(data.totals).toEqual({ all: 0, hired: 0, refused: 0, in_progress: 0 })
     expect(data.links).toEqual([])
     // All nodes still listed for stable UI rendering
@@ -95,93 +99,90 @@ describe('buildFunnel', () => {
     expect(data.nodes.every(n => n.count === 0)).toBe(true)
   })
 
-  it('counts every candidature in postule baseline even with no events', () => {
+  it('counts every candidature in postule baseline even with no events', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'c1', posteId, statut: 'postule' })
     seedCandidature({ id: 'c2', posteId, statut: 'postule' })
 
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     expect(data.totals.all).toBe(2)
     expect(data.totals.in_progress).toBe(2)
     expect(data.nodes.find(n => n.id === 'postule')?.count).toBe(2)
     expect(data.links).toEqual([])
   })
 
-  it('aggregates a single candidature through three transitions', () => {
+  it('aggregates a single candidature through three transitions', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'c1', posteId, statut: 'entretien_1' })
     addEvent('c1', 'postule', 'preselectionne')
     addEvent('c1', 'preselectionne', 'skill_radar_envoye')
     addEvent('c1', 'skill_radar_envoye', 'entretien_1')
 
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     expect(data.links).toHaveLength(3)
     expect(data.links).toContainEqual(expect.objectContaining({ source: 'postule', target: 'preselectionne', value: 1 }))
     expect(data.links).toContainEqual(expect.objectContaining({ source: 'preselectionne', target: 'skill_radar_envoye', value: 1 }))
     expect(data.links).toContainEqual(expect.objectContaining({ source: 'skill_radar_envoye', target: 'entretien_1', value: 1 }))
   })
 
-  it('sums values when multiple candidatures share the same transition', () => {
+  it('sums values when multiple candidatures share the same transition', async () => {
     const posteId = seedRolePoste()
     for (let i = 1; i <= 5; i++) {
       seedCandidature({ id: `c${i}`, posteId, statut: 'preselectionne' })
       addEvent(`c${i}`, 'postule', 'preselectionne')
     }
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     const link = data.links.find(l => l.source === 'postule' && l.target === 'preselectionne')
     expect(link?.value).toBe(5)
   })
 
-  it('counts hired and refused as terminal in totals', () => {
+  it('counts hired and refused as terminal in totals', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'h1', posteId, statut: 'embauche' })
     seedCandidature({ id: 'r1', posteId, statut: 'refuse' })
     seedCandidature({ id: 'r2', posteId, statut: 'refuse' })
     seedCandidature({ id: 'p1', posteId, statut: 'entretien_1' })
 
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     expect(data.totals).toEqual({ all: 4, hired: 1, refused: 2, in_progress: 1 })
   })
 
-  it('filters out other poles', () => {
+  it('filters out other poles', async () => {
     const javaId = seedRolePoste({ posteId: 'p-java', pole: 'java_modernisation' })
     const legacyId = seedRolePoste({ roleId: 'r2', posteId: 'p-legacy', pole: 'legacy' })
     seedCandidature({ id: 'c-java', posteId: javaId, statut: 'postule' })
     seedCandidature({ id: 'c-legacy', posteId: legacyId, statut: 'postule' })
 
-    const javaOnly = buildFunnel({ pole: 'java_modernisation' })
+    const javaOnly = await buildFunnel({ pole: 'java_modernisation' })
     expect(javaOnly.totals.all).toBe(1)
 
-    const all = buildFunnel({ pole: 'all' })
+    const all = await buildFunnel({ pole: 'all' })
     expect(all.totals.all).toBe(2)
   })
 
-  it('filters by days window using created_at', () => {
+  it('filters by days window using created_at', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'recent', posteId, statut: 'postule' })
-    // Old candidature, 100 days old
-    seedCandidature({ id: 'old', posteId, statut: 'postule', createdAt: "datetime('now', '-100 days')" })
-    // The createdAt parameter took a string literal — re-do with explicit datetime expression
-    getDb().prepare("UPDATE candidatures SET created_at = datetime('now', '-100 days') WHERE id = 'old'").run()
+    seedCandidature({ id: 'old', posteId, statut: 'postule', createdAt: daysAgoIso(100) })
 
-    const last30 = buildFunnel({ days: 30 })
+    const last30 = await buildFunnel({ days: 30 })
     expect(last30.totals.all).toBe(1)
 
-    const last200 = buildFunnel({ days: 200 })
+    const last200 = await buildFunnel({ days: 200 })
     expect(last200.totals.all).toBe(2)
   })
 
-  it('skips self-loop transitions (statut_from == statut_to)', () => {
+  it('skips self-loop transitions (statut_from == statut_to)', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'c1', posteId, statut: 'preselectionne' })
     addEvent('c1', 'preselectionne', 'preselectionne') // pathological no-op
     addEvent('c1', 'postule', 'preselectionne')
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     expect(data.links).toHaveLength(1)
     expect(data.links[0]).toMatchObject({ source: 'postule', target: 'preselectionne', value: 1 })
   })
 
-  it('counts a candidature touching a node only once even with re-entry', () => {
+  it('counts a candidature touching a node only once even with re-entry', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'c1', posteId, statut: 'entretien_1' })
     addEvent('c1', 'postule', 'preselectionne')
@@ -189,15 +190,15 @@ describe('buildFunnel', () => {
     addEvent('c1', 'entretien_1', 'preselectionne') // bounced back
     addEvent('c1', 'preselectionne', 'entretien_1') // and forward again
 
-    const data = buildFunnel({})
+    const data = await buildFunnel({})
     // Node counts use COUNT DISTINCT — this candidature touched preselectionne twice but counts once.
     expect(data.nodes.find(n => n.id === 'preselectionne')?.count).toBe(1)
     // Link postule->preselectionne value = 1 (one candidate did this once).
     expect(data.links.find(l => l.source === 'postule' && l.target === 'preselectionne')?.value).toBe(1)
   })
 
-  it('returns labels from STATUT_LABELS for known statuses', () => {
-    const data = buildFunnel({})
+  it('returns labels from STATUT_LABELS for known statuses', async () => {
+    const data = await buildFunnel({})
     const postule = data.nodes.find(n => n.id === 'postule')
     expect(postule?.label).toBeTruthy()
     expect(postule?.label).not.toBe('postule') // i.e. it was translated
@@ -205,7 +206,7 @@ describe('buildFunnel', () => {
 })
 
 describe('buildFunnelFlow', () => {
-  it('returns the candidates that traversed a specific link with their time-in-source', () => {
+  it('returns the candidates that traversed a specific link with their time-in-source', async () => {
     const posteId = seedRolePoste()
     // Two candidates went postule → preselectionne, one stayed in postule.
     seedCandidature({ id: 'c1', posteId, statut: 'preselectionne' })
@@ -214,7 +215,7 @@ describe('buildFunnelFlow', () => {
     addEvent('c1', 'postule', 'preselectionne')
     addEvent('c2', 'postule', 'preselectionne')
 
-    const flow = buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
+    const flow = await buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
     expect(flow.total).toBe(2)
     expect(flow.candidates.map(c => c.candidature_id).sort()).toEqual(['c1', 'c2'])
     expect(flow.source_label).toBeTruthy()
@@ -226,17 +227,17 @@ describe('buildFunnelFlow', () => {
     }
   })
 
-  it('returns empty when nobody walked the requested link', () => {
+  it('returns empty when nobody walked the requested link', async () => {
     const posteId = seedRolePoste()
     seedCandidature({ id: 'c1', posteId, statut: 'preselectionne' })
     addEvent('c1', 'postule', 'preselectionne')
 
-    const flow = buildFunnelFlow({ source: 'postule', target: 'embauche' })
+    const flow = await buildFunnelFlow({ source: 'postule', target: 'embauche' })
     expect(flow.total).toBe(0)
     expect(flow.candidates).toEqual([])
   })
 
-  it('respects pole and days filters', () => {
+  it('respects pole and days filters', async () => {
     const javaId = seedRolePoste({ posteId: 'p-java', pole: 'java_modernisation' })
     const legacyId = seedRolePoste({ roleId: 'r2', posteId: 'p-legacy', pole: 'legacy' })
     seedCandidature({ id: 'c-java', posteId: javaId, statut: 'preselectionne' })
@@ -244,11 +245,11 @@ describe('buildFunnelFlow', () => {
     addEvent('c-java', 'postule', 'preselectionne')
     addEvent('c-legacy', 'postule', 'preselectionne')
 
-    const javaOnly = buildFunnelFlow({ source: 'postule', target: 'preselectionne', pole: 'java_modernisation' })
+    const javaOnly = await buildFunnelFlow({ source: 'postule', target: 'preselectionne', pole: 'java_modernisation' })
     expect(javaOnly.candidates.map(c => c.candidature_id)).toEqual(['c-java'])
   })
 
-  it('flags candidates above P90 as over-SLA', () => {
+  it('flags candidates above P90 as over-SLA', async () => {
     const posteId = seedRolePoste()
     // Seed many fast transitions + one slow one. P90 threshold should fire.
     for (let i = 0; i < 9; i++) {
@@ -256,16 +257,15 @@ describe('buildFunnelFlow', () => {
       // candidature.created_at = now; event also "now" → ~0 days in source
       addEvent(`fast-${i}`, 'postule', 'preselectionne')
     }
-    seedCandidature({ id: 'slow', posteId, statut: 'preselectionne', createdAt: "datetime('now', '-30 days')" })
-    getDb().prepare("UPDATE candidatures SET created_at = datetime('now', '-30 days') WHERE id = 'slow'").run()
+    seedCandidature({ id: 'slow', posteId, statut: 'preselectionne', createdAt: daysAgoIso(30) })
     addEvent('slow', 'postule', 'preselectionne')
 
-    const flow = buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
+    const flow = await buildFunnelFlow({ source: 'postule', target: 'preselectionne' })
     const slow = flow.candidates.find(c => c.candidature_id === 'slow')
     expect(slow?.sla).toBe('over')
     expect(slow?.days_in_source).toBeGreaterThan(20)
   })
 })
 
-// Reference DB_PATH so the import isn't unused (vitest tree-shake tolerance)
-void DB_PATH
+// Reference TEST_DATABASE_HANDLE so the import isn't unused (vitest tree-shake tolerance)
+void TEST_DATABASE_HANDLE

@@ -2,15 +2,15 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vites
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'watchdog-test-'))
 process.env.DATA_DIR = tmpDir
 
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
-function preSeed(DB_PATH: string) {
-  const db = new Database(DB_PATH)
+function preSeed(TEST_DATABASE_HANDLE: string) {
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -24,15 +24,15 @@ function preSeed(DB_PATH: string) {
 }
 
 const dbModule = await import('../lib/db.js')
-const { initDatabase, getDb, DB_PATH } = dbModule
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = dbModule
 
-beforeAll(() => {
-  preSeed(DB_PATH)
-  initDatabase()
+beforeAll(async () => {
+  preSeed(TEST_DATABASE_HANDLE)
+  await initDatabase()
 })
 
-afterAll(() => {
-  try { getDb().close() } catch { /* ignore */ }
+afterAll(async () => {
+  try { await getDb().close() } catch { /* ignore */ }
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
@@ -72,7 +72,7 @@ function insertRun(candidateId: string, status: string, startedAt: string) {
   return runId
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   // wipe both tables between tests
   getDb().exec('DELETE FROM cv_extraction_runs; DELETE FROM candidates;')
 })
@@ -94,7 +94,7 @@ describe('startupSweep', () => {
     // Control: already succeeded should not be touched
     insertCandidate('ok', { extraction_status: 'succeeded', extraction_attempts: 1 })
 
-    const changed = startupSweep()
+    const changed = await startupSweep()
     expect(changed.candidates).toBe(2)
 
     const marcel = getDb().prepare('SELECT extraction_status, lock_acquired_at, last_extraction_error FROM candidates WHERE id = ?').get('marcel') as { extraction_status: string; lock_acquired_at: string | null; last_extraction_error: string | null }
@@ -118,7 +118,7 @@ describe('startupSweep', () => {
     insertRun('c1', 'running', '2026-04-23 12:57:20')
     insertRun('c1', 'success', '2026-04-23 12:57:23')
 
-    const changed = startupSweep()
+    const changed = await startupSweep()
     expect(changed.runs).toBe(1)
 
     const rows = getDb().prepare("SELECT status, error, finished_at FROM cv_extraction_runs WHERE candidate_id = 'c1' ORDER BY started_at").all() as Array<{ status: string; error: string | null; finished_at: string | null }>
@@ -140,7 +140,7 @@ describe('sweepStaleExtractions (watchdog tick)', () => {
     insertCandidate('stale', { extraction_status: 'running', lock_acquired_at: elevenMinAgo.t })
     insertCandidate('fresh', { extraction_status: 'running', lock_acquired_at: freshLock.t })
 
-    const changed = sweepStaleExtractions()
+    const changed = await sweepStaleExtractions()
     expect(changed.candidates).toBe(1)
 
     const stale = getDb().prepare('SELECT extraction_status, lock_acquired_at FROM candidates WHERE id = ?').get('stale') as { extraction_status: string; lock_acquired_at: string | null }
@@ -155,7 +155,7 @@ describe('sweepStaleExtractions (watchdog tick)', () => {
     const { sweepStaleExtractions } = await import('../lib/extraction-watchdog.js')
     insertCandidate('no-lock-time', { extraction_status: 'running', lock_acquired_at: null })
 
-    const changed = sweepStaleExtractions()
+    const changed = await sweepStaleExtractions()
     expect(changed.candidates).toBe(0)
 
     const row = getDb().prepare('SELECT extraction_status FROM candidates WHERE id = ?').get('no-lock-time') as { extraction_status: string }
@@ -168,7 +168,7 @@ describe('sweepStaleExtractions (watchdog tick)', () => {
     insertCandidate('c2', { extraction_status: 'running' })
     insertRun('c2', 'running', elevenMinAgo.t)
 
-    const changed = sweepStaleExtractions()
+    const changed = await sweepStaleExtractions()
     expect(changed.runs).toBe(1)
     const row = getDb().prepare("SELECT status, finished_at, error FROM cv_extraction_runs WHERE candidate_id = 'c2'").get() as { status: string; finished_at: string | null; error: string | null }
     expect(row.status).toBe('partial')

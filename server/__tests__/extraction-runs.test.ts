@@ -3,18 +3,18 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'extraction-runs-'))
 process.env.DATA_DIR = tmpDir
 
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { startRun, finishRun, listRuns, getRunPayload, withExtractionRun } = await import('../lib/extraction-runs.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -34,21 +34,21 @@ function seedCandidate() {
 }
 
 describe('extraction-runs', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeed()
-    initDatabase()
+    await initDatabase()
   })
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('startRun assigns monotonically increasing run_index per candidate', () => {
+  it('startRun assigns monotonically increasing run_index per candidate', async () => {
     const cid = seedCandidate()
-    const r1 = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
-    const r2 = startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 'test' })
-    const r3 = startRun({ candidateId: cid, kind: 'critique', promptVersion: 2, model: 'test' })
-    const rows = listRuns(cid)
+    const r1 = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
+    const r2 = await startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 'test' })
+    const r3 = await startRun({ candidateId: cid, kind: 'critique', promptVersion: 2, model: 'test' })
+    const rows = await listRuns(cid)
     expect(rows).toHaveLength(3)
     const indices = rows.map(r => r.runIndex).sort()
     expect(indices).toEqual([1, 2, 3])
@@ -56,44 +56,44 @@ describe('extraction-runs', () => {
     expect(new Set([r1, r2, r3]).size).toBe(3)
   })
 
-  it('finishRun persists status + payload + token counts', () => {
+  it('finishRun persists status + payload + token counts', async () => {
     const cid = seedCandidate()
-    const runId = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
-    finishRun({
+    const runId = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
+    await finishRun({
       runId,
       status: 'success',
       payload: { ratings: { java: 4 } },
       inputTokens: 1234,
       outputTokens: 567,
     })
-    const runs = listRuns(cid)
+    const runs = await listRuns(cid)
     expect(runs[0].status).toBe('success')
     expect(runs[0].inputTokens).toBe(1234)
     expect(runs[0].outputTokens).toBe(567)
     expect(runs[0].hasPayload).toBe(true)
-    expect(getRunPayload(runId)).toMatchObject({ ratings: { java: 4 } })
+    expect(await getRunPayload(runId)).toMatchObject({ ratings: { java: 4 } })
   })
 
-  it('finishRun records error on failure', () => {
+  it('finishRun records error on failure', async () => {
     const cid = seedCandidate()
-    const runId = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
-    finishRun({ runId, status: 'failed', error: 'API down' })
-    const runs = listRuns(cid)
+    const runId = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
+    await finishRun({ runId, status: 'failed', error: 'API down' })
+    const runs = await listRuns(cid)
     expect(runs[0].status).toBe('failed')
     expect(runs[0].error).toBe('API down')
     expect(runs[0].hasPayload).toBe(false)
   })
 
-  it('listRuns respects limit + orders by startedAt DESC', () => {
+  it('listRuns respects limit + orders by startedAt DESC', async () => {
     const cid = seedCandidate()
-    for (let i = 0; i < 5; i++) startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
-    const runs = listRuns(cid, 3)
+    for (let i = 0; i < 5; i++) await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 'test' })
+    const runs = await listRuns(cid, 3)
     expect(runs).toHaveLength(3)
   })
 
-  it('posteSnapshot + catalogVersion roundtrip as JSON', () => {
+  it('posteSnapshot + catalogVersion roundtrip as JSON', async () => {
     const cid = seedCandidate()
-    const runId = startRun({
+    const runId = await startRun({
       candidateId: cid,
       kind: 'skills_role_aware',
       promptVersion: 2,
@@ -101,8 +101,8 @@ describe('extraction-runs', () => {
       posteSnapshot: { titre: 'Dev', description: 'short' },
       catalogVersion: '5.1.0',
     })
-    finishRun({ runId, status: 'success', payload: { ratings: {} } })
-    const runs = listRuns(cid)
+    await finishRun({ runId, status: 'success', payload: { ratings: {} } })
+    const runs = await listRuns(cid)
     const run = runs.find(r => r.id === runId)!
     expect(run.posteSnapshot).toMatchObject({ titre: 'Dev', description: 'short' })
     expect(run.catalogVersion).toBe('5.1.0')
@@ -123,12 +123,12 @@ describe('extraction-runs', () => {
     )
     expect(outcome.status).toBe('success')
     if (outcome.status === 'success') expect(outcome.payload.ok).toBe(true)
-    const runs = listRuns(cid)
+    const runs = await listRuns(cid)
     const run = runs.find(r => r.id === outcome.runId)!
     expect(run.status).toBe('success')
     expect(run.inputTokens).toBe(123)
     expect(run.outputTokens).toBe(45)
-    expect(getRunPayload(outcome.runId)).toEqual({ ok: true })
+    expect(await getRunPayload(outcome.runId)).toEqual({ ok: true })
   })
 
   it('withExtractionRun closes the row as partial when the body returns partial', async () => {
@@ -144,7 +144,7 @@ describe('extraction-runs', () => {
       }),
     )
     expect(outcome.status).toBe('partial')
-    const run = listRuns(cid).find(r => r.id === outcome.runId)!
+    const run = (await listRuns(cid)).find(r => r.id === outcome.runId)!
     expect(run.status).toBe('partial')
     expect(run.error).toMatch(/half the categories/i)
     expect(run.inputTokens).toBe(50)
@@ -157,7 +157,7 @@ describe('extraction-runs', () => {
       async () => ({ status: 'failed' as const, error: 'returned null' }),
     )
     expect(outcome.status).toBe('failed')
-    const run = listRuns(cid).find(r => r.id === outcome.runId)!
+    const run = (await listRuns(cid)).find(r => r.id === outcome.runId)!
     expect(run.status).toBe('failed')
     expect(run.error).toBe('returned null')
   })
@@ -166,7 +166,7 @@ describe('extraction-runs', () => {
     const cid = seedCandidate()
     let thrown: Error | null = null
     let runId: string | null = null
-    const tracker = listRuns(cid).length
+    const tracker = (await listRuns(cid)).length
     try {
       await withExtractionRun(
         { candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm' },
@@ -181,7 +181,7 @@ describe('extraction-runs', () => {
     expect(thrown).not.toBeNull()
     expect(thrown!.message).toBe('boom')
     expect(runId).not.toBeNull()
-    const newRuns = listRuns(cid)
+    const newRuns = await listRuns(cid)
     expect(newRuns.length).toBe(tracker + 1)
     const run = newRuns.find(r => r.id === runId!)!
     expect(run.status).toBe('failed')
@@ -201,7 +201,7 @@ describe('extraction-runs', () => {
         candidateId: cid, kind: 'profile', promptVersion: 1, model: 'm',
       }))),
     )
-    const runs = listRuns(cid).filter(r => runIds.includes(r.id))
+    const runs = (await listRuns(cid)).filter(r => runIds.includes(r.id))
     const indexes = runs.map(r => r.runIndex).sort((a, b) => a - b)
     // 5 unique values
     expect(new Set(indexes).size).toBe(5)
@@ -210,6 +210,6 @@ describe('extraction-runs', () => {
       expect(indexes[i]).toBeGreaterThan(indexes[i - 1])
     }
     // Cleanup so other tests' run_index expectations stay stable.
-    for (const id of runIds) finishRun({ runId: id, status: 'success' })
+    for (const id of runIds) await finishRun({ runId: id, status: 'success' })
   })
 })

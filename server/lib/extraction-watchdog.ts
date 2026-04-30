@@ -1,5 +1,4 @@
-import { getDb } from './db.js'
-
+import { getDb } from './db.js';
 /**
  * Orphan-lock recovery for the CV extraction pipeline.
  *
@@ -24,26 +23,21 @@ import { getDb } from './db.js'
  * (for runs) so first-attempt orphans with `last_extraction_at=NULL` are
  * handled correctly — a codex-challenge finding from rev 1 of the plan.
  */
-
-const STALE_LOCK_MS = 10 * 60 * 1000 // 10 min — well past any legitimate Anthropic call
-const SWEEP_INTERVAL_MS = 60_000 // 1 min between watchdog ticks
-
-let handle: NodeJS.Timeout | null = null
-
+const STALE_LOCK_MS = 10 * 60 * 1000; // 10 min — well past any legitimate Anthropic call
+const SWEEP_INTERVAL_MS = 60000; // 1 min between watchdog ticks
+let handle: NodeJS.Timeout | null = null;
 export interface SweepResult {
-  candidates: number
-  runs: number
+    candidates: number;
+    runs: number;
 }
-
 /**
  * Boot-time sweep of orphaned `running` state. Idempotent — running it
  * twice in a row on a clean DB flips nothing the second time.
  */
-export function startupSweep(): SweepResult {
-  const db = getDb()
-  const candidates = db
-    .prepare(
-      `UPDATE candidates
+export async function startupSweep(): Promise<SweepResult> {
+    const db = getDb();
+    const candidates = (await db
+        .prepare(`UPDATE candidates
          SET extraction_status = 'failed',
              lock_acquired_at = NULL,
              last_extraction_error = CASE
@@ -51,31 +45,24 @@ export function startupSweep(): SweepResult {
                THEN 'Process interrompu pendant l''extraction (reset au démarrage)'
                ELSE last_extraction_error || ' | Reset au démarrage'
              END
-       WHERE extraction_status = 'running'`,
-    )
-    .run().changes
-
-  const runs = db
-    .prepare(
-      `UPDATE cv_extraction_runs
+       WHERE extraction_status = 'running'`)
+        .run()).changes;
+    const runs = (await db
+        .prepare(`UPDATE cv_extraction_runs
          SET status = 'partial',
              error = CASE
                WHEN error IS NULL OR error = ''
                THEN 'Process interrompu (reset au démarrage)'
                ELSE error || ' | Reset au démarrage'
              END,
-             finished_at = COALESCE(finished_at, datetime('now'))
-       WHERE status = 'running'`,
-    )
-    .run().changes
-
-  if (candidates > 0 || runs > 0) {
-    console.log(`[extraction-watchdog] startup sweep: ${candidates} candidate(s), ${runs} run(s) reset`)
-  }
-
-  return { candidates, runs }
+             finished_at = COALESCE(finished_at, now())
+       WHERE status = 'running'`)
+        .run()).changes;
+    if (candidates > 0 || runs > 0) {
+        console.log(`[extraction-watchdog] startup sweep: ${candidates} candidate(s), ${runs} run(s) reset`);
+    }
+    return { candidates, runs };
 }
-
 /**
  * One watchdog tick. Flips any `running` row whose lock is older than the
  * stale threshold to `failed`.
@@ -88,59 +75,49 @@ export function startupSweep(): SweepResult {
  *
  * Runs: driven by `started_at`, which is always set when a run row exists.
  */
-export function sweepStaleExtractions(): SweepResult {
-  const db = getDb()
-  const staleCutoffSeconds = STALE_LOCK_MS / 1000
-
-  const candidates = db
-    .prepare(
-      `UPDATE candidates
+export async function sweepStaleExtractions(): Promise<SweepResult> {
+    const db = getDb();
+    const staleCutoffSeconds = STALE_LOCK_MS / 1000;
+    const candidates = (await db
+        .prepare(`UPDATE candidates
          SET extraction_status = 'failed',
              lock_acquired_at = NULL,
              last_extraction_error = 'Extraction timeout (watchdog reset après 10 min)'
        WHERE extraction_status = 'running'
          AND lock_acquired_at IS NOT NULL
-         AND (julianday('now') - julianday(lock_acquired_at)) * 86400 > ?`,
-    )
-    .run(staleCutoffSeconds).changes
-
-  const runs = db
-    .prepare(
-      `UPDATE cv_extraction_runs
+         AND extract(epoch from (now() - lock_acquired_at)) > ?`)
+        .run(staleCutoffSeconds)).changes;
+    const runs = (await db
+        .prepare(`UPDATE cv_extraction_runs
          SET status = 'partial',
              error = COALESCE(error, '') ||
                      CASE WHEN error IS NULL OR error = '' THEN ''
                           ELSE ' | '
                      END ||
                      'Watchdog timeout (reset après 10 min)',
-             finished_at = datetime('now')
+             finished_at = now()
        WHERE status = 'running'
-         AND (julianday('now') - julianday(started_at)) * 86400 > ?`,
-    )
-    .run(staleCutoffSeconds).changes
-
-  if (candidates > 0 || runs > 0) {
-    console.log(`[extraction-watchdog] tick: ${candidates} candidate(s), ${runs} run(s) timed out`)
-  }
-
-  return { candidates, runs }
-}
-
-export function startWatchdog(): void {
-  if (handle) return // idempotent
-  handle = setInterval(() => {
-    try {
-      sweepStaleExtractions()
-    } catch (err) {
-      console.error('[extraction-watchdog] tick failed:', err)
+         AND extract(epoch from (now() - started_at)) > ?`)
+        .run(staleCutoffSeconds)).changes;
+    if (candidates > 0 || runs > 0) {
+        console.log(`[extraction-watchdog] tick: ${candidates} candidate(s), ${runs} run(s) timed out`);
     }
-  }, SWEEP_INTERVAL_MS)
-  // unref so the interval doesn't hold the event loop open during shutdown
-  handle.unref()
+    return { candidates, runs };
 }
-
+export function startWatchdog(): void {
+    if (handle)
+        return; // idempotent
+    handle = setInterval(() => {
+        sweepStaleExtractions().catch((err) => {
+            console.error('[extraction-watchdog] tick failed:', err);
+        });
+    }, SWEEP_INTERVAL_MS);
+    // unref so the interval doesn't hold the event loop open during shutdown
+    handle.unref();
+}
 export function stopWatchdog(): void {
-  if (!handle) return
-  clearInterval(handle)
-  handle = null
+    if (!handle)
+        return;
+    clearInterval(handle);
+    handle = null;
 }

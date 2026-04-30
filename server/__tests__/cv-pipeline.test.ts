@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 // Temp DB before importing db module
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-pipeline-test-'))
@@ -43,11 +43,11 @@ vi.mock('../lib/catalog.js', () => ({
 }))
 
 const dbModule = await import('../lib/db.js')
-const { initDatabase, getDb, DB_PATH } = dbModule
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = dbModule
 const { processCvForCandidate } = await import('../lib/cv-pipeline.js')
 
 function preSeedSchema() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -129,17 +129,17 @@ function mockProfileResponse(overrides: Record<string, unknown> = {}) {
 }
 
 describe('processCvForCandidate', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeedSchema()
-    initDatabase()
+    await initDatabase()
   })
 
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     mockExtractText.mockResolvedValue({ text: 'A'.repeat(200) })
   })

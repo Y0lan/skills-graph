@@ -1,29 +1,26 @@
-import { getDb } from './db.js'
-import type { SkillCategory } from '../../src/data/skill-catalog.js'
-import { extractCvText, extractSkillsFromCv, EXTRACTION_MODEL, PROMPT_VERSION, type PosteContext } from './cv-extraction.js'
-import { getSkillCategories } from './catalog.js'
-import { rescoreCandidature } from './scoring-helpers.js'
-import type { ExtractionStatus } from './types.js'
-import { putAsset } from './asset-storage.js'
-import { startRun, finishRun, withExtractionRun, type ExtractionRunStatus } from './extraction-runs.js'
-import { pruneExtractionRuns } from './extraction-retention.js'
-import { extractCandidateProfile } from './cv-profile-extraction.js'
-import { persistMergedProfile } from './profile-merge.js'
-import { getDocumentForDownload } from './document-service.js'
-import { runMultipass } from './cv-multipass.js'
-import { isProfileDegraded, buildExtractionError } from './cv-pipeline-helpers.js'
-
-export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract'
-
+import { getDb } from './db.js';
+import type { SkillCategory } from '../../src/data/skill-catalog.js';
+import { extractCvText, extractSkillsFromCv, EXTRACTION_MODEL, PROMPT_VERSION, type PosteContext } from './cv-extraction.js';
+import { getSkillCategories } from './catalog.js';
+import { rescoreCandidature } from './scoring-helpers.js';
+import type { ExtractionStatus } from './types.js';
+import { putAsset } from './asset-storage.js';
+import { startRun, finishRun, withExtractionRun, type ExtractionRunStatus } from './extraction-runs.js';
+import { pruneExtractionRuns } from './extraction-retention.js';
+import { extractCandidateProfile } from './cv-profile-extraction.js';
+import { persistMergedProfile } from './profile-merge.js';
+import { getDocumentForDownload } from './document-service.js';
+import { runMultipass } from './cv-multipass.js';
+import { isProfileDegraded, buildExtractionError } from './cv-pipeline-helpers.js';
+export type CvPipelineSource = 'direct-upload' | 'drupal' | 'reextract';
 export interface CvPipelineResult {
-  candidateId: string
-  status: ExtractionStatus | 'skipped'
-  suggestionsCount: number
-  failedCategories: string[]
-  failedCandidatures: string[]
-  error?: string
+    candidateId: string;
+    status: ExtractionStatus | 'skipped';
+    suggestionsCount: number;
+    failedCategories: string[];
+    failedCandidatures: string[];
+    error?: string;
 }
-
 /**
  * The ONE true CV → scoring path. All CV upload flows (direct admin upload,
  * Drupal webhook intake, Drupal retry, admin re-extract in Phase 8) must route
@@ -45,285 +42,246 @@ export interface CvPipelineResult {
  *      - `failed`    — extraction itself failed (no usable suggestions)
  *   8. Always increment attempts + stamp last_extraction_at; error only on failure/partial.
  */
-export async function processCvForCandidate(
-  candidateId: string,
-  cvBuffer: Buffer,
-  options: { source?: CvPipelineSource } = {},
-): Promise<CvPipelineResult> {
-  const db = getDb()
-  const source = options.source ?? 'direct-upload'
-
-  const locked = acquireExtractionLock(candidateId)
-  if (!locked) {
-    return {
-      candidateId,
-      status: 'skipped',
-      suggestionsCount: 0,
-      failedCategories: [],
-      failedCandidatures: [],
+export async function processCvForCandidate(candidateId: string, cvBuffer: Buffer, options: {
+    source?: CvPipelineSource;
+} = {}): Promise<CvPipelineResult> {
+    const db = getDb();
+    const source = options.source ?? 'direct-upload';
+    const locked = await acquireExtractionLock(candidateId);
+    if (!locked) {
+        return {
+            candidateId,
+            status: 'skipped',
+            suggestionsCount: 0,
+            failedCategories: [],
+            failedCandidatures: [],
+        };
     }
-  }
-
-  try {
-    // 1. Store raw PDF bytes FIRST — before any LLM call that could hang or
-    //    crash. This guarantees the Relancer button on a later `failed` row
-    //    has bytes to replay (codex challenge rev 1 finding #3: Marcel died
-    //    before raw_pdf was stored under the old ordering, so his retry
-    //    would have instantly failed with "no CV stored"). Dedupes by
-    //    sha256 so re-running extraction doesn't duplicate the blob.
-    putAsset({
-      candidateId,
-      kind: 'raw_pdf',
-      buffer: cvBuffer,
-      mime: 'application/pdf',
-    })
-
-    // 2. Extract text (can throw on corrupted PDFs — raw_pdf is already
-    //    safe above, so the catch-block retry path still works).
-    const cvText = await extractCvText(cvBuffer)
-
-    // 3. Store CV text as a deduped asset + remember its id for the run record.
-    const cvAsset = putAsset({
-      candidateId,
-      kind: 'cv_text',
-      buffer: cvText,
-      mime: 'text/plain; charset=utf-8',
-    })
-
-    // 4. Open a skills_baseline extraction run so we have a row to close on
-    //    both success and failure. Phase 1 audit trail.
-    const runId = startRun({
-      candidateId,
-      kind: 'skills_baseline',
-      promptVersion: PROMPT_VERSION,
-      model: EXTRACTION_MODEL,
-      cvAssetId: cvAsset.id,
-    })
-
-    // 5. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
-    const posteContext: PosteContext | null = null
-    const catalog = getSkillCategories()
-    let result = await extractSkillsFromCv(cvText, catalog, posteContext)
-
-    if (!result) {
-      finishRun({
-        runId,
-        status: 'failed',
-        error: 'no-suggestions (CV too short or all categories failed)',
-      })
-      markFailed(candidateId, 'CV trop court ou extraction impossible')
-      return {
-        candidateId,
-        status: 'failed',
-        suggestionsCount: 0,
-        failedCategories: [],
-        failedCandidatures: [],
-        error: 'no-suggestions',
-      }
-    }
-
-    // 6. Persist BASELINE extraction output on the candidate row FIRST.
-    //    Per eng-review decision #5: write baseline before attempting
-    //    critique/reconcile so a crash during the upgrade passes can't
-    //    lose the already-valid baseline. The reconcile step below
-    //    overwrites only on full success.
-    db.prepare(
-      `UPDATE candidates
+    try {
+        // 1. Store raw PDF bytes FIRST — before any LLM call that could hang or
+        //    crash. This guarantees the Relancer button on a later `failed` row
+        //    has bytes to replay (codex challenge rev 1 finding #3: Marcel died
+        //    before raw_pdf was stored under the old ordering, so his retry
+        //    would have instantly failed with "no CV stored"). Dedupes by
+        //    sha256 so re-running extraction doesn't duplicate the blob.
+        await putAsset({
+            candidateId,
+            kind: 'raw_pdf',
+            buffer: cvBuffer,
+            mime: 'application/pdf',
+        });
+        // 2. Extract text (can throw on corrupted PDFs — raw_pdf is already
+        //    safe above, so the catch-block retry path still works).
+        const cvText = await extractCvText(cvBuffer);
+        // 3. Store CV text as a deduped asset + remember its id for the run record.
+        const cvAsset = await putAsset({
+            candidateId,
+            kind: 'cv_text',
+            buffer: cvText,
+            mime: 'text/plain; charset=utf-8',
+        });
+        // 4. Open a skills_baseline extraction run so we have a row to close on
+        //    both success and failure. Phase 1 audit trail.
+        const runId = await startRun({
+            candidateId,
+            kind: 'skills_baseline',
+            promptVersion: PROMPT_VERSION,
+            model: EXTRACTION_MODEL,
+            cvAssetId: cvAsset.id,
+        });
+        // 5. Extract skills (role-neutral baseline; posteContext wired for Phase 3)
+        const posteContext: PosteContext | null = null;
+        const catalog = getSkillCategories();
+        let result = await extractSkillsFromCv(cvText, catalog, posteContext);
+        if (!result) {
+            await finishRun({
+                runId,
+                status: 'failed',
+                error: 'no-suggestions (CV too short or all categories failed)',
+            });
+            await markFailed(candidateId, 'CV trop court ou extraction impossible');
+            return {
+                candidateId,
+                status: 'failed',
+                suggestionsCount: 0,
+                failedCategories: [],
+                failedCandidatures: [],
+                error: 'no-suggestions',
+            };
+        }
+        // 6. Persist BASELINE extraction output on the candidate row FIRST.
+        //    Per eng-review decision #5: write baseline before attempting
+        //    critique/reconcile so a crash during the upgrade passes can't
+        //    lose the already-valid baseline. The reconcile step below
+        //    overwrites only on full success.
+        await db.prepare(`UPDATE candidates
          SET cv_text = ?,
              ai_suggestions = ?,
              ai_reasoning = ?,
              ai_questions = ?,
              prompt_version = ?
-       WHERE id = ?`,
-    ).run(
-      cvText,
-      JSON.stringify(result.ratings),
-      JSON.stringify(result.reasoning),
-      JSON.stringify(result.questions),
-      PROMPT_VERSION,
-      candidateId,
-    )
-
-    // 6.5. Multi-pass critique + reconcile (Phase 7). Upgrades baseline in
-    //      place when successful; silently keeps baseline when either pass
-    //      fails. Skipped for baseline shards too small to be worth the
-    //      extra 2 LLM calls (< 3 rated skills).
-    let finalRatings = result.ratings
-    let finalReasoning = result.reasoning
-    let finalQuestions = result.questions
-    if (Object.keys(result.ratings).length >= 3) {
-      const multipass = await runMultipass({
-        candidateId,
-        cvText,
-        baseline: { ratings: result.ratings, reasoning: result.reasoning, questions: result.questions },
-      })
-      if (multipass) {
-        finalRatings = multipass.ratings
-        finalReasoning = multipass.reasoning
-        finalQuestions = multipass.questions
-        db.prepare(
-          `UPDATE candidates
+       WHERE id = ?`).run(cvText, JSON.stringify(result.ratings), JSON.stringify(result.reasoning), JSON.stringify(result.questions), PROMPT_VERSION, candidateId);
+        // 6.5. Multi-pass critique + reconcile (Phase 7). Upgrades baseline in
+        //      place when successful; silently keeps baseline when either pass
+        //      fails. Skipped for baseline shards too small to be worth the
+        //      extra 2 LLM calls (< 3 rated skills).
+        let finalRatings = result.ratings;
+        let finalReasoning = result.reasoning;
+        let finalQuestions = result.questions;
+        if (Object.keys(result.ratings).length >= 3) {
+            const multipass = await runMultipass({
+                candidateId,
+                cvText,
+                baseline: { ratings: result.ratings, reasoning: result.reasoning, questions: result.questions },
+            });
+            if (multipass) {
+                finalRatings = multipass.ratings;
+                finalReasoning = multipass.reasoning;
+                finalQuestions = multipass.questions;
+                await db.prepare(`UPDATE candidates
              SET ai_suggestions = ?,
                  ai_reasoning = ?,
                  ai_questions = ?
-           WHERE id = ?`,
-        ).run(
-          JSON.stringify(finalRatings),
-          JSON.stringify(finalReasoning),
-          JSON.stringify(finalQuestions),
-          candidateId,
-        )
-      }
-    }
-    // Re-bind result.ratings for downstream scoring to use the upgraded map
-    result = { ...result, ratings: finalRatings, reasoning: finalReasoning, questions: finalQuestions }
-
-    // 6a. Profile extraction (Phase 4). Role-neutral — happens once per
-    //     candidate. Failure does not block skill scoring; we just mark
-    //     status=partial if profile fails.
-    //
-    //     Phase 5: enrich with the most recent lettre de motivation across
-    //     all candidatures. Best-effort — if lettre text extraction fails
-    //     or no lettre exists, profile extraction proceeds with CV only.
-    let profileFailed = false
-    let profileDegraded = false
-    let profileThrewMsg: string | null = null
-    const lettreFetch = await fetchLatestLettreText(candidateId)
-    // Profile run lifecycle delegated to withExtractionRun — the
-    // wrapper closes the row in the right state (success / partial /
-    // failed) automatically. Caller-owned side effects
-    // (profileFailed flag, profileDegraded flag, persistMergedProfile)
-    // stay visible at this site. The wrapper passes runId to the
-    // inner function because persistMergedProfile uses it as an FK.
-    try {
-      await withExtractionRun(
-        {
-          candidateId,
-          kind: 'profile',
-          promptVersion: PROMPT_VERSION,
-          model: EXTRACTION_MODEL,
-          cvAssetId: cvAsset.id,
-          lettreAssetId: lettreFetch.assetId,
-        },
-        async (profileRunId) => {
-          const profileResult = await extractCandidateProfile(cvText, lettreFetch.text)
-          if (!profileResult) {
-            profileFailed = true
-            return { status: 'failed', error: 'Profile extraction returned null' }
-          }
-          const merged = persistMergedProfile(candidateId, profileResult.profile, profileRunId)
-          profileDegraded = isProfileDegraded(merged)
-          if (profileDegraded) {
-            return {
-              status: 'partial',
-              payload: profileResult.profile,
-              error: 'profile extraction returned near-empty result',
-              inputTokens: profileResult.inputTokens,
-              outputTokens: profileResult.outputTokens,
+           WHERE id = ?`).run(JSON.stringify(finalRatings), JSON.stringify(finalReasoning), JSON.stringify(finalQuestions), candidateId);
             }
-          }
-          return {
-            status: 'success',
-            payload: profileResult.profile,
-            inputTokens: profileResult.inputTokens,
-            outputTokens: profileResult.outputTokens,
-          }
-        },
-      )
-    } catch (err) {
-      profileFailed = true
-      profileThrewMsg = err instanceof Error ? err.message : String(err)
-      console.error(`[cv-pipeline] profile extraction failed for ${candidateId}:`, err)
-    }
-
-    // 6b. For each candidature with a fiche de poste, run a role-aware
-    //     extraction that calibrates against the target role. Persist
-    //     per-candidature. `candidature-libre` (catch-all) and candidatures
-    //     whose poste has no description skip this pass and fall back to
-    //     the candidate-level baseline when scoring.
-    const roleAwareFailures = await runRoleAwarePasses({
-      candidateId,
-      cvText,
-      catalog,
-      cvAssetId: cvAsset.id,
-    })
-
-    // 7. Score every candidature via the shared helper (merges ai +
-    //    role_aware + manual ratings, writes compat scores to DB).
-    const scoring = scoreAllCandidatures(candidateId)
-
-    // 8. Determine status — extraction is partial if anything failed OR if
-    //    the profile came back effectively empty (degraded signal).
-    const extractionHadFailures =
-      result.failedCategories.length > 0 ||
-      roleAwareFailures.length > 0 ||
-      profileFailed ||
-      profileDegraded
-    const scoringHadFailures = scoring.failedCandidatures.length > 0
-    const status: ExtractionStatus =
-      extractionHadFailures || scoringHadFailures ? 'partial' : 'succeeded'
-    const error = buildExtractionError({
-      profileFailed,
-      profileDegraded,
-      profileThrewMsg,
-      failedCategories: result.failedCategories.length,
-      roleAwareFailures: roleAwareFailures.length,
-      failedCandidatures: scoring.failedCandidatures.length,
-    })
-
-    // 9. Close the run record with the full payload + retention sweep
-    const runStatus: ExtractionRunStatus = status === 'succeeded' ? 'success' : 'partial'
-    finishRun({
-      runId,
-      status: runStatus,
-      payload: {
-        ratings: result.ratings,
-        reasoning: result.reasoning,
-        questions: result.questions,
-        failedCategories: result.failedCategories,
-        failedCandidatures: scoring.failedCandidatures,
-      },
-      error,
-    })
-    try {
-      pruneExtractionRuns()
-    } catch (err) {
-      console.warn('[cv-pipeline] retention pruning failed (non-fatal):', err)
-    }
-
-    db.prepare(
-      `UPDATE candidates
+        }
+        // Re-bind result.ratings for downstream scoring to use the upgraded map
+        result = { ...result, ratings: finalRatings, reasoning: finalReasoning, questions: finalQuestions };
+        // 6a. Profile extraction (Phase 4). Role-neutral — happens once per
+        //     candidate. Failure does not block skill scoring; we just mark
+        //     status=partial if profile fails.
+        //
+        //     Phase 5: enrich with the most recent lettre de motivation across
+        //     all candidatures. Best-effort — if lettre text extraction fails
+        //     or no lettre exists, profile extraction proceeds with CV only.
+        let profileFailed = false;
+        let profileDegraded = false;
+        let profileThrewMsg: string | null = null;
+        const lettreFetch = await fetchLatestLettreText(candidateId);
+        // Profile run lifecycle delegated to withExtractionRun — the
+        // wrapper closes the row in the right state (success / partial /
+        // failed) automatically. Caller-owned side effects
+        // (profileFailed flag, profileDegraded flag, persistMergedProfile)
+        // stay visible at this site. The wrapper passes runId to the
+        // inner function because persistMergedProfile uses it as an FK.
+        try {
+            await withExtractionRun({
+                candidateId,
+                kind: 'profile',
+                promptVersion: PROMPT_VERSION,
+                model: EXTRACTION_MODEL,
+                cvAssetId: cvAsset.id,
+                lettreAssetId: lettreFetch.assetId,
+            }, async (profileRunId) => {
+                const profileResult = await extractCandidateProfile(cvText, lettreFetch.text);
+                if (!profileResult) {
+                    profileFailed = true;
+                    return { status: 'failed', error: 'Profile extraction returned null' };
+                }
+                const merged = await persistMergedProfile(candidateId, profileResult.profile, profileRunId);
+                profileDegraded = isProfileDegraded(merged);
+                if (profileDegraded) {
+                    return {
+                        status: 'partial',
+                        payload: profileResult.profile,
+                        error: 'profile extraction returned near-empty result',
+                        inputTokens: profileResult.inputTokens,
+                        outputTokens: profileResult.outputTokens,
+                    };
+                }
+                return {
+                    status: 'success',
+                    payload: profileResult.profile,
+                    inputTokens: profileResult.inputTokens,
+                    outputTokens: profileResult.outputTokens,
+                };
+            });
+        }
+        catch (err) {
+            profileFailed = true;
+            profileThrewMsg = err instanceof Error ? err.message : String(err);
+            console.error(`[cv-pipeline] profile extraction failed for ${candidateId}:`, err);
+        }
+        // 6b. For each candidature with a fiche de poste, run a role-aware
+        //     extraction that calibrates against the target role. Persist
+        //     per-candidature. `candidature-libre` (catch-all) and candidatures
+        //     whose poste has no description skip this pass and fall back to
+        //     the candidate-level baseline when scoring.
+        const roleAwareFailures = await runRoleAwarePasses({
+            candidateId,
+            cvText,
+            catalog,
+            cvAssetId: cvAsset.id,
+        });
+        // 7. Score every candidature via the shared helper (merges ai +
+        //    role_aware + manual ratings, writes compat scores to DB).
+        const scoring = await scoreAllCandidatures(candidateId);
+        // 8. Determine status — extraction is partial if anything failed OR if
+        //    the profile came back effectively empty (degraded signal).
+        const extractionHadFailures = result.failedCategories.length > 0 ||
+            roleAwareFailures.length > 0 ||
+            profileFailed ||
+            profileDegraded;
+        const scoringHadFailures = scoring.failedCandidatures.length > 0;
+        const status: ExtractionStatus = extractionHadFailures || scoringHadFailures ? 'partial' : 'succeeded';
+        const error = buildExtractionError({
+            profileFailed,
+            profileDegraded,
+            profileThrewMsg,
+            failedCategories: result.failedCategories.length,
+            roleAwareFailures: roleAwareFailures.length,
+            failedCandidatures: scoring.failedCandidatures.length,
+        });
+        // 9. Close the run record with the full payload + retention sweep
+        const runStatus: ExtractionRunStatus = status === 'succeeded' ? 'success' : 'partial';
+        await finishRun({
+            runId,
+            status: runStatus,
+            payload: {
+                ratings: result.ratings,
+                reasoning: result.reasoning,
+                questions: result.questions,
+                failedCategories: result.failedCategories,
+                failedCandidatures: scoring.failedCandidatures,
+            },
+            error,
+        });
+        try {
+            await pruneExtractionRuns();
+        }
+        catch (err) {
+            console.warn('[cv-pipeline] retention pruning failed (non-fatal):', err);
+        }
+        await db.prepare(`UPDATE candidates
          SET extraction_status = ?,
              lock_acquired_at = NULL,
              extraction_attempts = extraction_attempts + 1,
-             last_extraction_at = datetime('now'),
+             last_extraction_at = now(),
              last_extraction_error = ?
-       WHERE id = ?`,
-    ).run(status, error, candidateId)
-
-    return {
-      candidateId,
-      status,
-      suggestionsCount: Object.keys(result.ratings).length,
-      failedCategories: result.failedCategories,
-      failedCandidatures: scoring.failedCandidatures,
-      error: error ?? undefined,
+       WHERE id = ?`).run(status, error, candidateId);
+        return {
+            candidateId,
+            status,
+            suggestionsCount: Object.keys(result.ratings).length,
+            failedCategories: result.failedCategories,
+            failedCandidatures: scoring.failedCandidatures,
+            error: error ?? undefined,
+        };
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`[cv-pipeline] candidate=${candidateId} source=${source}:`, err)
-    markFailed(candidateId, message)
-    return {
-      candidateId,
-      status: 'failed',
-      suggestionsCount: 0,
-      failedCategories: [],
-      failedCandidatures: [],
-      error: message,
+    catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[cv-pipeline] candidate=${candidateId} source=${source}:`, err);
+        await markFailed(candidateId, message);
+        return {
+            candidateId,
+            status: 'failed',
+            suggestionsCount: 0,
+            failedCategories: [],
+            failedCandidatures: [],
+            error: message,
+        };
     }
-  }
 }
-
 /**
  * Compare-and-swap acquisition of the per-candidate extraction lock.
  * Returns true when the row transitioned from non-running to running.
@@ -338,71 +296,69 @@ export async function processCvForCandidate(
  * Best-effort: on any failure, logs and returns null text so profile
  * extraction can proceed with the CV alone.
  */
-async function fetchLatestLettreText(candidateId: string): Promise<{ text: string | null; assetId: string | null }> {
-  const row = getDb().prepare(
-    `SELECT cd.id
+async function fetchLatestLettreText(candidateId: string): Promise<{
+    text: string | null;
+    assetId: string | null;
+}> {
+    const row = await getDb().prepare(`SELECT cd.id
        FROM candidature_documents cd
        JOIN candidatures c ON c.id = cd.candidature_id
       WHERE c.candidate_id = ?
         AND cd.type = 'lettre'
         AND cd.deleted_at IS NULL
       ORDER BY cd.created_at DESC
-      LIMIT 1`,
-  ).get(candidateId) as { id: string } | undefined
-  if (!row) return { text: null, assetId: null }
-
-  try {
-    const fetched = await getDocumentForDownload(row.id)
-    if ('error' in fetched) return { text: null, assetId: null }
-    let buffer: Buffer
-    if (fetched.kind === 'gcs') {
-      buffer = fetched.buffer
-    } else {
-      const fs = await import('fs')
-      buffer = fs.readFileSync(fetched.filePath)
+      LIMIT 1`).get(candidateId) as {
+        id: string;
+    } | undefined;
+    if (!row)
+        return { text: null, assetId: null };
+    try {
+        const fetched = await getDocumentForDownload(row.id);
+        if ('error' in fetched)
+            return { text: null, assetId: null };
+        let buffer: Buffer;
+        if (fetched.kind === 'gcs') {
+            buffer = fetched.buffer;
+        }
+        else {
+            const fs = await import('fs');
+            buffer = fs.readFileSync(fetched.filePath);
+        }
+        const text = await extractCvText(buffer);
+        const asset = await putAsset({
+            candidateId,
+            kind: 'lettre_text',
+            buffer: text,
+            mime: 'text/plain; charset=utf-8',
+        });
+        return { text, assetId: asset.id };
     }
-    const text = await extractCvText(buffer)
-    const asset = putAsset({
-      candidateId,
-      kind: 'lettre_text',
-      buffer: text,
-      mime: 'text/plain; charset=utf-8',
-    })
-    return { text, assetId: asset.id }
-  } catch (err) {
-    console.warn(`[cv-pipeline] Lettre extraction failed for candidate ${candidateId}:`, err)
-    return { text: null, assetId: null }
-  }
+    catch (err) {
+        console.warn(`[cv-pipeline] Lettre extraction failed for candidate ${candidateId}:`, err);
+        return { text: null, assetId: null };
+    }
 }
-
-function acquireExtractionLock(candidateId: string): boolean {
-  const result = getDb().prepare(
-    `UPDATE candidates
+async function acquireExtractionLock(candidateId: string): Promise<boolean> {
+    const result = await getDb().prepare(`UPDATE candidates
        SET extraction_status = 'running',
-           lock_acquired_at = datetime('now')
+           lock_acquired_at = now()
      WHERE id = ?
-       AND extraction_status <> 'running'`,
-  ).run(candidateId)
-  return result.changes === 1
+       AND extraction_status <> 'running'`).run(candidateId);
+    return result.changes === 1;
 }
-
-function markFailed(candidateId: string, error: string): void {
-  getDb().prepare(
-    `UPDATE candidates
+async function markFailed(candidateId: string, error: string): Promise<void> {
+    await getDb().prepare(`UPDATE candidates
        SET extraction_status = 'failed',
            lock_acquired_at = NULL,
            extraction_attempts = extraction_attempts + 1,
-           last_extraction_at = datetime('now'),
+           last_extraction_at = now(),
            last_extraction_error = ?
-     WHERE id = ?`,
-  ).run(error, candidateId)
+     WHERE id = ?`).run(error, candidateId);
 }
-
 interface CandidatureScoringResult {
-  scoredCandidatures: string[]
-  failedCandidatures: string[]
+    scoredCandidatures: string[];
+    failedCandidatures: string[];
 }
-
 /**
  * Run a role-aware extraction per candidature whose poste has a fiche.
  * Persists per-candidature ratings/reasoning/questions. Failures fall back
@@ -410,100 +366,91 @@ interface CandidatureScoringResult {
  * where the role-aware pass threw (for partial-status bookkeeping).
  */
 async function runRoleAwarePasses(params: {
-  candidateId: string
-  cvText: string
-  catalog: SkillCategory[]
-  cvAssetId: string
+    candidateId: string;
+    cvText: string;
+    catalog: SkillCategory[];
+    cvAssetId: string;
 }): Promise<string[]> {
-  const db = getDb()
-  const targets = db.prepare(
-    `SELECT c.id AS candidature_id, p.id AS poste_id, p.titre, p.description
-       FROM candidatures c
-       JOIN postes p ON p.id = c.poste_id
-      WHERE c.candidate_id = ?
-        AND p.id != 'candidature-libre'
-        AND p.description IS NOT NULL
-        AND TRIM(p.description) != ''`,
-  ).all(params.candidateId) as Array<{ candidature_id: string; poste_id: string; titre: string; description: string }>
-
-  if (targets.length === 0) return []
-
-  const failures: string[] = []
-  const update = db.prepare(
-    `UPDATE candidatures
+    const db = getDb();
+    const targets = await db.prepare(`SELECT c.id AS candidature_id, p.id AS poste_id, p.titre, p.description
+      FROM candidatures c
+      JOIN postes p ON p.id = c.poste_id
+     WHERE c.candidate_id = ?
+       AND p.id != 'candidature-libre'
+       AND p.description IS NOT NULL
+        AND TRIM(p.description) != ''
+      ORDER BY c.created_at ASC, c.id ASC`).all(params.candidateId) as Array<{
+        candidature_id: string;
+        poste_id: string;
+        titre: string;
+        description: string;
+    }>;
+    if (targets.length === 0)
+        return [];
+    const failures: string[] = [];
+    const update = db.prepare(`UPDATE candidatures
         SET role_aware_suggestions = ?,
             role_aware_reasoning = ?,
             role_aware_questions = ?,
-            updated_at = datetime('now')
-      WHERE id = ?`,
-  )
-
-  for (const t of targets) {
-    const snapshot = { titre: t.titre, description: t.description }
-    // Per-candidature role-aware run lifecycle delegated to
-    // withExtractionRun. Caller-owned side effects (the UPDATE
-    // candidatures, failures.push) stay visible.
-    type RoleAwarePayload = {
-      ratings: Record<string, number>
-      reasoning: Record<string, string>
-      questions: Record<string, string>
-      failedCategories: string[]
-    }
-    try {
-      const outcome = await withExtractionRun<RoleAwarePayload>(
-        {
-          candidateId: params.candidateId,
-          candidatureId: t.candidature_id,
-          kind: 'skills_role_aware',
-          posteId: t.poste_id,
-          posteSnapshot: snapshot,
-          promptVersion: PROMPT_VERSION,
-          model: EXTRACTION_MODEL,
-          cvAssetId: params.cvAssetId,
-        },
-        async () => {
-          const roleAware = await extractSkillsFromCv(params.cvText, params.catalog, {
-            posteId: t.poste_id,
-            titre: t.titre,
-            description: t.description,
-          })
-          if (!roleAware) {
-            return { status: 'failed', error: 'role-aware extraction returned null' }
-          }
-          update.run(
-            JSON.stringify(roleAware.ratings),
-            JSON.stringify(roleAware.reasoning),
-            JSON.stringify(roleAware.questions),
-            t.candidature_id,
-          )
-          const payload: RoleAwarePayload = {
-            ratings: roleAware.ratings,
-            reasoning: roleAware.reasoning,
-            questions: roleAware.questions,
-            failedCategories: roleAware.failedCategories,
-          }
-          if (roleAware.failedCategories.length > 0) {
-            return {
-              status: 'partial',
-              payload,
-              error: `role-aware partial — ${roleAware.failedCategories.length} categories failed`,
+            updated_at = now()
+      WHERE id = ?`);
+    for (const t of targets) {
+        const snapshot = { titre: t.titre, description: t.description };
+        // Per-candidature role-aware run lifecycle delegated to
+        // withExtractionRun. Caller-owned side effects (the UPDATE
+        // candidatures, failures.push) stay visible.
+        type RoleAwarePayload = {
+            ratings: Record<string, number>;
+            reasoning: Record<string, string>;
+            questions: Record<string, string>;
+            failedCategories: string[];
+        };
+        try {
+            const outcome = await withExtractionRun<RoleAwarePayload>({
+                candidateId: params.candidateId,
+                candidatureId: t.candidature_id,
+                kind: 'skills_role_aware',
+                posteId: t.poste_id,
+                posteSnapshot: snapshot,
+                promptVersion: PROMPT_VERSION,
+                model: EXTRACTION_MODEL,
+                cvAssetId: params.cvAssetId,
+            }, async () => {
+                const roleAware = await extractSkillsFromCv(params.cvText, params.catalog, {
+                    posteId: t.poste_id,
+                    titre: t.titre,
+                    description: t.description,
+                });
+                if (!roleAware) {
+                    return { status: 'failed', error: 'role-aware extraction returned null' };
+                }
+                await update.run(JSON.stringify(roleAware.ratings), JSON.stringify(roleAware.reasoning), JSON.stringify(roleAware.questions), t.candidature_id);
+                const payload: RoleAwarePayload = {
+                    ratings: roleAware.ratings,
+                    reasoning: roleAware.reasoning,
+                    questions: roleAware.questions,
+                    failedCategories: roleAware.failedCategories,
+                };
+                if (roleAware.failedCategories.length > 0) {
+                    return {
+                        status: 'partial',
+                        payload,
+                        error: `role-aware partial — ${roleAware.failedCategories.length} categories failed`,
+                    };
+                }
+                return { status: 'success', payload };
+            });
+            if (outcome.status === 'failed') {
+                failures.push(t.candidature_id);
             }
-          }
-          return { status: 'success', payload }
-        },
-      )
-      if (outcome.status === 'failed') {
-        failures.push(t.candidature_id)
-      }
-    } catch (err) {
-      console.error(`[cv-pipeline] role-aware failed for candidature ${t.candidature_id}:`, err)
-      failures.push(t.candidature_id)
+        }
+        catch (err) {
+            console.error(`[cv-pipeline] role-aware failed for candidature ${t.candidature_id}:`, err);
+            failures.push(t.candidature_id);
+        }
     }
-  }
-
-  return failures
+    return failures;
 }
-
 /**
  * Score every candidature of a candidate. Each candidature uses its own
  * role_aware_suggestions when populated (Phase 3 — role-aware pass succeeded
@@ -511,32 +458,31 @@ async function runRoleAwarePasses(params: {
  * `suggestions`. One try/catch per candidature so one poor poste config doesn't
  * abort the batch.
  */
-function scoreAllCandidatures(candidateId: string): CandidatureScoringResult {
-  const db = getDb()
-  const candidatures = db.prepare(
-    `SELECT c.id
+async function scoreAllCandidatures(candidateId: string): Promise<CandidatureScoringResult> {
+    const db = getDb();
+    const candidatures = await db.prepare(`SELECT c.id
        FROM candidatures c
-      WHERE c.candidate_id = ?`,
-  ).all(candidateId) as { id: string }[]
-
-  const scored: string[] = []
-  const failed: string[] = []
-
-  // Scoring routes through the shared helper so CV pipeline, intake,
-  // form submit, /recalculate and /compat/:metric all produce the SAME
-  // numbers for the same ratings. Previous either/or merge (role_aware
-  // OR baseline) silently dropped generalist skills outside the fiche's
-  // scope; rescoreCandidature uses the 3-way merge
-  // ({...ai, ...roleAware, ...manual}).
-  for (const c of candidatures) {
-    try {
-      rescoreCandidature(c.id)
-      scored.push(c.id)
-    } catch (err) {
-      console.error(`[cv-pipeline] Scoring failed for candidature ${c.id}:`, err)
-      failed.push(c.id)
+      WHERE c.candidate_id = ?
+      ORDER BY c.created_at ASC, c.id ASC`).all(candidateId) as {
+        id: string;
+    }[];
+    const scored: string[] = [];
+    const failed: string[] = [];
+    // Scoring routes through the shared helper so CV pipeline, intake,
+    // form submit, /recalculate and /compat/:metric all produce the SAME
+    // numbers for the same ratings. Previous either/or merge (role_aware
+    // OR baseline) silently dropped generalist skills outside the fiche's
+    // scope; rescoreCandidature uses the 3-way merge
+    // ({...ai, ...roleAware, ...manual}).
+    for (const c of candidatures) {
+        try {
+            await rescoreCandidature(c.id);
+            scored.push(c.id);
+        }
+        catch (err) {
+            console.error(`[cv-pipeline] Scoring failed for candidature ${c.id}:`, err);
+            failed.push(c.id);
+        }
     }
-  }
-
-  return { scoredCandidatures: scored, failedCandidatures: failed }
+    return { scoredCandidatures: scored, failedCandidatures: failed };
 }

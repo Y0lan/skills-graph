@@ -1,6 +1,15 @@
 import express from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import type Database from 'better-sqlite3'
+
+interface TestStatement {
+  get<T = unknown>(...params: unknown[]): T | undefined
+  all<T = unknown>(...params: unknown[]): T[]
+  run(...params: unknown[]): unknown
+}
+
+interface TestDatabase {
+  prepare(sql: string): TestStatement
+}
 
 interface TestUser {
   id: string
@@ -13,7 +22,7 @@ interface TestUser {
  * Build an Express app with test-specific auth middleware.
  * Auth is controlled via `x-test-slug` header (slug of the logged-in user).
  */
-export function createTestApp(db: Database.Database) {
+export function createTestApp(db: TestDatabase) {
   const app = express()
   app.use(express.json())
 
@@ -55,7 +64,7 @@ export function createTestApp(db: Database.Database) {
 }
 
 function buildRatingsRoutes(
-  db: Database.Database,
+  db: TestDatabase,
   _auth: express.RequestHandler,
   ownership: express.RequestHandler,
 ) {
@@ -129,7 +138,7 @@ function buildRatingsRoutes(
   return { ratingsRoutes: router }
 }
 
-function buildHistoryRoutes(db: Database.Database) {
+function buildHistoryRoutes(db: TestDatabase) {
   const router = express.Router()
 
   router.get('/:slug', (req, res) => {

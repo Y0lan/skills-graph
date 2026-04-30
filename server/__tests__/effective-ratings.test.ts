@@ -3,18 +3,18 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'effective-ratings-'))
 process.env.DATA_DIR = tmpDir
 
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { mergeEffectiveRatings, loadEffectiveRatings } = await import('../lib/effective-ratings.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -64,12 +64,12 @@ function seedCandidature(opts: {
 // triggering "directory does not exist" on the second describe\'s
 // preSeed because the first describe\'s afterAll already removed it.
 
-beforeAll(() => {
+beforeAll(async () => {
   preSeed()
-  initDatabase()
+  await initDatabase()
 })
-afterAll(() => {
-  try { getDb().close() } catch { /* ignore */ }
+afterAll(async () => {
+  try { await getDb().close() } catch { /* ignore */ }
   fs.rmSync(tmpDir, { recursive: true, force: true })
 })
 
@@ -77,7 +77,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
   // ─── Precedence: manual > role-aware > ai ────────────────────────────
 
-  it('precedence: manual overrides role-aware overrides ai for the same key', () => {
+  it('precedence: manual overrides role-aware overrides ai for the same key', async () => {
     const result = mergeEffectiveRatings({
       ai: { java: 1, python: 1 },
       roleAware: { java: 2 },
@@ -87,7 +87,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
     expect(result.ratings.python).toBe(1)       // ai baseline preserved (no override)
   })
 
-  it('preserves ai-only keys not present in role-aware or manual', () => {
+  it('preserves ai-only keys not present in role-aware or manual', async () => {
     // The original drift bug: when role-aware was non-empty, the
     // either/or logic dropped every ai-only key. Module restores them.
     const result = mergeEffectiveRatings({
@@ -105,7 +105,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
   // ─── Cross-poste mode excludes role-aware ─────────────────────────────
 
-  it('cross-poste-baseline mode drops role-aware even when present', () => {
+  it('cross-poste-baseline mode drops role-aware even when present', async () => {
     const result = mergeEffectiveRatings(
       {
         ai: { java: 1 },
@@ -117,7 +117,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
     expect(result.ratings.java).toBe(1)   // ai survives, roleAware excluded
   })
 
-  it('cross-poste-baseline mode reports mergedSources.roleAware = false even when DB had it', () => {
+  it('cross-poste-baseline mode reports mergedSources.roleAware = false even when DB had it', async () => {
     const result = mergeEffectiveRatings(
       { ai: { java: 1 }, roleAware: { java: 5 }, manual: {} },
       'cross-poste-baseline',
@@ -126,7 +126,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
     expect(result.mergedSources.roleAware).toBe(false)     // didn\'t contribute
   })
 
-  it('current-poste mode (default) includes role-aware', () => {
+  it('current-poste mode (default) includes role-aware', async () => {
     const result = mergeEffectiveRatings({
       ai: { java: 1 },
       roleAware: { java: 5 },
@@ -138,13 +138,13 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
   // ─── availableSources vs mergedSources ────────────────────────────────
 
-  it('reports availableSources.manual = false for null/empty/whitespace JSON', () => {
+  it('reports availableSources.manual = false for null/empty/whitespace JSON', async () => {
     expect(mergeEffectiveRatings({ ai: null, roleAware: null, manual: null }).availableSources.manual).toBe(false)
     expect(mergeEffectiveRatings({ ai: null, roleAware: null, manual: '{}' }).availableSources.manual).toBe(false)
     expect(mergeEffectiveRatings({ ai: null, roleAware: null, manual: {} }).availableSources.manual).toBe(false)
   })
 
-  it('availableSources tracks every non-empty source even in cross-poste mode', () => {
+  it('availableSources tracks every non-empty source even in cross-poste mode', async () => {
     const result = mergeEffectiveRatings(
       { ai: { java: 1 }, roleAware: { python: 2 }, manual: { kotlin: 3 } },
       'cross-poste-baseline',
@@ -155,7 +155,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
   // ─── Input shape flexibility ──────────────────────────────────────────
 
-  it('accepts JSON strings and pre-parsed records interchangeably', () => {
+  it('accepts JSON strings and pre-parsed records interchangeably', async () => {
     const fromString = mergeEffectiveRatings({
       ai: JSON.stringify({ java: 3 }),
       roleAware: JSON.stringify({ python: 2 }),
@@ -169,7 +169,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
     expect(fromString).toEqual(fromRecord)
   })
 
-  it('mixes JSON strings and records on the same call', () => {
+  it('mixes JSON strings and records on the same call', async () => {
     const result = mergeEffectiveRatings({
       ai: JSON.stringify({ java: 3 }),
       roleAware: { python: 2 },
@@ -180,7 +180,7 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
   // ─── Pre-fix repro ────────────────────────────────────────────────────
 
-  it('pre-fix repro: either/or logic dropped ai-only keys when roleAware was set', () => {
+  it('pre-fix repro: either/or logic dropped ai-only keys when roleAware was set', async () => {
     // The compat-breakdown handler at recruitment.ts:2014 used to do:
     //     rating = roleAware ?? ai
     // With roleAware = { java: 4 } and ai = { java: 3, python: 2 }
@@ -199,13 +199,13 @@ describe('mergeEffectiveRatings — pure in-memory variant', () => {
 
 describe('loadEffectiveRatings — DB-backed variant', () => {
 
-  it('matches the in-memory variant for the same row', () => {
+  it('matches the in-memory variant for the same row', async () => {
     const cid = seedCandidature({
       ai: { java: 3, kubernetes: 1 },
       roleAware: { java: 4, typescript: 3 },
       manual: { python: 4 },
     })
-    const fromDb = loadEffectiveRatings(cid)
+    const fromDb = await loadEffectiveRatings(cid)
     const fromMemory = mergeEffectiveRatings({
       ai: { java: 3, kubernetes: 1 },
       roleAware: { java: 4, typescript: 3 },
@@ -216,20 +216,20 @@ describe('loadEffectiveRatings — DB-backed variant', () => {
     expect(fromDb.mergedSources).toEqual(fromMemory.mergedSources)
   })
 
-  it('returns empty + all-false sources for unknown candidatureId', () => {
-    const result = loadEffectiveRatings('does-not-exist')
+  it('returns empty + all-false sources for unknown candidatureId', async () => {
+    const result = await loadEffectiveRatings('does-not-exist')
     expect(result.ratings).toEqual({})
     expect(result.availableSources).toEqual({ ai: false, roleAware: false, manual: false })
     expect(result.mergedSources).toEqual({ ai: false, roleAware: false, manual: false })
   })
 
-  it('honors mode argument when called from DB', () => {
+  it('honors mode argument when called from DB', async () => {
     const cid = seedCandidature({
       ai: { java: 1 },
       roleAware: { java: 5 },
     })
-    const current = loadEffectiveRatings(cid, 'current-poste')
-    const cross = loadEffectiveRatings(cid, 'cross-poste-baseline')
+    const current = await loadEffectiveRatings(cid, 'current-poste')
+    const cross = await loadEffectiveRatings(cid, 'cross-poste-baseline')
     expect(current.ratings.java).toBe(5)
     expect(cross.ratings.java).toBe(1)
   })

@@ -119,7 +119,7 @@ export function StageFiche({ candidatureId, stage, refetchSignal }: StageFichePr
         refetch()
       } else {
         // Persist a draft so the recruiter doesn't lose typing on a
-        // network blip / GKE recreate.
+        // network blip or Cloud Run revision change.
         persistDraft(candidatureId, stage, patch, updatedAt)
       }
       throw err

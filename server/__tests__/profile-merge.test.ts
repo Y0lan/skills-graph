@@ -3,19 +3,19 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-merge-'))
 process.env.DATA_DIR = tmpDir
 
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { emptyField, emptyProfile } = await import('../lib/profile-schema.js')
 const { mergeProfiles, persistMergedProfile, setProfileFieldLock } = await import('../lib/profile-merge.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -42,24 +42,24 @@ function makeProfileWithPhone(phone: string | null, opts?: { sourceDoc?: 'cv' | 
 }
 
 describe('profile-merge', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeed()
-    initDatabase()
+    await initDatabase()
   })
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   describe('mergeProfiles (pure function)', () => {
-    it('new run populates empty profile', () => {
+    it('new run populates empty profile', async () => {
       const incoming = makeProfileWithPhone('+33612345678')
       const merged = mergeProfiles(null, incoming, { runId: 'run-1' })
       expect(merged.contact.phone.value).toBe('+33612345678')
       expect(merged.contact.phone.runId).toBe('run-1')
     })
 
-    it('latest-wins when prior exists and incoming has value', () => {
+    it('latest-wins when prior exists and incoming has value', async () => {
       const base = makeProfileWithPhone('+33600000000')
       const incoming = makeProfileWithPhone('+33612345678')
       const merged = mergeProfiles(base, incoming, { runId: 'run-2' })
@@ -67,14 +67,14 @@ describe('profile-merge', () => {
       expect(merged.contact.phone.runId).toBe('run-2')
     })
 
-    it('preserves prior when incoming value is null (LLM omitted)', () => {
+    it('preserves prior when incoming value is null (LLM omitted)', async () => {
       const base = makeProfileWithPhone('+33600000000')
       const incoming = makeProfileWithPhone(null)
       const merged = mergeProfiles(base, incoming, { runId: 'run-2' })
       expect(merged.contact.phone.value).toBe('+33600000000')
     })
 
-    it('locked field is NEVER overwritten', () => {
+    it('locked field is NEVER overwritten', async () => {
       const base = makeProfileWithPhone('+33600000000', { locked: true })
       const incoming = makeProfileWithPhone('+33699999999')
       const merged = mergeProfiles(base, incoming, { runId: 'run-2' })
@@ -82,7 +82,7 @@ describe('profile-merge', () => {
       expect(merged.contact.phone.humanLockedAt).toBeTruthy()
     })
 
-    it('experience array is replaced wholesale when incoming has entries', () => {
+    it('experience array is replaced wholesale when incoming has entries', async () => {
       const base = emptyProfile()
       base.experience = [{ company: 'Old Co', role: 'Dev', start: null, end: null, durationMonths: null, location: null, description: null, technologies: [] }]
       const incoming = emptyProfile()
@@ -95,7 +95,7 @@ describe('profile-merge', () => {
       expect(merged.experience[0].company).toBe('New Co')
     })
 
-    it('preserves prior experience when incoming has no entries', () => {
+    it('preserves prior experience when incoming has no entries', async () => {
       const base = emptyProfile()
       base.experience = [{ company: 'Old Co', role: 'Dev', start: null, end: null, durationMonths: null, location: null, description: null, technologies: [] }]
       const incoming = emptyProfile()
@@ -113,30 +113,30 @@ describe('profile-merge', () => {
       return cid
     }
 
-    it('persists on fresh candidate', () => {
+    it('persists on fresh candidate', async () => {
       const cid = seedCandidate()
-      const merged = persistMergedProfile(cid, makeProfileWithPhone('+33612345678'), 'run-1')
+      const merged = await persistMergedProfile(cid, makeProfileWithPhone('+33612345678'), 'run-1')
       expect(merged.contact.phone.value).toBe('+33612345678')
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(cid) as { ai_profile: string }
       const stored = JSON.parse(row.ai_profile)
       expect(stored.contact.phone.value).toBe('+33612345678')
     })
 
-    it('second run updates unlocked fields, preserves locked', () => {
+    it('second run updates unlocked fields, preserves locked', async () => {
       const cid = seedCandidate()
-      persistMergedProfile(cid, makeProfileWithPhone('+33600000000'), 'run-1')
-      setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
-      persistMergedProfile(cid, makeProfileWithPhone('+33699999999'), 'run-2')
+      await persistMergedProfile(cid, makeProfileWithPhone('+33600000000'), 'run-1')
+      await setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
+      await persistMergedProfile(cid, makeProfileWithPhone('+33699999999'), 'run-2')
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(cid) as { ai_profile: string }
       const stored = JSON.parse(row.ai_profile)
       expect(stored.contact.phone.value).toBe('+33600000000')
       expect(stored.contact.phone.humanLockedAt).toBeTruthy()
     })
 
-    it('null-in-new preserves prior across re-extraction', () => {
+    it('null-in-new preserves prior across re-extraction', async () => {
       const cid = seedCandidate()
-      persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
-      persistMergedProfile(cid, makeProfileWithPhone(null), 'run-2')
+      await persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
+      await persistMergedProfile(cid, makeProfileWithPhone(null), 'run-2')
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(cid) as { ai_profile: string }
       const stored = JSON.parse(row.ai_profile)
       expect(stored.contact.phone.value).toBe('+33611111111')
@@ -150,10 +150,10 @@ describe('profile-merge', () => {
       return cid
     }
 
-    it('locks an unlocked field', () => {
+    it('locks an unlocked field', async () => {
       const cid = seedCandidate()
-      persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
-      const result = setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
+      await persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
+      const result = await setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
       expect(result.ok).toBe(true)
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(cid) as { ai_profile: string }
       const stored = JSON.parse(row.ai_profile)
@@ -161,32 +161,32 @@ describe('profile-merge', () => {
       expect(stored.contact.phone.humanLockedBy).toBe('recruiter')
     })
 
-    it('unlocks a locked field', () => {
+    it('unlocks a locked field', async () => {
       const cid = seedCandidate()
-      persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
-      setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
-      setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: false, userSlug: 'recruiter' })
+      await persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
+      await setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: true, userSlug: 'recruiter' })
+      await setProfileFieldLock({ candidateId: cid, fieldPath: 'contact.phone', locked: false, userSlug: 'recruiter' })
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(cid) as { ai_profile: string }
       const stored = JSON.parse(row.ai_profile)
       expect(stored.contact.phone.humanLockedAt).toBeNull()
     })
 
-    it('returns 404 for unknown candidate', () => {
-      const result = setProfileFieldLock({ candidateId: 'ghost', fieldPath: 'contact.phone', locked: true, userSlug: null })
+    it('returns 404 for unknown candidate', async () => {
+      const result = await setProfileFieldLock({ candidateId: 'ghost', fieldPath: 'contact.phone', locked: true, userSlug: null })
       expect(result.notFound).toBe(true)
     })
 
-    it('rejects bad field paths', () => {
+    it('rejects bad field paths', async () => {
       const cid = seedCandidate()
-      persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
-      const result = setProfileFieldLock({ candidateId: cid, fieldPath: 'education', locked: true, userSlug: null })
+      await persistMergedProfile(cid, makeProfileWithPhone('+33611111111'), 'run-1')
+      const result = await setProfileFieldLock({ candidateId: cid, fieldPath: 'education', locked: true, userSlug: null })
       expect(result.ok).toBe(false)
       expect(result.error).toBeDefined()
     })
   })
 
   describe('emptyField helper', () => {
-    it('returns a null ProfileField with no provenance', () => {
+    it('returns a null ProfileField with no provenance', async () => {
       const f = emptyField<string>()
       expect(f.value).toBeNull()
       expect(f.runId).toBeNull()
@@ -196,7 +196,7 @@ describe('profile-merge', () => {
   })
 
   describe('lazy cleanup of legacy identity.photoAssetId', () => {
-    it('persistMergedProfile strips photoAssetId from both incoming and stored row', () => {
+    it('persistMergedProfile strips photoAssetId from both incoming and stored row', async () => {
       const candidateId = crypto.randomUUID()
       getDb().prepare(
         'INSERT INTO candidates (id, name, role, email, created_by, expires_at, ai_profile) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -221,7 +221,7 @@ describe('profile-merge', () => {
       const incoming = emptyProfile()
       incoming.identity.fullName = { value: 'Alice Martin', runId: 'new-run', sourceDoc: 'cv', confidence: 0.95, humanLockedAt: null, humanLockedBy: null }
 
-      persistMergedProfile(candidateId, incoming, 'new-run')
+      await persistMergedProfile(candidateId, incoming, 'new-run')
 
       const row = getDb().prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(candidateId) as { ai_profile: string }
       const parsed = JSON.parse(row.ai_profile)

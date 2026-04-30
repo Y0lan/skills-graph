@@ -112,12 +112,10 @@ export default function CompatBreakdownDialog({ open, onClose, candidatureId, me
     // Intentionally calling setState in the effect: we need the loading/null
     // state synced with the new fetch cycle. The eslint rule is conservative;
     // this is the "subscribe + reflect external state" pattern it's meant to
-    // allow. Rule-disable with context.
+    // allow. Rule-disable with context where the rule still applies.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(null)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     fetch(`/api/recruitment/candidatures/${candidatureId}/compat/${metric}`, { credentials: 'include' })
       .then(async (res) => {

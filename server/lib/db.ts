@@ -1,1845 +1,951 @@
-import Database from 'better-sqlite3'
-import fs from 'fs'
-import path from 'path'
-import { seedCatalog } from './seed-catalog.js'
-import { safeJsonParse } from './types.js'
-import { buildCanonicalFilename, formatDisplayName, uppercaseStem, buildTypePrefixedFilename } from './file-naming.js'
-import { startupSweep } from './extraction-watchdog.js'
-
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'server', 'data')
-export const DB_PATH = path.join(DATA_DIR, 'ratings.db')
-const JSON_PATH = path.join(DATA_DIR, 'ratings.json')
-
+import fs from 'fs';
+import path from 'path';
+import { AsyncLocalStorage } from 'async_hooks';
+import { execFileSync } from 'child_process';
+import pg from 'pg';
+import { seedCatalog } from './seed-catalog.js';
+import { safeJsonParse } from './types.js';
+const { Pool, types: pgTypes } = pg;
+const INIT_SQL_PATH = path.join(process.cwd(), 'server', 'db', 'postgres-init.sql');
+const CATALOG_VERSION = '5.1.0';
+export const TEST_DATABASE_HANDLE = 'postgres';
+// Preserve the app's current JSON.parse/stringify and date-string behavior
+// while the storage type moves to JSONB/TIMESTAMPTZ.
+pgTypes.setTypeParser(20, (value) => Number(value));
+pgTypes.setTypeParser(114, (value) => value);
+pgTypes.setTypeParser(3802, (value) => value);
+pgTypes.setTypeParser(1082, (value) => value);
+pgTypes.setTypeParser(1114, (value) => value);
+pgTypes.setTypeParser(1184, (value) => value);
 export interface MemberEvaluation {
-  ratings: Record<string, number>
-  experience: Record<string, number>
-  skippedCategories: string[]
-  declinedCategories: string[]
-  submittedAt: string | null
-  profileSummary: string | null
+    ratings: Record<string, number>;
+    experience: Record<string, number>;
+    skippedCategories: string[];
+    declinedCategories: string[];
+    submittedAt: string | null;
+    profileSummary: string | null;
 }
-
-let db: Database.Database
-
-export function getDb(): Database.Database {
-  return db
+export interface DbRunResult {
+    changes: number;
+    lastInsertRowid?: number | string;
 }
-
-export function initDatabase(): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
-  }
-
-  db = new Database(DB_PATH)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS evaluations (
-      slug TEXT PRIMARY KEY,
-      ratings TEXT NOT NULL DEFAULT '{}',
-      experience TEXT NOT NULL DEFAULT '{}',
-      skipped_categories TEXT NOT NULL DEFAULT '[]',
-      submitted_at TEXT
-    )
-  `)
-
-  // Add profile_summary column (idempotent migration)
-  try {
-    db.exec('ALTER TABLE evaluations ADD COLUMN profile_summary TEXT')
-  } catch { /* Column already exists */ }
-
-  // Catalog tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY,
-      label TEXT NOT NULL,
-      emoji TEXT NOT NULL,
-      sort_order INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS calibration_prompts (
-      category_id TEXT PRIMARY KEY REFERENCES categories(id),
-      text TEXT NOT NULL,
-      tools TEXT NOT NULL DEFAULT '[]'
-    );
-
-    CREATE TABLE IF NOT EXISTS skills (
-      id TEXT PRIMARY KEY,
-      category_id TEXT NOT NULL REFERENCES categories(id),
-      label TEXT NOT NULL,
-      sort_order INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS skill_descriptors (
-      skill_id TEXT NOT NULL REFERENCES skills(id),
-      level INTEGER NOT NULL CHECK(level BETWEEN 0 AND 5),
-      label TEXT NOT NULL,
-      description TEXT NOT NULL,
-      PRIMARY KEY (skill_id, level)
-    );
-
-    CREATE TABLE IF NOT EXISTS rating_scale (
-      value INTEGER PRIMARY KEY CHECK(value BETWEEN 0 AND 5),
-      label TEXT NOT NULL,
-      short_label TEXT NOT NULL,
-      description TEXT NOT NULL
-    );
-  `)
-
-  // Comparison summaries cache
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS comparison_summaries (
-      slug_a TEXT NOT NULL,
-      slug_b TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (slug_a, slug_b)
-    )
-  `)
-
-  // Chat rate limiting
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS chat_usage (
-      user_id TEXT NOT NULL,
-      used_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_usage_user ON chat_usage(user_id, used_at)')
-
-  // Skill change history (progression tracking)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS skill_changes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      slug TEXT NOT NULL,
-      skill_id TEXT NOT NULL,
-      old_level INTEGER NOT NULL CHECK(old_level BETWEEN 0 AND 5),
-      new_level INTEGER NOT NULL CHECK(new_level BETWEEN 0 AND 5),
-      changed_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_skill_changes_slug ON skill_changes(slug, skill_id, changed_at)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_skill_changes_skill ON skill_changes(skill_id, changed_at)')
-
-  // Seed initial history from existing evaluations (one-time)
-  const hasHistory = (db.prepare('SELECT COUNT(*) as c FROM skill_changes').get() as { c: number }).c
-  if (hasHistory === 0) {
-    const evals = db.prepare('SELECT slug, ratings, submitted_at FROM evaluations WHERE submitted_at IS NOT NULL').all() as {
-      slug: string; ratings: string; submitted_at: string
-    }[]
-    if (evals.length > 0) {
-      const insert = db.prepare('INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, 0, ?, ?)')
-      const seedHistory = db.transaction(() => {
-        for (const ev of evals) {
-          const ratings: Record<string, number> = safeJsonParse(ev.ratings, {}, 'evaluations.ratings')
-          for (const [skillId, level] of Object.entries(ratings)) {
-            if (level > 0) {
-              insert.run(ev.slug, skillId, level, ev.submitted_at)
+type Queryable = pg.Pool | pg.PoolClient;
+const txClientStore = new AsyncLocalStorage<pg.PoolClient>();
+let pool: pg.Pool | null = null;
+let db: AsyncDb | null = null;
+function requirePool(): pg.Pool {
+    if (!pool)
+        throw new Error('Database not initialized. Call initDatabase() first.');
+    return pool;
+}
+function currentQueryable(): Queryable {
+    return txClientStore.getStore() ?? requirePool();
+}
+function normalizeParams(params: unknown[]): unknown[] {
+    return params;
+}
+function convertPlaceholders(sql: string): string {
+    let idx = 0;
+    let out = '';
+    let inSingle = false;
+    let inDouble = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+    let dollarQuoteTag: string | null = null;
+    for (let i = 0; i < sql.length; i++) {
+        const ch = sql[i];
+        const next = sql[i + 1];
+        if (dollarQuoteTag !== null) {
+            const closing = `$${dollarQuoteTag}$`;
+            if (sql.startsWith(closing, i)) {
+                out += closing;
+                i += closing.length - 1;
+                dollarQuoteTag = null;
             }
-          }
-        }
-      })
-      seedHistory()
-    }
-  }
-
-  // Predefined roles for recruitment
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS roles (
-      id TEXT PRIMARY KEY,
-      label TEXT NOT NULL,
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      deleted_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS role_categories (
-      role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-      category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-      PRIMARY KEY (role_id, category_id)
-    );
-  `)
-
-  // Candidates table (recruitment feature)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidates (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT '',
-      role_id TEXT REFERENCES roles(id),
-      email TEXT,
-      created_by TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      expires_at TEXT DEFAULT (datetime('now', '+30 days')),
-      ratings TEXT NOT NULL DEFAULT '{}',
-      experience TEXT NOT NULL DEFAULT '{}',
-      skipped_categories TEXT NOT NULL DEFAULT '[]',
-      submitted_at TEXT,
-      ai_report TEXT,
-      notes TEXT,
-      cv_text TEXT,
-      ai_suggestions TEXT
-    )
-  `)
-
-  // Idempotent column additions for existing candidates tables
-  for (const col of ['role_id TEXT', 'cv_text TEXT', 'ai_suggestions TEXT']) {
-    try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
-  }
-
-  // Add telephone and pays columns to candidates (for Drupal intake)
-  // Candidate contact fields for Drupal intake
-  for (const col of ['telephone TEXT', 'pays TEXT', 'linkedin_url TEXT', 'github_url TEXT', 'canal TEXT', 'origine TEXT']) {
-    try { db.exec(`ALTER TABLE candidates ADD COLUMN ${col}`) } catch { /* already exists */ }
-  }
-
-  // ─── Recruitment postes ──────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS postes (
-      id TEXT PRIMARY KEY,
-      role_id TEXT NOT NULL REFERENCES roles(id),
-      titre TEXT NOT NULL,
-      pole TEXT NOT NULL CHECK(pole IN ('legacy', 'java_modernisation', 'fonctionnel')),
-      headcount INTEGER NOT NULL DEFAULT 1,
-      headcount_flexible INTEGER NOT NULL DEFAULT 0,
-      experience_min INTEGER NOT NULL DEFAULT 0,
-      cigref TEXT NOT NULL DEFAULT '',
-      contrat TEXT NOT NULL DEFAULT 'CDIC',
-      statut TEXT NOT NULL DEFAULT 'ouvert' CHECK(statut IN ('ouvert', 'pourvu', 'ferme')),
-      date_publication TEXT NOT NULL DEFAULT (datetime('now')),
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS candidatures (
-      id TEXT PRIMARY KEY,
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      poste_id TEXT NOT NULL REFERENCES postes(id),
-      statut TEXT NOT NULL DEFAULT 'postule'
-        CHECK(statut IN ('postule','preselectionne','skill_radar_envoye','skill_radar_complete','entretien_1','aboro','entretien_2','proposition','embauche','refuse')),
-      canal TEXT NOT NULL DEFAULT 'site'
-        CHECK(canal IN ('cabinet','site','candidature_directe','reseau')),
-      notes_directeur TEXT,
-      taux_compatibilite_poste REAL,
-      taux_compatibilite_equipe REAL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(candidate_id, poste_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS candidature_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-      type TEXT NOT NULL DEFAULT 'status_change'
-        CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
-      statut_from TEXT,
-      statut_to TEXT,
-      notes TEXT,
-      content_md TEXT,
-      email_snapshot TEXT,
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidature_documents (
-      id TEXT PRIMARY KEY,
-      candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-      type TEXT NOT NULL DEFAULT 'other'
-        CHECK(type IN ('aboro', 'cv', 'lettre', 'entretien', 'proposition', 'administratif', 'other')),
-      filename TEXT NOT NULL,
-      path TEXT NOT NULL,
-      uploaded_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS aboro_profiles (
-      id TEXT PRIMARY KEY,
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      profile_json TEXT NOT NULL,
-      source_document_id TEXT,
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_aboro_profiles_candidate ON aboro_profiles(candidate_id)')
-
-  // User-scoped saved candidates (#6 narrow wedge — option D''). Star a
-  // candidature anywhere in the recruitment UI to add it here. Composite
-  // PK prevents duplicates from the same user. ON DELETE CASCADE on both
-  // FK sides cleans up shortlist entries when a user or candidature is
-  // deleted. Cross-poste comparison stays out of scope this session;
-  // the saved-candidates page navigates to the existing per-poste
-  // comparison endpoint.
-  //
-  // Guard: only create when the Better Auth `user` table is present.
-  // Older tests preSeed without auth migrations — they boot fine, just
-  // without this table, and the shortlist endpoints don't run there.
-  const hasUserTable = db.prepare(
-    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='user' LIMIT 1",
-  ).get() as { 1: number } | undefined
-  if (hasUserTable) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS user_shortlists (
-        user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-        added_at TEXT NOT NULL DEFAULT (datetime('now')),
-        note TEXT,
-        PRIMARY KEY (user_id, candidature_id)
-      )
-    `)
-    db.exec('CREATE INDEX IF NOT EXISTS idx_user_shortlists_user ON user_shortlists(user_id, added_at DESC)')
-  }
-
-  // Idempotent: widen candidature_documents CHECK constraint
-  // SQLite can't ALTER CHECK, so recreate table without restrictive CHECK
-  const hasRestrictiveCheck = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_documents'").get() as { sql: string } | undefined
-    return tableInfo?.sql?.includes("CHECK(type IN ('aboro', 'cv', 'lettre', 'other'))") ?? false
-  })()
-
-  if (hasRestrictiveCheck) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS candidature_documents_new (
-        id TEXT PRIMARY KEY,
-        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-        type TEXT NOT NULL DEFAULT 'other',
-        filename TEXT NOT NULL,
-        path TEXT NOT NULL,
-        uploaded_by TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT OR IGNORE INTO candidature_documents_new SELECT * FROM candidature_documents;
-      DROP TABLE candidature_documents;
-      ALTER TABLE candidature_documents_new RENAME TO candidature_documents;
-    `)
-  }
-
-  // Idempotent migration: widen candidature_events CHECK constraint + add content_md, email_snapshot columns
-  const hasOldEventCheck = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return tableInfo?.sql?.includes("'email')") && !tableInfo?.sql?.includes("'email_sent'")
-  })()
-
-  if (hasOldEventCheck) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS candidature_events_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-        type TEXT NOT NULL DEFAULT 'status_change'
-          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open')),
-        statut_from TEXT,
-        statut_to TEXT,
-        notes TEXT,
-        content_md TEXT,
-        email_snapshot TEXT,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at)
-        SELECT id, candidature_id, type, statut_from, statut_to, notes, created_by, created_at FROM candidature_events;
-      DROP TABLE candidature_events;
-      ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
-    `)
-  }
-
-  // Idempotent migration: add 'evaluation_reopened' and 'onboarding' to candidature_events CHECK
-  const missingNewEventTypes = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return tableInfo?.sql?.includes("'email_open'") && !tableInfo?.sql?.includes("'evaluation_reopened'")
-  })()
-
-  if (missingNewEventTypes) {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS candidature_events_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-        type TEXT NOT NULL DEFAULT 'status_change'
-          CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','evaluation_reopened','onboarding')),
-        statut_from TEXT,
-        statut_to TEXT,
-        notes TEXT,
-        content_md TEXT,
-        email_snapshot TEXT,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      INSERT INTO candidature_events_new SELECT * FROM candidature_events;
-      DROP TABLE candidature_events;
-      ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at);
-    `)
-  }
-
-  // Idempotent: add content_md and email_snapshot if table has new CHECK but missing columns
-  try { db.exec('ALTER TABLE candidature_events ADD COLUMN content_md TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_events ADD COLUMN email_snapshot TEXT') } catch { /* already exists */ }
-  // v4.5: per-stage notes + edit-in-place
-  try { db.exec('ALTER TABLE candidature_events ADD COLUMN stage TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_events ADD COLUMN updated_at TEXT') } catch { /* already exists */ }
-
-  // v4.5 defensive backfill: events created before the `stage` column existed
-  // have stage=NULL, which breaks the per-stage history grouping. Walk each
-  // candidature's status_change history once and assign every prior event the
-  // statut active at its created_at. Idempotent — only touches rows where
-  // stage IS NULL.
-  try {
-    const candWithNullStage = db.prepare(`
-      SELECT DISTINCT candidature_id FROM candidature_events WHERE stage IS NULL
-    `).all() as { candidature_id: string }[]
-    if (candWithNullStage.length > 0) {
-      const txn = db.transaction(() => {
-        const update = db.prepare(`UPDATE candidature_events SET stage = ? WHERE id = ?`)
-        for (const { candidature_id } of candWithNullStage) {
-          // Walk this candidature's events oldest→newest; the active stage
-          // at each event is the latest statut_to seen up to that point.
-          const events = db.prepare(`
-            SELECT id, type, statut_to, created_at FROM candidature_events
-            WHERE candidature_id = ? AND stage IS NULL
-            ORDER BY created_at ASC, id ASC
-          `).all(candidature_id) as { id: number; type: string; statut_to: string | null; created_at: string }[]
-          let activeStage = 'postule'
-          for (const e of events) {
-            if (e.type === 'status_change' && e.statut_to) activeStage = e.statut_to
-            update.run(activeStage, e.id)
-          }
-        }
-      })
-      txn()
-    }
-  } catch (err) {
-    console.error('[db] stage backfill failed (non-fatal):', err)
-  }
-
-  // Idempotent migration: widen CHECK to add email_clicked / email_delivered / email_complained / email_delay.
-  // Wrapped in an explicit transaction so a pod crash between DROP and RENAME
-  // cannot leave the schema in an unrecoverable "main table gone, temp table
-  // orphaned" state. `DROP TABLE IF EXISTS candidature_events_new` first cleans
-  // up any orphan temp table left by a prior crashed attempt.
-  const missingDeliverabilityEventTypes = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_clicked'")
-  })()
-
-  if (missingDeliverabilityEventTypes) {
-    db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    const migrate = db.transaction(() => {
-      db.exec(`
-        CREATE TABLE candidature_events_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-          type TEXT NOT NULL DEFAULT 'status_change'
-            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
-          statut_from TEXT,
-          statut_to TEXT,
-          notes TEXT,
-          content_md TEXT,
-          email_snapshot TEXT,
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at)
-          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
-          FROM candidature_events;
-        DROP TABLE candidature_events;
-        ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      `)
-    })
-    migrate()
-    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-  }
-
-  // Idempotent migration: widen CHECK to add 'email_scheduled' and 'email_cancelled'.
-  // Without this, every INSERT for a delayed candidate-facing email throws a
-  // CHECK constraint violation, the catch silently swaps it to 'email_failed',
-  // and the ScheduledEmailBanner never sees a row to render — so the recruiter
-  // has no countdown / send-now / cancel UI for the 10-min delay.
-  const missingScheduledLifecycleTypes = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_scheduled'")
-  })()
-
-  if (missingScheduledLifecycleTypes) {
-    db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    const migrate = db.transaction(() => {
-      db.exec(`
-        CREATE TABLE candidature_events_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-          type TEXT NOT NULL DEFAULT 'status_change'
-            CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding')),
-          statut_from TEXT,
-          statut_to TEXT,
-          notes TEXT,
-          content_md TEXT,
-          email_snapshot TEXT,
-          created_by TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at)
-          SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, created_by, created_at
-          FROM candidature_events;
-        DROP TABLE candidature_events;
-        ALTER TABLE candidature_events_new RENAME TO candidature_events;
-      `)
-    })
-    migrate()
-    db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-  }
-
-  // Idempotent: add event_id FK to candidature_documents for linking files to transition events
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN event_id INTEGER REFERENCES candidature_events(id)') } catch { /* already exists */ }
-  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_event ON candidature_documents(event_id)')
-
-  // Idempotent: add malware scan columns to candidature_documents
-  try { db.exec("ALTER TABLE candidature_documents ADD COLUMN scan_status TEXT DEFAULT 'pending'") } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scan_result TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN scanned_at TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN display_filename TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN deleted_at TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidature_documents ADD COLUMN replaces_document_id TEXT REFERENCES candidature_documents(id)') } catch { /* already exists */ }
-  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON candidature_documents(deleted_at)')
-
-  // ───────────────────────────────────────────────────────────────────
-  // v5.1 — candidature_stage_data: per-stage structured fiches
-  //
-  // One row per (candidature, stage). `data_json` stores the validated
-  // shape (Zod schemas live at src/lib/stage-fiches/schemas.ts).
-  // Generated columns project the 3 dates that drive the upstream
-  // "next critical fact" pill + the v5.2 cron — STORED so the partial
-  // indexes below are usable. Requires SQLite ≥ 3.31 (2020-01).
-  // ───────────────────────────────────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidature_stage_data (
-      candidature_id    TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-      stage             TEXT NOT NULL,
-      data_json         TEXT NOT NULL DEFAULT '{}',
-      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_by        TEXT,
-      scheduled_at      TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.scheduledAt'))      STORED,
-      response_deadline TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.responseDeadline')) STORED,
-      arrival_date      TEXT GENERATED ALWAYS AS (json_extract(data_json, '$.arrivalDateInNc'))  STORED,
-      PRIMARY KEY (candidature_id, stage)
-    );
-    CREATE INDEX IF NOT EXISTS idx_stage_data_candidature ON candidature_stage_data(candidature_id);
-    CREATE INDEX IF NOT EXISTS idx_stage_data_scheduled   ON candidature_stage_data(scheduled_at)      WHERE scheduled_at      IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_stage_data_deadline    ON candidature_stage_data(response_deadline) WHERE response_deadline IS NOT NULL;
-    CREATE INDEX IF NOT EXISTS idx_stage_data_arrival     ON candidature_stage_data(arrival_date)      WHERE arrival_date      IS NOT NULL;
-  `)
-
-  // Boot-time portability assertions. Fail fast if a future runtime is
-  // missing JSON1 or generated columns instead of degrading silently.
-  try { db.prepare("SELECT json('{}')").get() }
-  catch (err) {
-    throw new Error(`SQLite JSON1 extension unavailable — bundled SQLite < 3.9? underlying: ${(err as Error).message}`)
-  }
-  try { db.prepare('SELECT scheduled_at FROM candidature_stage_data LIMIT 0').get() }
-  catch (err) {
-    throw new Error(`candidature_stage_data generated columns unsupported — SQLite < 3.31? underlying: ${(err as Error).message}`)
-  }
-
-  // ───────────────────────────────────────────────────────────────────
-  // v5.2 — candidature_reminders: manual recruiter reminders
-  //
-  // Lets the recruiter set "rappel-moi le 30 avril sur Pierre" against
-  // a candidature. The daily-recap cron (/api/recruitment/jobs/daily-
-  // recap) emails Guillaume a digest at 08:00 NC of every reminder
-  // due in the next 24h plus auto-derived alerts from
-  // candidature_stage_data (entretien tomorrow, proposition deadline
-  // due, embauche arrival).
-  //
-  // remind_at is stored in Pacific/Noumea wall-clock per the v5.1 R5
-  // convention (see src/lib/stage-fiches/datetime.ts). The cron query
-  // uses a generated `remind_at_iso` column projected to UTC for index
-  // lookup speed. (We could also use plain string comparison since the
-  // wall-clock format sorts lex-correctly, but indexing on a real
-  // datetime is more SQL-friendly.)
-  // ───────────────────────────────────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidature_reminders (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      candidature_id TEXT    NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-      candidate_id   TEXT    NOT NULL REFERENCES candidates(id)   ON DELETE CASCADE,
-      remind_at      TEXT    NOT NULL,
-      body_md        TEXT    NOT NULL DEFAULT '',
-      is_done        INTEGER NOT NULL DEFAULT 0,
-      created_by     TEXT    NOT NULL,
-      created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
-      done_at        TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_reminders_candidature ON candidature_reminders(candidature_id);
-    CREATE INDEX IF NOT EXISTS idx_reminders_due         ON candidature_reminders(remind_at) WHERE is_done = 0;
-  `)
-
-  // ───────────────────────────────────────────────────────────────────
-  // v5.3 — candidate_tags: cross-candidature filtering tags
-  //
-  // Tags live at the CANDIDATE level (not candidature) so they survive
-  // across multi-poste applications and re-applications. A tag is just
-  // a string label attached to (candidate_id, tag) — composite primary
-  // key prevents duplicates per candidate.
-  //
-  // The pipeline page filters by tag; the identity strip surfaces them
-  // as small pills. ~200 LOC total per the v5 plan budget.
-  // ───────────────────────────────────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidate_tags (
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      tag          TEXT NOT NULL,
-      created_by   TEXT NOT NULL,
-      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (candidate_id, tag)
-    );
-    CREATE INDEX IF NOT EXISTS idx_candidate_tags_tag ON candidate_tags(tag);
-  `)
-
-  // v5.1: widen candidature_events CHECK to add 'stage_data_changed' so
-  // every fiche save inserts an audit row that surfaces in the historique
-  // ("Pierre L. a modifié la fiche entretien_1 — salaire proposé: 6 800 000 → 7 200 000 XPF").
-  // Mirrors the email_scheduled / email_cancelled pattern above.
-  const missingStageDataChangedType = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !!tableInfo?.sql && !tableInfo.sql.includes("'stage_data_changed'")
-  })()
-
-  if (missingStageDataChangedType) {
-    // CRITICAL: turn FK enforcement OFF for the table-rebuild dance.
-    // candidature_documents.event_id references candidature_events(id) since
-    // v4.5; without this PRAGMA, DROP TABLE candidature_events fires the FK
-    // and crashes the boot. SQLite forbids changing this pragma inside a
-    // transaction, so it has to bracket the migrate() call. Mirrors the
-    // candidate_assets rebuild pattern further below.
-    db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    db.exec('PRAGMA foreign_keys=OFF')
-    try {
-      const migrate = db.transaction(() => {
-        db.exec(`
-          CREATE TABLE candidature_events_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-            type TEXT NOT NULL DEFAULT 'status_change'
-              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed')),
-            statut_from TEXT,
-            statut_to TEXT,
-            notes TEXT,
-            content_md TEXT,
-            email_snapshot TEXT,
-            stage TEXT,
-            updated_at TEXT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-          );
-          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
-            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
-            FROM candidature_events;
-          DROP TABLE candidature_events;
-          ALTER TABLE candidature_events_new RENAME TO candidature_events;
-        `)
-      })
-      migrate()
-      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-    } finally {
-      db.exec('PRAGMA foreign_keys=ON')
-    }
-  }
-
-  // v5.3: widen candidature_events CHECK to add 'email_received' for
-  // inbound mail logged via Resend Inbound webhook. Same FK-disable
-  // dance as v5.1 (candidature_documents.event_id still references this
-  // table). Mirrors the v5.1 stage_data_changed migration pattern.
-  const missingEmailReceivedType = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !!tableInfo?.sql && !tableInfo.sql.includes("'email_received'")
-  })()
-
-  if (missingEmailReceivedType) {
-    db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    db.exec('PRAGMA foreign_keys=OFF')
-    try {
-      const migrate = db.transaction(() => {
-        db.exec(`
-          CREATE TABLE candidature_events_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-            type TEXT NOT NULL DEFAULT 'status_change'
-              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed','email_received')),
-            statut_from TEXT,
-            statut_to TEXT,
-            notes TEXT,
-            content_md TEXT,
-            email_snapshot TEXT,
-            stage TEXT,
-            updated_at TEXT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-          );
-          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
-            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
-            FROM candidature_events;
-          DROP TABLE candidature_events;
-          ALTER TABLE candidature_events_new RENAME TO candidature_events;
-        `)
-      })
-      migrate()
-      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-    } finally {
-      db.exec('PRAGMA foreign_keys=ON')
-    }
-  }
-
-  // v5.x: widen candidature_events CHECK to add 'canal_change' for the
-  // cabinet/direct toggle. Codex P11 — canal change is semantically
-  // orthogonal to stage progression, so it deserves its own event_type.
-  // Same FK-disable dance because candidature_documents.event_id still
-  // FKs to this table.
-  const missingCanalChangeType = (() => {
-    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidature_events'").get() as { sql: string } | undefined
-    return !!tableInfo?.sql && !tableInfo.sql.includes("'canal_change'")
-  })()
-
-  if (missingCanalChangeType) {
-    db.exec('DROP TABLE IF EXISTS candidature_events_new')
-    db.exec('PRAGMA foreign_keys=OFF')
-    try {
-      const migrate = db.transaction(() => {
-        db.exec(`
-          CREATE TABLE candidature_events_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            candidature_id TEXT NOT NULL REFERENCES candidatures(id) ON DELETE CASCADE,
-            type TEXT NOT NULL DEFAULT 'status_change'
-              CHECK(type IN ('status_change','note','entretien','document','email','email_sent','email_scheduled','email_cancelled','email_failed','email_open','email_clicked','email_delivered','email_complained','email_delay','evaluation_reopened','onboarding','stage_data_changed','email_received','canal_change')),
-            statut_from TEXT,
-            statut_to TEXT,
-            notes TEXT,
-            content_md TEXT,
-            email_snapshot TEXT,
-            stage TEXT,
-            updated_at TEXT,
-            created_by TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-          );
-          INSERT INTO candidature_events_new (id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at)
-            SELECT id, candidature_id, type, statut_from, statut_to, notes, content_md, email_snapshot, stage, updated_at, created_by, created_at
-            FROM candidature_events;
-          DROP TABLE candidature_events;
-          ALTER TABLE candidature_events_new RENAME TO candidature_events;
-        `)
-      })
-      migrate()
-      db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-    } finally {
-      db.exec('PRAGMA foreign_keys=ON')
-    }
-  }
-
-  // ─── Idempotent backfill: canonical display_filename + candidate name ─
-  // Applies the naming convention defined in server/lib/file-naming.ts to
-  // every existing candidate and document. Re-runnable: skips rows already
-  // in canonical form.
-  try {
-    // 1. Normalize candidates.name → "Firstname LASTNAME".
-    const nameRows = db.prepare('SELECT id, name FROM candidates').all() as { id: string; name: string }[]
-    const updateCandidateName = db.prepare('UPDATE candidates SET name = ? WHERE id = ?')
-    let renamedCandidates = 0
-    for (const row of nameRows) {
-      const normalized = formatDisplayName(row.name)
-      if (normalized && normalized !== row.name) {
-        updateCandidateName.run(normalized, row.id)
-        renamedCandidates++
-      }
-    }
-    if (renamedCandidates > 0) {
-      console.log(`[MIGRATION] Normalized ${renamedCandidates} candidate name(s) to "Firstname LASTNAME" format`)
-    }
-
-    // 2. Backfill display_filename for documents where it's NULL.
-    //    Use the document's created_at as the date in the canonical filename so
-    //    retro-named files still match "when it was uploaded".
-    const orphanDocs = db.prepare(`
-      SELECT d.id, d.type, d.filename, d.created_at, cand.name AS candidate_name
-      FROM candidature_documents d
-      JOIN candidatures c ON c.id = d.candidature_id
-      JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE d.display_filename IS NULL
-    `).all() as { id: string; type: string; filename: string; created_at: string; candidate_name: string }[]
-    const updateDoc = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?')
-    let renamedDocs = 0
-    for (const d of orphanDocs) {
-      if (!d.candidate_name) continue
-      // CV / Lettre / ABORO keep their original name (uppercased for
-      // visual consistency with the type badge); everything else gets the
-      // canonical NAME_FIRSTNAME_DATE suffix.
-      const keepsOriginalName = d.type === 'cv' || d.type === 'lettre' || d.type === 'aboro'
-      const parsed = new Date(d.created_at.replace(' ', 'T') + 'Z')
-      const display = keepsOriginalName
-        ? uppercaseStem(d.filename)
-        : buildCanonicalFilename(d.candidate_name, d.filename, isNaN(+parsed) ? new Date() : parsed)
-      updateDoc.run(display, d.id)
-      renamedDocs++
-    }
-    if (renamedDocs > 0) {
-      console.log(`[MIGRATION] Backfilled display_filename for ${renamedDocs} document(s)`)
-    }
-  } catch (err) {
-    console.error('[MIGRATION] File-naming backfill failed (non-blocking):', err)
-  }
-
-  // ─── Undo canonical renaming on CV / Lettre / ABORO ─────────────────
-  // Earlier versions applied buildCanonicalFilename() to every upload,
-  // including the three "primary" document slots. Those slots now keep
-  // the uploader's original stem (uppercased so "cv.pdf" → "CV.pdf", for
-  // visual consistency with the type badge). The GLOB below matches
-  // canonical-shaped names ("*_LASTNAME_FIRSTNAME_YYYYMMDD.*") so we
-  // only touch auto-renamed rows — any human-renamed files stay intact.
-  //
-  // Plus a second pass that uppercases any CV/lettre/aboro display_filename
-  // still in lowercase form (e.g. legacy uploads that skipped the canonical
-  // path entirely — "cv.pdf" left untouched when display_filename matches
-  // filename verbatim).
-  try {
-    const rowsToReset = db.prepare(`
-      SELECT id, filename FROM candidature_documents
-      WHERE type IN ('cv', 'lettre', 'aboro')
-        AND display_filename IS NOT NULL
-        AND display_filename != filename
-        AND display_filename GLOB '*_[A-Z]*_[A-Z]*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].*'
-        AND uploaded_by != 'drupal-webhook'
-    `).all() as { id: string; filename: string }[]
-    const upd = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ?')
-    let resetCount = 0
-    for (const r of rowsToReset) { upd.run(uppercaseStem(r.filename), r.id); resetCount++ }
-    if (resetCount > 0) {
-      console.log(`[MIGRATION] Reset + uppercased display_filename on ${resetCount} CV/lettre/aboro document(s)`)
-    }
-
-    // Second pass: uppercase CV/lettre/aboro stems that never went through
-    // the canonical pipeline but stayed lowercase.
-    const rowsToUppercase = db.prepare(`
-      SELECT id, display_filename FROM candidature_documents
-      WHERE type IN ('cv', 'lettre', 'aboro')
-        AND display_filename IS NOT NULL
-        AND display_filename GLOB '*[a-z]*'
-    `).all() as { id: string; display_filename: string }[]
-    let upperCount = 0
-    for (const r of rowsToUppercase) {
-      const upped = uppercaseStem(r.display_filename)
-      if (upped !== r.display_filename) { upd.run(upped, r.id); upperCount++ }
-    }
-    if (upperCount > 0) {
-      console.log(`[MIGRATION] Uppercased stem on ${upperCount} CV/lettre/aboro document(s)`)
-    }
-  } catch (err) {
-    console.error('[MIGRATION] CV/lettre/aboro rename reset failed (non-blocking):', err)
-  }
-
-  // ─── Drupal-intake CV / Lettre → canonical "{TYPE}_{LAST}_{FIRST}_{DATE}.ext" ──
-  // Drupal uploads cv.pdf / lettre.pdf with no identifying info; force the
-  // canonical type-prefixed format. Idempotent: re-running against an
-  // already-canonical filename produces the same output. Only touches rows
-  // uploaded by 'drupal-webhook' — admin direct uploads stay untouched.
-  try {
-    const drupalRows = db.prepare(`
-      SELECT d.id, d.type, d.filename, d.created_at, cand.name AS candidate_name
-      FROM candidature_documents d
-      JOIN candidatures c ON c.id = d.candidature_id
-      JOIN candidates cand ON cand.id = c.candidate_id
-      WHERE d.uploaded_by = 'drupal-webhook'
-        AND d.type IN ('cv', 'lettre')
-    `).all() as { id: string; type: string; filename: string; created_at: string; candidate_name: string }[]
-    const upd = db.prepare('UPDATE candidature_documents SET display_filename = ? WHERE id = ? AND (display_filename IS NULL OR display_filename != ?)')
-    let drupalCount = 0
-    for (const r of drupalRows) {
-      if (!r.candidate_name) continue
-      const parsed = new Date(r.created_at.replace(' ', 'T') + 'Z')
-      const prefix = r.type === 'cv' ? 'CV' : 'LM'
-      const display = buildTypePrefixedFilename(prefix, r.candidate_name, r.filename, isNaN(+parsed) ? new Date() : parsed)
-      const result = upd.run(display, r.id, display)
-      if (result.changes > 0) drupalCount++
-    }
-    if (drupalCount > 0) {
-      console.log(`[MIGRATION] Canonicalised ${drupalCount} Drupal-intake CV/lettre filename(s)`)
-    }
-  } catch (err) {
-    console.error('[MIGRATION] Drupal CV/lettre rename failed (non-blocking):', err)
-  }
-
-  // ─── One-shot dedup of candidates by email ──────────────────────────
-  // Before the intake fix shipped, applying to two postes with the same email
-  // created two `candidates` rows. Walk leftover duplicates, pick the OLDEST as
-  // canonical, merge data, re-point candidatures + aboro_profiles, delete the
-  // duplicates. Idempotent — no-op when no duplicates exist.
-  //
-  // Safety:
-  // - Normalises with LOWER + TRIM (catches " marie@x.com" duplicates).
-  // - Snapshots dropped fields (experience, skipped_categories) into the
-  //   canonical's notes BEFORE losing them, so a recruiter can recover.
-  // - Resolves the UNIQUE(candidate_id, poste_id) conflict that arises when
-  //   two duplicate candidate rows BOTH have a candidature for the same poste:
-  //   we pick the oldest candidature, merge events into it, drop the others.
-  try {
-    const dupes = db.prepare(`
-      SELECT LOWER(TRIM(email)) AS norm_email, COUNT(*) AS n
-      FROM candidates
-      WHERE email IS NOT NULL AND TRIM(email) != ''
-      GROUP BY LOWER(TRIM(email))
-      HAVING COUNT(*) > 1
-    `).all() as { norm_email: string; n: number }[]
-
-    if (dupes.length > 0) {
-      console.log(`[DEDUP] Found ${dupes.length} email(s) with duplicate candidate rows`)
-      // For data fields (cv_text, ai_suggestions, ratings, …) keep canonical's
-      // value when non-null/non-empty: the OLDEST candidate is the
-      // most-curated source.
-      const mergeNonNull = db.prepare(`
-        UPDATE candidates SET
-          cv_text = COALESCE(cv_text, (SELECT cv_text FROM candidates WHERE id = ?)),
-          ai_suggestions = COALESCE(ai_suggestions, (SELECT ai_suggestions FROM candidates WHERE id = ?)),
-          ai_report = COALESCE(ai_report, (SELECT ai_report FROM candidates WHERE id = ?)),
-          ratings = CASE WHEN ratings = '{}' OR ratings IS NULL OR ratings = '' THEN (SELECT ratings FROM candidates WHERE id = ?) ELSE ratings END,
-          experience = CASE WHEN experience = '{}' OR experience IS NULL OR experience = '' THEN (SELECT experience FROM candidates WHERE id = ?) ELSE experience END,
-          skipped_categories = CASE WHEN skipped_categories = '[]' OR skipped_categories IS NULL OR skipped_categories = '' THEN (SELECT skipped_categories FROM candidates WHERE id = ?) ELSE skipped_categories END,
-          submitted_at = COALESCE(submitted_at, (SELECT submitted_at FROM candidates WHERE id = ?))
-        WHERE id = ?
-      `)
-      // For contact fields, the NEWEST non-null value wins — the candidate's
-      // most recent application probably has their freshest phone/address.
-      // We iterate duplicates oldest→newest, overwriting canonical only when
-      // the duplicate's value is non-null. End state = newest-non-null.
-      const mergeContactPreferDup = db.prepare(`
-        UPDATE candidates SET
-          telephone = CASE WHEN (SELECT telephone FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT telephone FROM candidates WHERE id = ?) ELSE telephone END,
-          pays = CASE WHEN (SELECT pays FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT pays FROM candidates WHERE id = ?) ELSE pays END,
-          linkedin_url = CASE WHEN (SELECT linkedin_url FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT linkedin_url FROM candidates WHERE id = ?) ELSE linkedin_url END,
-          github_url = CASE WHEN (SELECT github_url FROM candidates WHERE id = ?) IS NOT NULL THEN (SELECT github_url FROM candidates WHERE id = ?) ELSE github_url END
-        WHERE id = ?
-      `)
-      const appendNotes = db.prepare(`
-        UPDATE candidates
-        SET notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE '\n\n' END || ?
-        WHERE id = ?
-      `)
-      const dupCandidatureForPoste = db.prepare(
-        'SELECT c.id, c.created_at FROM candidatures c WHERE c.candidate_id = ? AND c.poste_id = ? ORDER BY c.created_at ASC'
-      )
-      const repointCandidaturesByPoste = db.prepare(
-        'UPDATE candidatures SET candidate_id = ? WHERE candidate_id = ? AND poste_id = ?'
-      )
-      const moveEventsToCandidature = db.prepare(
-        'UPDATE candidature_events SET candidature_id = ? WHERE candidature_id = ?'
-      )
-      const moveDocsToCandidature = db.prepare(
-        'UPDATE candidature_documents SET candidature_id = ? WHERE candidature_id = ?'
-      )
-      const deleteCandidature = db.prepare('DELETE FROM candidatures WHERE id = ?')
-      const repointAboro = db.prepare(
-        'UPDATE aboro_profiles SET candidate_id = ? WHERE candidate_id = ?'
-      )
-      const deleteDuplicate = db.prepare('DELETE FROM candidates WHERE id = ?')
-
-      const merge = db.transaction((normEmail: string) => {
-        const rows = db.prepare(
-          'SELECT id, name, role, experience, skipped_categories, created_at FROM candidates WHERE LOWER(TRIM(email)) = ? ORDER BY created_at ASC'
-        ).all(normEmail) as { id: string; name: string; role: string; experience: string; skipped_categories: string; created_at: string }[]
-        if (rows.length < 2) return
-        const canonical = rows[0]
-        const duplicates = rows.slice(1)
-
-        for (const dup of duplicates) {
-          // 0. Snapshot anything we might drop into canonical.notes for audit.
-          const auditBits: string[] = [`[DEDUP ${new Date().toISOString().slice(0, 10)}] merged duplicate ${dup.id} (created ${dup.created_at}) name="${dup.name}" role="${dup.role}"`]
-          if (dup.experience && dup.experience !== '{}' && canonical.experience && canonical.experience !== '{}') {
-            auditBits.push(`dropped experience JSON: ${dup.experience}`)
-          }
-          if (dup.skipped_categories && dup.skipped_categories !== '[]' && canonical.skipped_categories && canonical.skipped_categories !== '[]') {
-            auditBits.push(`dropped skipped_categories: ${dup.skipped_categories}`)
-          }
-
-          // 1a. Pull non-null DATA fields from dup into canonical (canonical wins ties).
-          mergeNonNull.run(
-            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
-            canonical.id,
-          )
-          // 1b. Pull non-null CONTACT fields, preferring the dup (newer wins
-          //     because we iterate duplicates oldest→newest).
-          mergeContactPreferDup.run(
-            dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id, dup.id,
-            canonical.id,
-          )
-
-          // 2. Resolve UNIQUE(candidate_id, poste_id) conflict for shared postes:
-          //    if BOTH dup and canonical have a candidature for the same poste,
-          //    keep the older candidature, move all events + docs to it, delete
-          //    the dup's candidature. Otherwise just re-point.
-          const dupPostes = db.prepare(
-            'SELECT id, poste_id FROM candidatures WHERE candidate_id = ?'
-          ).all(dup.id) as { id: string; poste_id: string }[]
-          for (const dupCand of dupPostes) {
-            const sameOnCanonical = dupCandidatureForPoste.all(canonical.id, dupCand.poste_id) as { id: string; created_at: string }[]
-            if (sameOnCanonical.length > 0) {
-              const keepId = sameOnCanonical[0].id
-              moveEventsToCandidature.run(keepId, dupCand.id)
-              moveDocsToCandidature.run(keepId, dupCand.id)
-              deleteCandidature.run(dupCand.id)
-              auditBits.push(`merged candidature ${dupCand.id} into ${keepId} (same poste ${dupCand.poste_id})`)
-            } else {
-              repointCandidaturesByPoste.run(canonical.id, dup.id, dupCand.poste_id)
+            else {
+                out += ch;
             }
-          }
-
-          // 3. Re-point aboro_profiles (no UNIQUE constraint, all rows preserved).
-          repointAboro.run(canonical.id, dup.id)
-
-          // 4. Append the audit trail to canonical.notes BEFORE deleting dup.
-          appendNotes.run(auditBits.join('\n'), canonical.id)
-
-          // 5. Delete the now-orphan duplicate candidate.
-          deleteDuplicate.run(dup.id)
+            continue;
         }
-        console.log(`[DEDUP] Merged ${duplicates.length} duplicate(s) for email ${normEmail} → canonical ${canonical.id}`)
-      })
-      for (const d of dupes) merge(d.norm_email)
+        if (inLineComment) {
+            out += ch;
+            if (ch === '\n')
+                inLineComment = false;
+            continue;
+        }
+        if (inBlockComment) {
+            out += ch;
+            if (ch === '*' && next === '/') {
+                out += next;
+                i++;
+                inBlockComment = false;
+            }
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '-' && next === '-') {
+            out += ch + next;
+            i++;
+            inLineComment = true;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '/' && next === '*') {
+            out += ch + next;
+            i++;
+            inBlockComment = true;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '$') {
+            const match = sql.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+            if (match) {
+                const opener = match[0];
+                dollarQuoteTag = match[1] ?? '';
+                out += opener;
+                i += opener.length - 1;
+                continue;
+            }
+        }
+        if (!inDouble && ch === "'") {
+            out += ch;
+            if (inSingle && next === "'") {
+                out += next;
+                i++;
+            }
+            else {
+                inSingle = !inSingle;
+            }
+            continue;
+        }
+        if (!inSingle && ch === '"') {
+            out += ch;
+            inDouble = !inDouble;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '?') {
+            idx++;
+            out += `$${idx}`;
+            continue;
+        }
+        out += ch;
     }
-  } catch (err) {
-    console.error('[DEDUP] Migration failed:', err)
-    // Non-fatal — server still boots, dedup retried next start
-  }
-
-  // Belt-and-braces UNIQUE index on normalized email so a parallel intake
-  // burst can't slip a duplicate past the application-level dedup. Created
-  // AFTER the migration runs so existing duplicates don't block index creation.
-  try {
-    db.exec(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_candidates_email_unique ON candidates(LOWER(TRIM(email))) WHERE email IS NOT NULL AND TRIM(email) != ''"
-    )
-  } catch (err) {
-    console.error('[DEDUP] UNIQUE index on candidates(email) failed (likely duplicates remain):', err)
-  }
-
-  // ─── Item 2 / 10 / 11 / 12 — extraction stack ──────────────────────
-  // Schema only. Extractor refactor + UI ride on top in follow-up commits.
-  // Spec: docs/decisions/2026-04-20-extraction-architecture.md
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidate_extractions (
-      id TEXT PRIMARY KEY,
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      type TEXT NOT NULL CHECK(type IN ('cv', 'aboro')),
-      run_id TEXT NOT NULL,
-      prompt_version INTEGER NOT NULL,
-      model_version TEXT NOT NULL,
-      input_hash TEXT NOT NULL,
-      raw_output TEXT NOT NULL,
-      parsed_output TEXT NOT NULL,
-      merge_strategy TEXT NOT NULL DEFAULT 'additive'
-        CHECK(merge_strategy IN ('additive', 'recruiter-curated', 'replace')),
-      cost_eur REAL,
-      input_tokens INTEGER,
-      output_tokens INTEGER,
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidate_extractions_candidate ON candidate_extractions(candidate_id, type, created_at DESC)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidate_extractions_run ON candidate_extractions(run_id)')
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidate_field_overrides (
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      field_name TEXT NOT NULL,
-      value TEXT NOT NULL,
-      source TEXT NOT NULL CHECK(source IN ('recruiter', 'extraction')),
-      locked_by TEXT,
-      locked_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (candidate_id, field_name)
-    )
-  `)
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS extraction_usage (
-      user_slug TEXT NOT NULL,
-      day TEXT NOT NULL,
-      count INTEGER NOT NULL DEFAULT 0,
-      tokens_spent INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (user_slug, day)
-    )
-  `)
-
-  // Scan verdict overrides — recruiter can mark a flagged file as safe
-  // (or quarantine a clean one) for a bounded incident window.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS scan_overrides (
-      id TEXT PRIMARY KEY,
-      document_id TEXT NOT NULL REFERENCES candidature_documents(id) ON DELETE CASCADE,
-      verdict TEXT NOT NULL CHECK(verdict IN ('safe', 'quarantine')),
-      reason TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_by TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_scan_overrides_document ON scan_overrides(document_id, expires_at)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_documents_scan_status ON candidature_documents(scan_status)')
-
-  // Idempotent column additions for soft skill scoring + global score
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_soft_skills REAL') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN soft_skill_alerts TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN taux_global REAL') } catch { /* already exists */ }
-
-  // Fiche de poste free-text description — fed to the CV-matching LLM prompt
-  // for contextual, role-aware rating + custom skill-radar questions.
-  try { db.exec('ALTER TABLE postes ADD COLUMN description TEXT') } catch { /* already exists */ }
-
-  // CV-extraction enrichment: per-skill reasoning + per-skill questions
-  // generated from CV evidence vs. fiche de poste. Shown to the candidate in
-  // the skill-radar form to validate the auto-filled rating.
-  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_reasoning TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_questions TEXT') } catch { /* already exists */ }
-
-  // Extraction state machine (CV Intelligence v1, Phase 0).
-  // Status values: idle | running | succeeded | partial | failed.
-  // `partial` = extraction produced usable suggestions but a downstream scoring
-  // step failed for ≥1 candidature. Never use `succeeded` with fake 0% scores.
-  try { db.exec("ALTER TABLE candidates ADD COLUMN extraction_status TEXT DEFAULT 'idle' CHECK(extraction_status IN ('idle','running','succeeded','partial','failed'))") } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidates ADD COLUMN extraction_attempts INTEGER DEFAULT 0') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_at TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidates ADD COLUMN last_extraction_error TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidates ADD COLUMN prompt_version INTEGER DEFAULT 1') } catch { /* already exists */ }
-  // Set at lock-acquisition, cleared at success/failure. Drives the watchdog's
-  // stale-lock detection so a hung pipeline (network stall, Anthropic retry
-  // storm) eventually gets reset without requiring a pod restart. Also used
-  // by the boot-time sweep when the process was killed mid-pipeline.
-  try { db.exec('ALTER TABLE candidates ADD COLUMN lock_acquired_at TEXT') } catch { /* already exists */ }
-
-  // CV Intelligence v1, Phase 1 — auditability foundation.
-  //
-  // candidate_assets: content-addressed storage for CV text / lettre text /
-  // future raw PDFs. Dedupes per-candidate by sha256 so the same CV uploaded
-  // twice = one row. `storage_path` points at the on-disk file (local dev)
-  // or GCS key (prod migration, deferred).
-  //
-  // cv_extraction_runs: one row per LLM invocation. Snapshots poste, prompt
-  // version, catalog version, model, source document hashes. Payload
-  // retention is policy-driven: keep N latest successful payloads, drop
-  // older ones to metadata-only, purge after N days.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS candidate_assets (
-      id TEXT PRIMARY KEY,
-      candidate_id TEXT REFERENCES candidates(id) ON DELETE CASCADE,
-      kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf','photo')),
-      mime TEXT,
-      size_bytes INTEGER,
-      sha256 TEXT NOT NULL,
-      storage_path TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(candidate_id, kind, sha256)
-    );
-    CREATE INDEX IF NOT EXISTS idx_candidate_assets_candidate ON candidate_assets(candidate_id, kind);
-
-    CREATE TABLE IF NOT EXISTS cv_extraction_runs (
-      id TEXT PRIMARY KEY,
-      candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-      candidature_id TEXT REFERENCES candidatures(id) ON DELETE SET NULL,
-      kind TEXT NOT NULL CHECK(kind IN (
-        'skills_baseline',
-        'skills_role_aware',
-        'profile',
-        'critique',
-        'reconcile'
-      )),
-      run_index INTEGER NOT NULL,
-      poste_id TEXT REFERENCES postes(id),
-      poste_snapshot TEXT,
-      catalog_version TEXT,
-      prompt_version INTEGER NOT NULL,
-      model TEXT NOT NULL,
-      cv_asset_id TEXT REFERENCES candidate_assets(id),
-      lettre_asset_id TEXT REFERENCES candidate_assets(id),
-      started_at TEXT NOT NULL DEFAULT (datetime('now')),
-      finished_at TEXT,
-      status TEXT CHECK(status IN ('running','success','partial','failed')),
-      input_tokens INTEGER,
-      output_tokens INTEGER,
-      payload TEXT,
-      error TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_cv_runs_candidate ON cv_extraction_runs(candidate_id, started_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_cv_runs_kind ON cv_extraction_runs(candidate_id, kind, started_at DESC);
-  `)
-
-  // retention_days ALTER is deferred — scoring_weights is created later in
-  // initDatabase (see seedPostes block). We add it after the CREATE runs.
-
-  // Scoring weights table (configurable global score formula)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS scoring_weights (
-      id TEXT PRIMARY KEY,
-      weight_poste REAL NOT NULL DEFAULT 0.5,
-      weight_equipe REAL NOT NULL DEFAULT 0.2,
-      weight_soft REAL NOT NULL DEFAULT 0.3,
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `)
-  db.exec("INSERT OR IGNORE INTO scoring_weights (id) VALUES ('default')")
-
-  // Retention window (days) for cv_extraction_runs payloads. NULL-payload
-  // rows older than this get dropped entirely by extraction-retention.ts.
-  try { db.exec('ALTER TABLE scoring_weights ADD COLUMN retention_days INTEGER DEFAULT 90') } catch { /* already exists */ }
-
-  // CV Intelligence Phase 4 — structured candidate profile (JSON).
-  //
-  // Holds identity/contact/location/education/experience/languages/
-  // certifications/publications/openSource/availability/softSignals/
-  // additionalFacts — all with per-field provenance via ProfileField<T>.
-  // Sensitive fields (DOB/gender/nationality/marital status/salary/photo)
-  // are explicitly OUT OF SCOPE for v1 per product rule (v4 plan).
-  //
-  // Merge semantics: writes go through profile-merge.ts which uses
-  // UPDATE ... WHERE humanLockedAt IS NULL so re-extraction can never
-  // overwrite a recruiter-verified value, even under race conditions.
-  try { db.exec('ALTER TABLE candidates ADD COLUMN ai_profile TEXT') } catch { /* already exists */ }
-
-  // CV Intelligence Phase 3 — per-candidature role-aware skill ratings.
-  //
-  // When a candidature's poste has a non-null `description`, the pipeline runs
-  // a second extraction that includes the fiche as a <reference> block. The
-  // resulting ratings map is stored here per-candidature so each candidature
-  // keeps its own calibration. NULL means "no role-aware pass done — score
-  // with candidate-level ai_suggestions baseline".
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_suggestions TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_reasoning TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN role_aware_questions TEXT') } catch { /* already exists */ }
-
-  // NOTE: ALTER TABLE poste_skill_requirements moved below the CREATE —
-  // codex spotted that on a fresh DB the ALTERs here silently fail
-  // (table doesn't exist yet), then the CREATE runs without the new
-  // columns, and subsequent inserts crash on unknown columns.
-
-  // Drupal-webhook idempotency key: the Webform submission UUID. When Drupal's
-  // queue replays a delivery (e.g. radar was down), we look this up and return
-  // the existing candidature without side effects. Partial unique index so
-  // admin-created candidatures (no submission id) stay valid.
-  try { db.exec('ALTER TABLE candidatures ADD COLUMN drupal_submission_id TEXT') } catch { /* already exists */ }
-  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_candidatures_drupal_submission ON candidatures(drupal_submission_id) WHERE drupal_submission_id IS NOT NULL') } catch { /* already exists */ }
-
-  // Migration: allow 'photo' kind in candidate_assets. Older DBs had a CHECK
-  // constraint restricted to ('cv_text','lettre_text','raw_pdf'). SQLite
-  // can't ALTER an existing CHECK — rebuild the table in place.
-  //
-  // CRITICAL: use PRAGMA legacy_alter_table=ON before the RENAME. Without it,
-  // SQLite auto-rewrites FK references in OTHER tables to point at the new
-  // name (e.g. cv_extraction_runs.cv_asset_id ends up referencing
-  // 'candidate_assets_legacy', which we then drop — breaking every future
-  // insert). This bit us once; don't let it happen again.
-  try {
-    const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='candidate_assets'").get() as { sql: string } | undefined
-    if (existing && !existing.sql.includes("'photo'")) {
-      db.exec('PRAGMA foreign_keys=OFF')
-      db.exec('PRAGMA legacy_alter_table=ON')
-      db.exec(`
-        BEGIN;
-        ALTER TABLE candidate_assets RENAME TO candidate_assets_legacy;
-        CREATE TABLE candidate_assets (
-          id TEXT PRIMARY KEY,
-          candidate_id TEXT REFERENCES candidates(id) ON DELETE CASCADE,
-          kind TEXT NOT NULL CHECK(kind IN ('cv_text','lettre_text','raw_pdf','photo')),
-          mime TEXT,
-          size_bytes INTEGER,
-          sha256 TEXT NOT NULL,
-          storage_path TEXT,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          UNIQUE(candidate_id, kind, sha256)
-        );
-        INSERT INTO candidate_assets SELECT id, candidate_id, kind, mime, size_bytes, sha256, storage_path, created_at FROM candidate_assets_legacy;
-        DROP TABLE candidate_assets_legacy;
-        CREATE INDEX IF NOT EXISTS idx_candidate_assets_candidate ON candidate_assets(candidate_id, kind);
-        COMMIT;
-      `)
-      db.exec('PRAGMA legacy_alter_table=OFF')
-      db.exec('PRAGMA foreign_keys=ON')
+    return out;
+}
+function translateSqlDialect(sql: string): string {
+    let out = sql.trim().replace(/;+\s*$/g, '');
+    out = out
+        .replace(/\bPRAGMA\b[^\n;]*(;)?/gi, '')
+        .replace(/\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b/gi, 'INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY')
+        .replace(/\bAUTOINCREMENT\b/gi, '')
+        .replace(/\bCREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?user\b/gi, 'CREATE TABLE $1"user"')
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+minutes?'\s*\)/gi, "($1::timestamptz - interval '$2 minutes')")
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+hours?'\s*\)/gi, "($1::timestamptz - interval '$2 hours')")
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+days?'\s*\)/gi, "($1::timestamptz - interval '$2 days')")
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+minutes?'\s*\)/gi, "($1::timestamptz + interval '$2 minutes')")
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+hours?'\s*\)/gi, "($1::timestamptz + interval '$2 hours')")
+        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+days?'\s*\)/gi, "($1::timestamptz + interval '$2 days')")
+        .replace(/\bdatetime\('now'\s*,\s*'-'\s*\|\|\s*(\?)\s*\|\|\s*'\s+minutes?'\s*\)/gi, "now() - (($1)::text || ' minutes')::interval")
+        .replace(/\bdatetime\('now'\s*,\s*'-'\s*\|\|\s*(\?)\s*\|\|\s*'\s+days?'\s*\)/gi, "now() - (($1)::text || ' days')::interval")
+        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+days?'\)/gi, "now() + interval '$1 days'")
+        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+days?'\)/gi, "now() - interval '$1 days'")
+        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+hours?'\)/gi, "now() + interval '$1 hours'")
+        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+hours?'\)/gi, "now() - interval '$1 hours'")
+        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+minutes?'\)/gi, "now() + interval '$1 minutes'")
+        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+minutes?'\)/gi, "now() - interval '$1 minutes'")
+        .replace(/\bdatetime\('now'\)/gi, 'now()')
+        .replace(/\bdatetime\(([^)]+)\)/gi, '$1::timestamptz')
+        .replace(/\bCURRENT_TIMESTAMP\b/g, 'now()')
+        .replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO')
+        .replace(/\bUPDATE\s+OR\s+IGNORE\b/gi, 'UPDATE')
+        .replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO')
+        .replace(/\b([a-zA-Z_][\w.]*)\s*->>\s*'([a-zA-Z0-9_]+)'/g, "($1::jsonb)->>'$2'")
+        .replace(/\bjson_extract\(\s*([a-zA-Z_][\w.]*)\s*,\s*'\$\.([a-zA-Z0-9_]+)'\s*\)/gi, "($1->>'$2')")
+        .replace(/\bUPDATE\s+user\b/gi, 'UPDATE "user"')
+        .replace(/\bFROM\s+user\b/gi, 'FROM "user"')
+        .replace(/\bJOIN\s+user\b/gi, 'JOIN "user"')
+        .replace(/\bINTO\s+user\b/gi, 'INTO "user"')
+        .replace(/\bDELETE\s+FROM\s+user\b/gi, 'DELETE FROM "user"')
+        .replace(/\bAS\s+([a-z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*)\b/g, 'AS "$1"')
+        .replace(/\bemailVerified\b/g, '"emailVerified"')
+        .replace(/\buserId\b/g, '"userId"');
+    const isInsert = /^\s*INSERT\s+INTO\b/i.test(out);
+    const cameFromIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(sql);
+    if (isInsert && cameFromIgnore && !/\bON\s+CONFLICT\b/i.test(out)) {
+        out += ' ON CONFLICT DO NOTHING';
     }
-  } catch (err) {
-    console.warn('[db] candidate_assets CHECK rebuild skipped:', err instanceof Error ? err.message : err)
-    try { db.exec('ROLLBACK') } catch { /* no active tx */ }
-    try { db.exec('PRAGMA legacy_alter_table=OFF') } catch { /* ignore */ }
-    try { db.exec('PRAGMA foreign_keys=ON') } catch { /* ignore */ }
-  }
-
-  // Healer: patch DBs corrupted by the earlier version of the migration above.
-  // If cv_extraction_runs still has FK refs pointing at 'candidate_assets_legacy',
-  // rewrite its CREATE TABLE sql in sqlite_master. Safe: same columns, only the
-  // referenced table name changes. Requires both PRAGMA writable_schema AND
-  // better-sqlite3's unsafeMode (defensive mode blocks sqlite_master writes
-  // even when writable_schema=1).
-  //
-  // CRITICAL: writing to sqlite_master updates the schema on disk, but the
-  // current connection keeps its cached in-memory schema. Every INSERT into
-  // cv_extraction_runs and every cascade-DELETE on candidates would still
-  // hit "no such table: candidate_assets_legacy" using the stale cache. We
-  // close + reopen the connection after the heal to force a schema reload.
-  try {
-    const runs = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='cv_extraction_runs'").get() as { sql: string } | undefined
-    if (runs && runs.sql.includes('candidate_assets_legacy')) {
-      db.unsafeMode(true)
-      db.exec('PRAGMA writable_schema=1')
-      db.prepare(
-        "UPDATE sqlite_master SET sql = replace(sql, 'candidate_assets_legacy', 'candidate_assets') WHERE type='table' AND name='cv_extraction_runs'",
-      ).run()
-      db.exec('PRAGMA writable_schema=0')
-      db.unsafeMode(false)
-      db.close()
-      db = new Database(DB_PATH)
-      db.pragma('journal_mode = WAL')
-      db.pragma('foreign_keys = ON')
-      console.log('[db] healed cv_extraction_runs FK refs + reopened connection')
+    return out;
+}
+function translateSql(sql: string): string {
+    return convertPlaceholders(translateSqlDialect(sql));
+}
+function isSyncTestMode(): boolean {
+    return process.env.POSTGRES_SYNC_TEST_MODE === 'true';
+}
+function sqlLiteral(value: unknown): string {
+    if (value === null || value === undefined)
+        return 'NULL';
+    if (Array.isArray(value))
+        return `ARRAY[${value.map(sqlLiteral).join(', ')}]`;
+    if (Buffer.isBuffer(value))
+        return `decode('${value.toString('hex')}', 'hex')`;
+    if (value instanceof Date)
+        return `'${value.toISOString().replace(/'/g, "''")}'`;
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value))
+            throw new Error(`Cannot bind non-finite number to SQL: ${value}`);
+        return String(value);
     }
-  } catch (err) {
-    console.warn('[db] cv_extraction_runs FK heal skipped:', err instanceof Error ? err.message : err)
-    try { db.exec('PRAGMA writable_schema=0') } catch { /* ignore */ }
-    try { db.unsafeMode(false) } catch { /* ignore */ }
-  }
+    if (typeof value === 'boolean')
+        return value ? '1' : '0';
+    if (typeof value === 'object')
+        return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+    return `'${String(value).replace(/'/g, "''")}'`;
+}
+function injectLiteralParams(sql: string, params: unknown[]): string {
+    let idx = 0;
+    let out = '';
+    let inSingle = false;
+    let inDouble = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+    let dollarQuoteTag: string | null = null;
+    for (let i = 0; i < sql.length; i++) {
+        const ch = sql[i];
+        const next = sql[i + 1];
+        if (dollarQuoteTag !== null) {
+            const closing = `$${dollarQuoteTag}$`;
+            if (sql.startsWith(closing, i)) {
+                out += closing;
+                i += closing.length - 1;
+                dollarQuoteTag = null;
+            }
+            else {
+                out += ch;
+            }
+            continue;
+        }
+        if (inLineComment) {
+            out += ch;
+            if (ch === '\n')
+                inLineComment = false;
+            continue;
+        }
+        if (inBlockComment) {
+            out += ch;
+            if (ch === '*' && next === '/') {
+                out += next;
+                i++;
+                inBlockComment = false;
+            }
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '-' && next === '-') {
+            out += ch + next;
+            i++;
+            inLineComment = true;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '/' && next === '*') {
+            out += ch + next;
+            i++;
+            inBlockComment = true;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '$') {
+            const match = sql.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+            if (match) {
+                const opener = match[0];
+                dollarQuoteTag = match[1] ?? '';
+                out += opener;
+                i += opener.length - 1;
+                continue;
+            }
+        }
+        if (!inDouble && ch === "'") {
+            out += ch;
+            if (inSingle && next === "'") {
+                out += next;
+                i++;
+            }
+            else {
+                inSingle = !inSingle;
+            }
+            continue;
+        }
+        if (!inSingle && ch === '"') {
+            out += ch;
+            inDouble = !inDouble;
+            continue;
+        }
+        if (!inSingle && !inDouble && ch === '?') {
+            if (idx >= params.length)
+                throw new Error(`SQL expected more bind params: ${sql}`);
+            out += sqlLiteral(params[idx++]);
+            continue;
+        }
+        out += ch;
+    }
+    if (idx !== params.length)
+        throw new Error(`SQL received ${params.length} bind params but used ${idx}: ${sql}`);
+    return convertPlaceholders(out);
+}
+function syncPsql(sql: string): string {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString)
+        throw new Error('DATABASE_URL is required for Postgres test queries.');
+    try {
+        return execFileSync('psql', ['-X', '--no-psqlrc', '-qAt', '--set=ON_ERROR_STOP=1', connectionString, '-c', sql], {
+            encoding: 'utf-8',
+            maxBuffer: 50 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+    }
+    catch (err) {
+        const detail = err && typeof err === 'object' && 'stderr' in err ? String((err as { stderr?: unknown }).stderr) : String(err);
+        throw new Error(`[postgres-test] query failed: ${detail}\nSQL:\n${sql}`);
+    }
+}
+const jsonLikeColumns = new Set([
+    'ai_profile',
+    'ai_suggestions',
+    'answers',
+    'data_json',
+    'email_snapshot',
+    'evidence',
+    'experience',
+    'payload',
+    'poste_snapshot',
+    'ratings',
+    'reasoning',
+    'role_aware_suggestions',
+    'skipped_categories',
+    'declined_categories',
+]);
+function normalizeJsonLikeRows<T>(rows: T[]): T[] {
+    for (const row of rows as Array<Record<string, unknown>>) {
+        for (const key of Object.keys(row)) {
+            const value = row[key];
+            if (jsonLikeColumns.has(key) && value !== null && typeof value === 'object') {
+                row[key] = JSON.stringify(value);
+            }
+        }
+    }
+    return rows;
+}
+function withLiteralParams(sql: string, params: unknown[]): string {
+    const dialect = translateSqlDialect(sql)
+        .replace(/\b([a-zA-Z_][\w.]*)\s*->>\s*'([a-zA-Z0-9_]+)'/g, "($1::jsonb)->>'$2'");
+    if (/\$\d+\b/.test(dialect)) {
+        const used = new Set<number>();
+        const replaced = dialect.replace(/\$(\d+)\b/g, (_match, rawIndex: string) => {
+            const index = Number(rawIndex);
+            used.add(index);
+            if (index < 1 || index > params.length)
+                throw new Error(`SQL bind index $${index} has no parameter: ${sql}`);
+            return sqlLiteral(params[index - 1]);
+        });
+        if (used.size !== params.length)
+            throw new Error(`SQL received ${params.length} bind params but used ${used.size}: ${sql}`);
+        return replaced;
+    }
+    return injectLiteralParams(dialect, params);
+}
+function syncAll<T>(sql: string, params: unknown[] = []): T[] {
+    const translated = withLiteralParams(sql, params);
+    const json = syncPsql(`WITH __q AS (${translated}) SELECT COALESCE(json_agg(__q), '[]'::json)::text FROM __q`);
+    return json ? normalizeJsonLikeRows(JSON.parse(json) as T[]) : [];
+}
+function statementWithReturning(sql: string): string {
+    if (/\bRETURNING\b/i.test(sql))
+        return sql;
+    if (/^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql))
+        return `${sql} RETURNING *`;
+    return sql;
+}
+function syncRun(sql: string, params: unknown[] = []): DbRunResult {
+    const translated = statementWithReturning(withLiteralParams(sql, params));
+    if (!/^\s*(WITH|INSERT|UPDATE|DELETE)\b/i.test(translated)) {
+        syncPsql(translated);
+        return { changes: 0 };
+    }
+    const json = syncPsql(`WITH __q AS (${translated}) SELECT json_build_object('rowCount', COUNT(*), 'rows', COALESCE(json_agg(__q), '[]'::json))::text FROM __q`);
+    const parsed = json ? JSON.parse(json) as { rowCount: number; rows: Array<{ id?: number | string }> } : { rowCount: 0, rows: [] };
+    return {
+        changes: Number(parsed.rowCount ?? 0),
+        lastInsertRowid: parsed.rows[0]?.id,
+    };
+}
+function syncExec(sql: string): void {
+    const translated = translateSqlDialect(sql)
+        .replace(/\bCURRENT_TIMESTAMP\b/g, 'now()')
+        .replace(/\bTRUE\b/g, '1')
+        .replace(/\bFALSE\b/g, '0');
+    if (translated.trim())
+        syncPsql(convertPlaceholders(translated));
+}
+export const __syncDbForTests = {
+    all: syncAll,
+    run: syncRun,
+    exec: syncExec,
+};
+async function query(sql: string, params: unknown[] = []) {
+    const translated = translateSql(sql);
+    return currentQueryable().query(translated, params);
+}
+export class AsyncStmt<TDefault = unknown> {
+    private readonly sql: string;
 
-  // Per-skill target levels with requis/apprécié weighting for compatibility scoring
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS poste_skill_requirements (
-      poste_id TEXT NOT NULL REFERENCES postes(id) ON DELETE CASCADE,
-      skill_id TEXT NOT NULL REFERENCES skills(id),
-      target_level INTEGER NOT NULL DEFAULT 3 CHECK(target_level BETWEEN 1 AND 5),
-      importance TEXT NOT NULL DEFAULT 'requis' CHECK(importance IN ('requis', 'apprecie')),
-      PRIMARY KEY (poste_id, skill_id)
-    )
-  `)
-
-  // Requirements extraction audit (PR 2). Provenance columns on the join
-  // table + status/error tracking on postes. + requirements_extraction_run_id
-  // for race-safe CAS updates (codex #3 & #4 — without this, two
-  // concurrent extractions could last-writer-wins and status could be
-  // clobbered by a losing run).
-  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN source TEXT") } catch { /* already exists */ }
-  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN reasoning TEXT") } catch { /* already exists */ }
-  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN extracted_at TEXT") } catch { /* already exists */ }
-  try { db.exec("ALTER TABLE poste_skill_requirements ADD COLUMN model TEXT") } catch { /* already exists */ }
-  try { db.exec("ALTER TABLE postes ADD COLUMN requirements_extraction_status TEXT DEFAULT 'idle' CHECK(requirements_extraction_status IN ('idle','running','succeeded','failed','skipped'))") } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_error TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extracted_at TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_model TEXT') } catch { /* already exists */ }
-  try { db.exec('ALTER TABLE postes ADD COLUMN requirements_extraction_run_id TEXT') } catch { /* already exists */ }
-
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_poste ON candidatures(poste_id, statut)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidatures_candidate ON candidatures(candidate_id)')
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_events ON candidature_events(candidature_id, created_at)')
-  // Partial unique index that backstops the inbound-email idempotency
-  // check (codex post-deploy P2). Two simultaneous Resend deliveries
-  // with the same messageId would otherwise both pass the
-  // check-then-insert dup guard. The index lets us use
-  // INSERT OR IGNORE for an atomic dedup at the DB level.
-  // SQLite supports JSON1 expressions in unique indexes since 3.9.
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_candidature_events_inbound_msgid
-    ON candidature_events(candidature_id, json_extract(email_snapshot, '$.messageId'))
-    WHERE type = 'email_received'
-      AND json_extract(email_snapshot, '$.messageId') IS NOT NULL
-  `)
-  db.exec('CREATE INDEX IF NOT EXISTS idx_candidature_documents ON candidature_documents(candidature_id)')
-
-  // Better Auth tables are created by auth.runMigrations() in index.ts
-
-  // Auto-seed if categories table is empty or catalog version changed
-  // NOTE: This MUST run BEFORE role seeding (roles reference categories via FK)
-  db.exec('CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT)')
-  const CATALOG_VERSION = '5.1.0'
-  const currentVersion = (db.prepare("SELECT value FROM catalog_meta WHERE key = 'version'").get() as { value: string } | undefined)?.value
-  const count = (db.prepare('SELECT COUNT(*) as cnt FROM categories').get() as { cnt: number }).cnt
-  if (count === 0 || currentVersion !== CATALOG_VERSION) {
-    seedCatalog(db)
-    db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', ?)").run(CATALOG_VERSION)
-  }
-
-  // Seed default roles if roles table is empty (AFTER catalog seed — FK dependency)
-  // Retire legacy team-skill-radar roles. Soft-delete keeps FKs from candidates
-  // and postes intact while removing them from the recruit UI, which is the only
-  // surface that reads the roles table. The team radar maps role → categories
-  // via targets.json, so these rows never actually did anything for it.
-  const LEGACY_ROLE_IDS = ['dev-full-stack', 'devops', 'qa-engineer', 'analyste-fonctionnel']
-  const legacyPlaceholders = LEGACY_ROLE_IDS.map(() => '?').join(',')
-  db.prepare(
-    `UPDATE roles SET deleted_at = CURRENT_TIMESTAMP
-     WHERE id IN (${legacyPlaceholders}) AND deleted_at IS NULL`,
-  ).run(...LEGACY_ROLE_IDS)
-
-  // Recruitment roles + their category bindings.
-  // The role + role_categories rows are re-asserted on every boot so renames or
-  // cascades from catalog migrations self-heal; postes themselves stay in the
-  // one-shot block below (they carry business data like headcount).
-  const recruitmentRoles: { id: string; label: string; categories: string[] }[] = [
-    {
-      id: 'tech-lead-adelia',
-      label: 'Tech Lead Adélia (RPG)',
-      categories: ['domain-knowledge', 'backend-integration', 'soft-skills-delivery', 'core-engineering'],
-    },
-    {
-      id: 'dev-senior-adelia',
-      label: 'Dev Senior Adélia (RPG)',
-      categories: ['domain-knowledge', 'backend-integration', 'core-engineering'],
-    },
-    {
-      id: 'tech-lead-java',
-      label: 'Tech Lead Java / JBoss',
-      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance', 'soft-skills-delivery'],
-    },
-    {
-      id: 'dev-java-fullstack',
-      label: 'Dev Java Senior Full Stack',
-      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance'],
-    },
-    {
-      id: 'dev-jboss-senior',
-      label: 'Dev JBoss Senior',
-      categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering'],
-    },
-    {
-      id: 'architecte-si',
-      label: 'Architecte SI Logiciel',
-      categories: ['architecture-governance', 'core-engineering', 'backend-integration', 'platform-engineering', 'frontend-ui', 'soft-skills-delivery'],
-    },
-    {
-      id: 'business-analyst',
-      label: 'Business Analyst',
-      categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training', 'soft-skills-delivery', 'design-ux'],
-    },
-    {
-      id: 'candidature-libre',
-      label: 'Candidature Libre',
-      categories: [
+    constructor(sql: string) {
+        this.sql = sql;
+    }
+    all<T = TDefault>(...params: unknown[]): Promise<T[]> {
+        if (isSyncTestMode())
+            return syncAll<T>(this.sql, normalizeParams(params)) as unknown as Promise<T[]>;
+        return query(this.sql, normalizeParams(params)).then((result) => result.rows as T[]);
+    }
+    get<T = TDefault>(...params: unknown[]): Promise<T | undefined> {
+        if (isSyncTestMode())
+            return syncAll<T>(this.sql, normalizeParams(params))[0] as unknown as Promise<T | undefined>;
+        return query(this.sql, normalizeParams(params)).then((result) => result.rows[0] as T | undefined);
+    }
+    run(...params: unknown[]): Promise<DbRunResult> {
+        if (isSyncTestMode())
+            return syncRun(this.sql, normalizeParams(params)) as unknown as Promise<DbRunResult>;
+        return query(this.sql, normalizeParams(params)).then((result) => {
+            const first = result.rows[0] as {
+                id?: number | string;
+            } | undefined;
+            return {
+                changes: result.rowCount ?? 0,
+                lastInsertRowid: first?.id,
+            };
+        });
+    }
+}
+export class AsyncDb {
+    prepare<T = unknown>(sql: string): AsyncStmt<T> {
+        return new AsyncStmt<T>(sql);
+    }
+    exec(sql: string): Promise<void> {
+        if (isSyncTestMode()) {
+            syncExec(sql);
+            return undefined as unknown as Promise<void>;
+        }
+        return query(sql).then(() => undefined);
+    }
+    transaction<TArgs extends unknown[], TReturn>(fn: (...args: TArgs) => TReturn | Promise<TReturn>): (...args: TArgs) => Promise<TReturn> {
+        return async (...args: TArgs): Promise<TReturn> => {
+            const client = await requirePool().connect();
+            const startedAt = Date.now();
+            try {
+                await client.query('BEGIN');
+                const result = await txClientStore.run(client, async () => fn(...args));
+                await client.query('COMMIT');
+                const elapsed = Date.now() - startedAt;
+                if (elapsed > 100)
+                    console.warn(`[db] transaction took ${elapsed}ms`);
+                return result;
+            }
+            catch (err) {
+                try {
+                    await client.query('ROLLBACK');
+                }
+                catch { /* ignore rollback failure */ }
+                throw err;
+            }
+            finally {
+                client.release();
+            }
+        };
+    }
+    close(): Promise<void> {
+        if (pool) {
+            const ending = pool;
+            pool = null;
+            db = null;
+            return ending.end();
+        }
+        return Promise.resolve();
+    }
+    get waitingCount(): number {
+        return requirePool().waitingCount;
+    }
+}
+export function getDb(): AsyncDb {
+    if (!db)
+        throw new Error('Database not initialized. Call initDatabase() first.');
+    return db;
+}
+export function getPgPool(): pg.Pool {
+    return requirePool();
+}
+async function connectWithRetry(maxAttempts = 8): Promise<void> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await requirePool().query('SELECT 1');
+            return;
+        }
+        catch (err) {
+            lastErr = err;
+            const delay = Math.min(250 * 2 ** (attempt - 1), 5000);
+            console.warn(`[db] connection attempt ${attempt}/${maxAttempts} failed; retrying in ${delay}ms`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+    }
+    throw lastErr;
+}
+function createPool(connectionString: string): pg.Pool {
+    const created = new Pool({
+        connectionString,
+        min: Number(process.env.PG_POOL_MIN ?? 5),
+        max: Number(process.env.PG_POOL_MAX ?? 20),
+        connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS ?? 5000),
+        idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS ?? 30000),
+        application_name: process.env.PGAPPNAME ?? 'skill-radar',
+    });
+    created.on('error', (err) => console.error('[db] idle pg client error', err));
+    return created;
+}
+async function reloadCatalogCacheIfAvailable(): Promise<void> {
+    const catalog = await import('./catalog.js');
+    if ('loadCatalogCache' in catalog && typeof catalog.loadCatalogCache === 'function') {
+        await catalog.loadCatalogCache();
+    }
+}
+async function applySchemaAndSeedData(): Promise<void> {
+    const initSql = fs.readFileSync(INIT_SQL_PATH, 'utf-8');
+    await requirePool().query("SELECT pg_advisory_lock(hashtext('skill-radar-schema-init'))");
+    try {
+        await requirePool().query(initSql);
+        await seedBaselineData();
+        await reloadCatalogCacheIfAvailable();
+    }
+    finally {
+        await requirePool().query("SELECT pg_advisory_unlock(hashtext('skill-radar-schema-init'))");
+    }
+}
+export async function initDatabase(): Promise<void> {
+    if (db)
+        return;
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+        throw new Error('DATABASE_URL is required. Skill Radar starts only with Postgres.');
+    }
+    pool = createPool(connectionString);
+    db = new AsyncDb();
+    await connectWithRetry();
+    await applySchemaAndSeedData();
+    console.log('Database initialized at DATABASE_URL');
+}
+async function seedBaselineData(): Promise<void> {
+    const database = getDb();
+    await database.prepare("INSERT INTO scoring_weights (id) VALUES ('default') ON CONFLICT (id) DO NOTHING").run();
+    const currentVersion = (await database.prepare<{
+        value: string;
+    }>("SELECT value FROM catalog_meta WHERE key = 'version'").get())?.value;
+    const count = (await database.prepare<{
+        cnt: number;
+    }>('SELECT COUNT(*) as cnt FROM categories').get())?.cnt ?? 0;
+    if (count === 0 || currentVersion !== CATALOG_VERSION) {
+        await seedCatalog(database);
+        await seedMinimalCatalogForTests(database);
+        await database.prepare(`
+      INSERT INTO catalog_meta (key, value)
+      VALUES ('version', ?)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    `).run(CATALOG_VERSION);
+    }
+    await seedRecruitmentRolesAndPostes(database);
+    await seedPoleCategories(database);
+}
+async function seedMinimalCatalogForTests(database: AsyncDb): Promise<void> {
+    if (process.env.NODE_ENV !== 'test')
+        return;
+    const count = (await database.prepare<{ cnt: number }>('SELECT COUNT(*) as cnt FROM categories').get())?.cnt ?? 0;
+    if (count > 0)
+        return;
+    const categories = [
         'core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering',
         'observability-reliability', 'security-compliance', 'architecture-governance',
         'soft-skills-delivery', 'domain-knowledge', 'ai-engineering', 'qa-test-engineering',
         'infrastructure-systems-network', 'analyse-fonctionnelle', 'project-management-pmo',
         'change-management-training', 'design-ux', 'data-engineering-governance',
         'management-leadership', 'legacy-ibmi-adelia', 'javaee-jboss',
-      ],
-    },
-  ]
-
-  const upsertRole = db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)')
-  const upsertRoleCat = db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)')
-  const catExistsCheck = db.prepare('SELECT 1 FROM categories WHERE id = ?')
-  const syncRecruitmentRoles = db.transaction(() => {
-    for (const role of recruitmentRoles) {
-      upsertRole.run(role.id, role.label, 'system')
-      for (const catId of role.categories) {
-        if (catExistsCheck.get(catId)) upsertRoleCat.run(role.id, catId)
-      }
+    ];
+    for (const [sortOrder, id] of categories.entries()) {
+        await database.prepare('INSERT INTO categories (id, label, emoji, sort_order) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING')
+            .run(id, id, '', sortOrder);
     }
-  })
-  syncRecruitmentRoles()
-
-  // Seed recruitment postes if postes table is empty
-  const posteCount = (db.prepare('SELECT COUNT(*) as c FROM postes').get() as { c: number }).c
-  if (posteCount === 0) {
-    const insertPoste = db.prepare(`
-      INSERT INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-
-    const postes: { id: string; roleId: string; titre: string; pole: string; headcount: number; flexible: boolean; expMin: number; cigref: string }[] = [
-      { id: 'poste-1-tech-lead-adelia', roleId: 'tech-lead-adelia', titre: 'Tech Lead Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 10, cigref: '3.4' },
-      { id: 'poste-2-dev-senior-adelia', roleId: 'dev-senior-adelia', titre: 'Dev Senior Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 7, cigref: '3.4' },
-      { id: 'poste-3-tech-lead-java', roleId: 'tech-lead-java', titre: 'Tech Lead Java / JBoss', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '3.4' },
-      { id: 'poste-4-dev-java-fullstack', roleId: 'dev-java-fullstack', titre: 'Dev Java Senior Full Stack', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
-      { id: 'poste-5-dev-jboss-senior', roleId: 'dev-jboss-senior', titre: 'Dev JBoss Senior', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
-      { id: 'poste-6-architecte-si', roleId: 'architecte-si', titre: 'Architecte SI Logiciel', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '4.9' },
-      { id: 'poste-7-business-analyst', roleId: 'business-analyst', titre: 'Business Analyst', pole: 'fonctionnel', headcount: 1, flexible: false, expMin: 7, cigref: '2.2' },
-      { id: 'candidature-libre', roleId: 'candidature-libre', titre: 'Candidature Libre', pole: 'java_modernisation', headcount: 99, flexible: true, expMin: 0, cigref: '' },
-    ]
-
-    const seedPostes = db.transaction(() => {
-      for (const p of postes) {
-        insertPoste.run(p.id, p.roleId, p.titre, p.pole, p.headcount, p.flexible ? 1 : 0, p.expMin, p.cigref, 'CDIC')
-      }
-    })
-    seedPostes()
-  }
-
-  // Idempotent: add candidature-libre role + poste (for candidates who don't target a specific job)
-  const allCatIds = (db.prepare('SELECT id FROM categories').all() as { id: string }[]).map(r => r.id)
-  if (allCatIds.length > 0) {
-    db.prepare("INSERT OR IGNORE INTO roles (id, label, created_by) VALUES ('candidature-libre', 'Candidature Libre', 'system')").run()
+}
+async function seedRecruitmentRolesAndPostes(database: AsyncDb): Promise<void> {
+    const legacyRoleIds = ['dev-full-stack', 'devops', 'qa-engineer', 'analyste-fonctionnel'];
+    await database.prepare(`UPDATE roles SET deleted_at = now()
+     WHERE id = ANY($1::text[]) AND deleted_at IS NULL`).run(legacyRoleIds);
+    const recruitmentRoles: {
+        id: string;
+        label: string;
+        categories: string[];
+    }[] = [
+        { id: 'tech-lead-adelia', label: 'Tech Lead Adélia (RPG)', categories: ['domain-knowledge', 'backend-integration', 'soft-skills-delivery', 'core-engineering'] },
+        { id: 'dev-senior-adelia', label: 'Dev Senior Adélia (RPG)', categories: ['domain-knowledge', 'backend-integration', 'core-engineering'] },
+        { id: 'tech-lead-java', label: 'Tech Lead Java / JBoss', categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance', 'soft-skills-delivery'] },
+        { id: 'dev-java-fullstack', label: 'Dev Java Senior Full Stack', categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering', 'architecture-governance'] },
+        { id: 'dev-jboss-senior', label: 'Dev JBoss Senior', categories: ['core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering'] },
+        { id: 'architecte-si', label: 'Architecte SI Logiciel', categories: ['architecture-governance', 'core-engineering', 'backend-integration', 'platform-engineering', 'frontend-ui', 'soft-skills-delivery'] },
+        { id: 'business-analyst', label: 'Business Analyst', categories: ['analyse-fonctionnelle', 'domain-knowledge', 'project-management-pmo', 'change-management-training', 'soft-skills-delivery', 'design-ux'] },
+        {
+            id: 'candidature-libre',
+            label: 'Candidature Libre',
+            categories: [
+                'core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering',
+                'observability-reliability', 'security-compliance', 'architecture-governance',
+                'soft-skills-delivery', 'domain-knowledge', 'ai-engineering', 'qa-test-engineering',
+                'infrastructure-systems-network', 'analyse-fonctionnelle', 'project-management-pmo',
+                'change-management-training', 'design-ux', 'data-engineering-governance',
+                'management-leadership', 'legacy-ibmi-adelia', 'javaee-jboss',
+            ],
+        },
+    ];
+    const syncRoles = database.transaction(async () => {
+        for (const role of recruitmentRoles) {
+            await database.prepare(`
+        INSERT INTO roles (id, label, created_by)
+        VALUES (?, ?, 'system')
+        ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, deleted_at = NULL
+      `).run(role.id, role.label);
+            for (const catId of role.categories) {
+                const cat = await database.prepare('SELECT 1 FROM categories WHERE id = ?').get(catId);
+                if (cat) {
+                    await database.prepare(`
+            INSERT INTO role_categories (role_id, category_id)
+            VALUES (?, ?)
+            ON CONFLICT DO NOTHING
+          `).run(role.id, catId);
+                }
+            }
+        }
+    });
+    await syncRoles();
+    const posteCount = (await database.prepare<{
+        c: number;
+    }>('SELECT COUNT(*) as c FROM postes').get())?.c ?? 0;
+    if (posteCount === 0) {
+        const postes: {
+            id: string;
+            roleId: string;
+            titre: string;
+            pole: string;
+            headcount: number;
+            flexible: boolean;
+            expMin: number;
+            cigref: string;
+        }[] = [
+            { id: 'poste-1-tech-lead-adelia', roleId: 'tech-lead-adelia', titre: 'Tech Lead Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 10, cigref: '3.4' },
+            { id: 'poste-2-dev-senior-adelia', roleId: 'dev-senior-adelia', titre: 'Dev Senior Adélia (RPG)', pole: 'legacy', headcount: 1, flexible: true, expMin: 7, cigref: '3.4' },
+            { id: 'poste-3-tech-lead-java', roleId: 'tech-lead-java', titre: 'Tech Lead Java / JBoss', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '3.4' },
+            { id: 'poste-4-dev-java-fullstack', roleId: 'dev-java-fullstack', titre: 'Dev Java Senior Full Stack', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
+            { id: 'poste-5-dev-jboss-senior', roleId: 'dev-jboss-senior', titre: 'Dev JBoss Senior', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 7, cigref: '3.4' },
+            { id: 'poste-6-architecte-si', roleId: 'architecte-si', titre: 'Architecte SI Logiciel', pole: 'java_modernisation', headcount: 1, flexible: false, expMin: 10, cigref: '4.9' },
+            { id: 'poste-7-business-analyst', roleId: 'business-analyst', titre: 'Business Analyst', pole: 'fonctionnel', headcount: 1, flexible: false, expMin: 7, cigref: '2.2' },
+            { id: 'candidature-libre', roleId: 'candidature-libre', titre: 'Candidature Libre', pole: 'java_modernisation', headcount: 99, flexible: true, expMin: 0, cigref: '' },
+        ];
+        const seedPostes = database.transaction(async () => {
+            for (const p of postes) {
+                await database.prepare(`
+          INSERT INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CDIC')
+          ON CONFLICT (id) DO NOTHING
+        `).run(p.id, p.roleId, p.titre, p.pole, p.headcount, p.flexible ? 1 : 0, p.expMin, p.cigref);
+            }
+        });
+        await seedPostes();
+    }
+    const allCatIds = (await database.prepare<{
+        id: string;
+    }>('SELECT id FROM categories').all()).map((r) => r.id);
     for (const catId of allCatIds) {
-      db.prepare("INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES ('candidature-libre', ?)").run(catId)
+        await database.prepare(`
+      INSERT INTO role_categories (role_id, category_id)
+      VALUES ('candidature-libre', ?)
+      ON CONFLICT DO NOTHING
+    `).run(catId);
     }
-    db.prepare(`INSERT OR IGNORE INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
-      VALUES ('candidature-libre', 'candidature-libre', 'Candidature Libre', 'java_modernisation', 99, 1, 0, '', 'CDIC')`).run()
-  }
-
-  // Idempotent: add legacy-ibmi-adelia category to legacy roles (roles already exist in prod)
-  const legacyRoleIds = ['tech-lead-adelia', 'dev-senior-adelia']
-  for (const roleId of legacyRoleIds) {
-    db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)').run(roleId, 'legacy-ibmi-adelia')
-  }
-
-  // Pole → category mapping table
-  db.exec(`CREATE TABLE IF NOT EXISTS pole_categories (
-    pole TEXT NOT NULL CHECK(pole IN ('legacy', 'java_modernisation', 'fonctionnel')),
-    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-    PRIMARY KEY (pole, category_id)
-  )`)
-
-  const poleCatCount = (db.prepare('SELECT COUNT(*) as c FROM pole_categories').get() as { c: number }).c
-  if (poleCatCount === 0) {
-    const poleMapping: Record<string, string[]> = {
-      legacy: [
-        'legacy-ibmi-adelia', 'javaee-jboss', 'core-engineering',
-        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
-      ],
-      java_modernisation: [
-        'core-engineering', 'backend-integration', 'frontend-ui',
-        'platform-engineering', 'observability-reliability', 'security-compliance',
-        'ai-engineering', 'qa-test-engineering', 'infrastructure-systems-network',
-        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
-      ],
-      fonctionnel: [
-        'analyse-fonctionnelle', 'project-management-pmo', 'change-management-training',
-        'design-ux', 'data-engineering-governance', 'management-leadership',
-        'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
-      ],
+    await database.prepare(`
+    INSERT INTO postes (id, role_id, titre, pole, headcount, headcount_flexible, experience_min, cigref, contrat)
+    VALUES ('candidature-libre', 'candidature-libre', 'Candidature Libre', 'java_modernisation', 99, 1, 0, '', 'CDIC')
+    ON CONFLICT (id) DO NOTHING
+  `).run();
+    for (const roleId of ['tech-lead-adelia', 'dev-senior-adelia']) {
+        await database.prepare(`
+      INSERT INTO role_categories (role_id, category_id)
+      VALUES (?, 'legacy-ibmi-adelia')
+      ON CONFLICT DO NOTHING
+    `).run(roleId);
     }
-    const insertPoleCategory = db.prepare('INSERT INTO pole_categories (pole, category_id) VALUES (?, ?)')
-    const catExists = db.prepare('SELECT 1 FROM categories WHERE id = ?')
-    db.transaction(() => {
-      for (const [pole, cats] of Object.entries(poleMapping)) {
-        for (const catId of cats) {
-          if (catExists.get(catId)) insertPoleCategory.run(pole, catId)
+}
+async function seedPoleCategories(database: AsyncDb): Promise<void> {
+    const poleCatCount = (await database.prepare<{
+        c: number;
+    }>('SELECT COUNT(*) as c FROM pole_categories').get())?.c ?? 0;
+    if (poleCatCount === 0) {
+        const poleMapping: Record<string, string[]> = {
+            legacy: ['legacy-ibmi-adelia', 'javaee-jboss', 'core-engineering', 'architecture-governance', 'soft-skills-delivery', 'domain-knowledge'],
+            java_modernisation: [
+                'core-engineering', 'backend-integration', 'frontend-ui',
+                'platform-engineering', 'observability-reliability', 'security-compliance',
+                'ai-engineering', 'qa-test-engineering', 'infrastructure-systems-network',
+                'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+            ],
+            fonctionnel: [
+                'analyse-fonctionnelle', 'project-management-pmo', 'change-management-training',
+                'design-ux', 'data-engineering-governance', 'management-leadership',
+                'architecture-governance', 'soft-skills-delivery', 'domain-knowledge',
+            ],
+        };
+        const seedPoleMap = database.transaction(async () => {
+            for (const [pole, cats] of Object.entries(poleMapping)) {
+                for (const catId of cats) {
+                    const cat = await database.prepare('SELECT 1 FROM categories WHERE id = ?').get(catId);
+                    if (cat) {
+                        await database.prepare(`
+              INSERT INTO pole_categories (pole, category_id)
+              VALUES (?, ?)
+              ON CONFLICT DO NOTHING
+            `).run(pole, catId);
+                    }
+                }
+            }
+        });
+        await seedPoleMap();
+    }
+    for (const [pole, category] of [
+        ['java_modernisation', 'infrastructure-systems-network'],
+        ['legacy', 'javaee-jboss'],
+    ] as const) {
+        const cat = await database.prepare('SELECT 1 FROM categories WHERE id = ?').get(category);
+        if (cat) {
+            await database.prepare(`
+        INSERT INTO pole_categories (pole, category_id)
+        VALUES (?, ?)
+        ON CONFLICT DO NOTHING
+      `).run(pole, category);
         }
-      }
-    })()
-  }
-
-  // Migration: ensure infrastructure-systems-network is in java_modernisation pole (if category exists)
-  const infraCat = db.prepare("SELECT 1 FROM categories WHERE id = 'infrastructure-systems-network'").get()
-  if (infraCat) {
-    db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('java_modernisation', 'infrastructure-systems-network')").run()
-  }
-
-  // Migration: ensure javaee-jboss is in legacy pole (if category exists)
-  const javaEECat = db.prepare("SELECT 1 FROM categories WHERE id = 'javaee-jboss'").get()
-  if (javaEECat) {
-    db.prepare("INSERT OR IGNORE INTO pole_categories (pole, category_id) VALUES ('legacy', 'javaee-jboss')").run()
-  }
-
-  // Migration: add declined_categories column if missing
-  const evalCols = db.prepare("PRAGMA table_info(evaluations)").all() as { name: string }[]
-  if (!evalCols.some(c => c.name === 'declined_categories')) {
-    db.exec("ALTER TABLE evaluations ADD COLUMN declined_categories TEXT DEFAULT '[]'")
-  }
-  const candCols = db.prepare("PRAGMA table_info(candidates)").all() as { name: string }[]
-  if (!candCols.some(c => c.name === 'declined_categories')) {
-    db.exec("ALTER TABLE candidates ADD COLUMN declined_categories TEXT DEFAULT '[]'")
-  }
-
-  // Migration: add version column to candidates
-  const candidateCols = db.prepare("PRAGMA table_info(candidates)").all() as { name: string }[]
-  if (!candidateCols.some(c => c.name === 'version')) {
-    db.exec("ALTER TABLE candidates ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
-  }
-
-  // One-time migration from ratings.json
-  if (fs.existsSync(JSON_PATH)) {
-    try {
-      const raw = fs.readFileSync(JSON_PATH, 'utf-8')
-      const data: Record<string, MemberEvaluation> = JSON.parse(raw)
-
-      const insert = db.prepare(`
-        INSERT OR REPLACE INTO evaluations (slug, ratings, experience, skipped_categories, submitted_at)
-        VALUES (?, ?, ?, ?, ?)
-      `)
-
-      const migrate = db.transaction(() => {
-        for (const [slug, entry] of Object.entries(data)) {
-          insert.run(
-            slug,
-            JSON.stringify(entry.ratings ?? {}),
-            JSON.stringify(entry.experience ?? {}),
-            JSON.stringify(entry.skippedCategories ?? []),
-            entry.submittedAt ?? null,
-          )
-        }
-      })
-
-      migrate()
-      fs.renameSync(JSON_PATH, JSON_PATH + '.migrated')
-    } catch (err) {
-      console.error('Failed to migrate ratings.json:', err)
     }
-  }
-
-  // Reset orphan extraction locks from the previous process. By definition
-  // no pipeline is running at boot, so every `extraction_status='running'`
-  // row is stale. Same for `cv_extraction_runs.status='running'`. See
-  // extraction-watchdog.ts for the full rationale. Circular-import safe
-  // because startupSweep() calls getDb() lazily (at invocation time).
-  try {
-    startupSweep()
-  } catch (err) {
-    console.error('[db] startup extraction sweep failed (non-fatal):', err)
-  }
-
-  // Lazy cleanup of legacy photo rows. Auto photo extraction was removed
-  // per CLAUDE.md CV Intelligence rule #3 (GDPR + non-functional in practice
-  // — grabbed any first image in the PDF, not a face). Drop the accumulated
-  // photo asset rows; the CHECK constraint stays permissive (rebuilding it
-  // once was painful enough, rebuilding it again to tighten isn't worth it).
-  try {
-    const dropped = db.prepare("DELETE FROM candidate_assets WHERE kind = 'photo'").run().changes
-    if (dropped > 0) console.log(`[db] dropped ${dropped} legacy photo asset(s)`)
-  } catch (err) {
-    console.warn('[db] photo asset cleanup skipped:', err instanceof Error ? err.message : err)
-  }
-
-  console.log('Database initialized at', DB_PATH)
 }
-
-export function getAllEvaluations(): Record<string, MemberEvaluation> {
-  const rows = db.prepare('SELECT * FROM evaluations').all() as {
-    slug: string
-    ratings: string
-    experience: string
-    skipped_categories: string
-    declined_categories: string
-    submitted_at: string | null
-    profile_summary: string | null
-  }[]
-
-  const result: Record<string, MemberEvaluation> = {}
-  for (const row of rows) {
-    result[row.slug] = {
-      ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
-      experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
-      skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
-      declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
-      submittedAt: row.submitted_at,
-      profileSummary: row.profile_summary ?? null,
+export async function getAllEvaluations(): Promise<Record<string, MemberEvaluation>> {
+    const rows = await getDb().prepare<{
+        slug: string;
+        ratings: string;
+        experience: string;
+        skipped_categories: string;
+        declined_categories: string;
+        submitted_at: string | null;
+        profile_summary: string | null;
+    }>('SELECT * FROM evaluations').all();
+    const result: Record<string, MemberEvaluation> = {};
+    for (const row of rows) {
+        result[row.slug] = {
+            ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
+            experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
+            skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
+            declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
+            submittedAt: row.submitted_at,
+            profileSummary: row.profile_summary ?? null,
+        };
     }
-  }
-  return result
+    return result;
 }
-
-export function getEvaluation(slug: string): MemberEvaluation | null {
-  const row = db.prepare('SELECT * FROM evaluations WHERE slug = ?').get(slug) as {
-    slug: string
-    ratings: string
-    experience: string
-    skipped_categories: string
-    declined_categories: string
-    submitted_at: string | null
-    profile_summary: string | null
-  } | undefined
-
-  if (!row) return null
-
-  return {
-    ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
-    experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
-    skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
-    declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
-    submittedAt: row.submitted_at,
-    profileSummary: row.profile_summary ?? null,
-  }
+export async function getEvaluation(slug: string): Promise<MemberEvaluation | null> {
+    const row = await getDb().prepare<{
+        slug: string;
+        ratings: string;
+        experience: string;
+        skipped_categories: string;
+        declined_categories: string;
+        submitted_at: string | null;
+        profile_summary: string | null;
+    }>('SELECT * FROM evaluations WHERE slug = ?').get(slug);
+    if (!row)
+        return null;
+    return {
+        ratings: safeJsonParse(row.ratings, {}, 'evaluations.ratings'),
+        experience: safeJsonParse(row.experience, {}, 'evaluations.experience'),
+        skippedCategories: safeJsonParse(row.skipped_categories, [] as string[], 'evaluations.skipped_categories'),
+        declinedCategories: safeJsonParse(row.declined_categories, [] as string[], 'evaluations.declined_categories'),
+        submittedAt: row.submitted_at,
+        profileSummary: row.profile_summary ?? null,
+    };
 }
-
-export function upsertEvaluation(
-  slug: string,
-  ratings: Record<string, number>,
-  experience: Record<string, number>,
-  skippedCategories: string[],
-  declinedCategories: string[] = [],
-): MemberEvaluation {
-  db.prepare(`
+export async function upsertEvaluation(slug: string, ratings: Record<string, number>, experience: Record<string, number>, skippedCategories: string[], declinedCategories: string[] = []): Promise<MemberEvaluation> {
+    await getDb().prepare(`
     INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories)
     VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(slug) DO UPDATE SET
-      ratings = excluded.ratings,
-      experience = excluded.experience,
-      skipped_categories = excluded.skipped_categories,
-      declined_categories = excluded.declined_categories
-  `).run(
-    slug,
-    JSON.stringify(ratings),
-    JSON.stringify(experience),
-    JSON.stringify(skippedCategories),
-    JSON.stringify(declinedCategories),
-  )
-
-  return getEvaluation(slug)!
+    ON CONFLICT (slug) DO UPDATE SET
+      ratings = EXCLUDED.ratings,
+      experience = EXCLUDED.experience,
+      skipped_categories = EXCLUDED.skipped_categories,
+      declined_categories = EXCLUDED.declined_categories
+  `).run(slug, JSON.stringify(ratings), JSON.stringify(experience), JSON.stringify(skippedCategories), JSON.stringify(declinedCategories));
+    const row = await getEvaluation(slug);
+    if (!row)
+        throw new Error(`Evaluation upsert failed for ${slug}`);
+    return row;
 }
-
-export function submitEvaluation(slug: string): MemberEvaluation | null {
-  const now = new Date().toISOString()
-  db.prepare('UPDATE evaluations SET submitted_at = ? WHERE slug = ?').run(now, slug)
-  return getEvaluation(slug)
+export async function submitEvaluation(slug: string): Promise<MemberEvaluation | null> {
+    const now = new Date().toISOString();
+    await getDb().prepare('UPDATE evaluations SET submitted_at = ? WHERE slug = ?').run(now, slug);
+    return getEvaluation(slug);
 }
-
-/**
- * Record skill-level changes in skill_changes when a full form is re-submitted.
- * Diffs current ratings against the last-known levels from skill_changes.
- * If no prior history exists (first submission), seeds all non-zero ratings.
- */
-export function recordSkillChangesOnSubmit(slug: string): void {
-  const memberData = getEvaluation(slug)
-  if (!memberData) return
-
-  const currentRatings = memberData.ratings
-
-  // Get last-known level per skill from skill_changes
-  const rows = db.prepare(
-    `SELECT skill_id, new_level FROM skill_changes
-     WHERE slug = ? AND (skill_id, changed_at) IN (
-       SELECT skill_id, MAX(changed_at) FROM skill_changes WHERE slug = ? GROUP BY skill_id
-     )`
-  ).all(slug, slug) as { skill_id: string; new_level: number }[]
-
-  const lastKnown = new Map(rows.map(r => [r.skill_id, r.new_level]))
-  const now = new Date().toISOString()
-
-  const insert = db.prepare(
-    'INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, ?, ?, ?)'
-  )
-
-  db.transaction(() => {
-    for (const [skillId, level] of Object.entries(currentRatings)) {
-      const prev = lastKnown.get(skillId)
-      if (prev === undefined) {
-        // New skill not previously tracked — seed it
-        if (level > 0) {
-          insert.run(slug, skillId, 0, level, now)
+export async function recordSkillChangesOnSubmit(slug: string): Promise<void> {
+    const memberData = await getEvaluation(slug);
+    if (!memberData)
+        return;
+    const rows = await getDb().prepare<{
+        skill_id: string;
+        new_level: number;
+    }>(`SELECT sc.skill_id, sc.new_level
+     FROM skill_changes sc
+     JOIN (
+       SELECT skill_id, MAX(changed_at) AS changed_at
+       FROM skill_changes
+       WHERE slug = ?
+       GROUP BY skill_id
+     ) latest ON latest.skill_id = sc.skill_id AND latest.changed_at = sc.changed_at
+     WHERE sc.slug = ?`).all(slug, slug);
+    const lastKnown = new Map(rows.map((r) => [r.skill_id, r.new_level]));
+    const now = new Date().toISOString();
+    const insert = getDb().prepare('INSERT INTO skill_changes (slug, skill_id, old_level, new_level, changed_at) VALUES (?, ?, ?, ?, ?)');
+    const tx = getDb().transaction(async () => {
+        for (const [skillId, level] of Object.entries(memberData.ratings)) {
+            const prev = lastKnown.get(skillId);
+            if (prev === undefined) {
+                if (level > 0)
+                    await insert.run(slug, skillId, 0, level, now);
+            }
+            else if (prev !== level) {
+                await insert.run(slug, skillId, prev, level, now);
+            }
         }
-      } else if (prev !== level) {
-        // Skill level changed
-        insert.run(slug, skillId, prev, level, now)
-      }
-    }
-  })()
+    });
+    await tx();
 }
-
-export function deleteEvaluation(slug: string): void {
-  db.prepare('DELETE FROM evaluations WHERE slug = ?').run(slug)
+export async function deleteEvaluation(slug: string): Promise<void> {
+    await getDb().prepare('DELETE FROM evaluations WHERE slug = ?').run(slug);
 }
-
-// ─── Roles ────────────────────────────────────────────────────
-
-import type { RoleRow, RoleCategoryRow } from './types.js'
-
+import type { RoleRow, RoleCategoryRow } from './types.js';
 export interface RoleWithCategories {
-  id: string
-  label: string
-  createdBy: string
-  createdAt: string
-  categoryIds: string[]
-  hasPoste: boolean
+    id: string;
+    label: string;
+    createdBy: string;
+    createdAt: string;
+    categoryIds: string[];
+    hasPoste: boolean;
 }
-
-export function getRoles(): RoleWithCategories[] {
-  const roles = db.prepare('SELECT * FROM roles WHERE deleted_at IS NULL ORDER BY label').all() as RoleRow[]
-  const allCats = db.prepare('SELECT * FROM role_categories').all() as RoleCategoryRow[]
-  const posteRoleIds = new Set(
-    (db.prepare('SELECT DISTINCT role_id FROM postes').all() as { role_id: string }[]).map(r => r.role_id),
-  )
-  const catsByRole = new Map<string, string[]>()
-  for (const rc of allCats) {
-    const list = catsByRole.get(rc.role_id) ?? []
-    list.push(rc.category_id)
-    catsByRole.set(rc.role_id, list)
-  }
-  return roles.map(r => ({
-    id: r.id,
-    label: r.label,
-    createdBy: r.created_by,
-    createdAt: r.created_at,
-    categoryIds: catsByRole.get(r.id) ?? [],
-    hasPoste: posteRoleIds.has(r.id),
-  }))
-}
-
-export function getRole(id: string): RoleWithCategories | null {
-  const role = db.prepare('SELECT * FROM roles WHERE id = ? AND deleted_at IS NULL').get(id) as RoleRow | undefined
-  if (!role) return null
-  const cats = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(id) as { category_id: string }[]
-  const posteCount = (db.prepare('SELECT COUNT(*) as c FROM postes WHERE role_id = ?').get(id) as { c: number }).c
-  return {
-    id: role.id,
-    label: role.label,
-    createdBy: role.created_by,
-    createdAt: role.created_at,
-    hasPoste: posteCount > 0,
-    categoryIds: cats.map(c => c.category_id),
-  }
-}
-
-export function createRole(id: string, label: string, categoryIds: string[], createdBy: string): RoleWithCategories {
-  const insertRole = db.prepare('INSERT INTO roles (id, label, created_by) VALUES (?, ?, ?)')
-  const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
-  db.transaction(() => {
-    insertRole.run(id, label, createdBy)
-    for (const catId of categoryIds) {
-      insertCat.run(id, catId)
+export async function getRoles(): Promise<RoleWithCategories[]> {
+    const roles = await getDb().prepare<RoleRow>('SELECT * FROM roles WHERE deleted_at IS NULL ORDER BY label').all();
+    const allCats = await getDb().prepare<RoleCategoryRow>('SELECT * FROM role_categories').all();
+    const posteRoleIds = new Set((await getDb().prepare<{
+        role_id: string;
+    }>('SELECT DISTINCT role_id FROM postes').all()).map((r) => r.role_id));
+    const catsByRole = new Map<string, string[]>();
+    for (const rc of allCats) {
+        const list = catsByRole.get(rc.role_id) ?? [];
+        list.push(rc.category_id);
+        catsByRole.set(rc.role_id, list);
     }
-  })()
-  return getRole(id)!
+    return roles.map((r) => ({
+        id: r.id,
+        label: r.label,
+        createdBy: r.created_by,
+        createdAt: r.created_at,
+        categoryIds: catsByRole.get(r.id) ?? [],
+        hasPoste: posteRoleIds.has(r.id),
+    }));
 }
-
-export function updateRole(id: string, label: string, categoryIds: string[]): RoleWithCategories | null {
-  const existing = db.prepare('SELECT id FROM roles WHERE id = ? AND deleted_at IS NULL').get(id) as { id: string } | undefined
-  if (!existing) return null
-  db.transaction(() => {
-    db.prepare('UPDATE roles SET label = ? WHERE id = ?').run(label, id)
-    db.prepare('DELETE FROM role_categories WHERE role_id = ?').run(id)
-    const insertCat = db.prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)')
-    for (const catId of categoryIds) {
-      insertCat.run(id, catId)
-    }
-  })()
-  return getRole(id)
+export async function getRole(id: string): Promise<RoleWithCategories | null> {
+    const role = await getDb().prepare<RoleRow>('SELECT * FROM roles WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!role)
+        return null;
+    const cats = await getDb().prepare<{
+        category_id: string;
+    }>('SELECT category_id FROM role_categories WHERE role_id = ?').all(id);
+    const posteCount = (await getDb().prepare<{
+        c: number;
+    }>('SELECT COUNT(*) as c FROM postes WHERE role_id = ?').get(id))?.c ?? 0;
+    return {
+        id: role.id,
+        label: role.label,
+        createdBy: role.created_by,
+        createdAt: role.created_at,
+        hasPoste: posteCount > 0,
+        categoryIds: cats.map((c) => c.category_id),
+    };
 }
-
-export function softDeleteRole(id: string): boolean {
-  const result = db.prepare('UPDATE roles SET deleted_at = datetime(\'now\') WHERE id = ? AND deleted_at IS NULL').run(id)
-  return result.changes > 0
+export async function createRole(id: string, label: string, categoryIds: string[], createdBy: string): Promise<RoleWithCategories> {
+    const tx = getDb().transaction(async () => {
+        await getDb().prepare('INSERT INTO roles (id, label, created_by) VALUES (?, ?, ?)').run(id, label, createdBy);
+        for (const catId of categoryIds) {
+            await getDb().prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)').run(id, catId);
+        }
+    });
+    await tx();
+    const role = await getRole(id);
+    if (!role)
+        throw new Error(`Role creation failed for ${id}`);
+    return role;
 }
-
-export function getRoleCategories(roleId: string): string[] {
-  const rows = db.prepare('SELECT category_id FROM role_categories WHERE role_id = ?').all(roleId) as { category_id: string }[]
-  return rows.map(r => r.category_id)
+export async function updateRole(id: string, label: string, categoryIds: string[]): Promise<RoleWithCategories | null> {
+    const existing = await getDb().prepare<{
+        id: string;
+    }>('SELECT id FROM roles WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!existing)
+        return null;
+    const tx = getDb().transaction(async () => {
+        await getDb().prepare('UPDATE roles SET label = ? WHERE id = ?').run(label, id);
+        await getDb().prepare('DELETE FROM role_categories WHERE role_id = ?').run(id);
+        for (const catId of categoryIds) {
+            await getDb().prepare('INSERT INTO role_categories (role_id, category_id) VALUES (?, ?)').run(id, catId);
+        }
+    });
+    await tx();
+    return getRole(id);
 }
-
-/**
- * Union of role_categories across every active candidature for this candidate.
- * Used by the self-eval form so a candidate who applied to N postes (potentially
- * across different pôles) sees the union of their categories — answers once,
- * recruiter sees per-poste compatibility scores. Falls back to candidate.role_id
- * when no candidatures exist (manually-created candidate).
- */
-export function getCategoriesForCandidate(candidateId: string): string[] {
-  const rows = db.prepare(`
+export async function softDeleteRole(id: string): Promise<boolean> {
+    const result = await getDb().prepare("UPDATE roles SET deleted_at = now() WHERE id = ? AND deleted_at IS NULL").run(id);
+    return result.changes > 0;
+}
+export async function getRoleCategories(roleId: string): Promise<string[]> {
+    const rows = await getDb().prepare<{
+        category_id: string;
+    }>('SELECT category_id FROM role_categories WHERE role_id = ?').all(roleId);
+    return rows.map((r) => r.category_id);
+}
+export async function getCategoriesForCandidate(candidateId: string): Promise<string[]> {
+    const rows = await getDb().prepare<{
+        category_id: string;
+    }>(`
     SELECT DISTINCT rc.category_id
     FROM candidatures c
     JOIN postes p ON p.id = c.poste_id
     JOIN role_categories rc ON rc.role_id = p.role_id
     WHERE c.candidate_id = ?
-  `).all(candidateId) as { category_id: string }[]
-  if (rows.length > 0) return rows.map(r => r.category_id)
-
-  // Fallback for candidates without candidatures (edge case): use the legacy
-  // candidates.role_id field, which intake sets to the first applied poste's role.
-  const legacy = db.prepare('SELECT role_id FROM candidates WHERE id = ?').get(candidateId) as { role_id: string | null } | undefined
-  return legacy?.role_id ? getRoleCategories(legacy.role_id) : []
+  `).all(candidateId);
+    if (rows.length > 0)
+        return rows.map((r) => r.category_id);
+    const legacy = await getDb().prepare<{
+        role_id: string | null;
+    }>('SELECT role_id FROM candidates WHERE id = ?').get(candidateId);
+    return legacy?.role_id ? getRoleCategories(legacy.role_id) : [];
 }
-
-export function getCategoryIdsByPole(): Record<string, string[]> {
-  const rows = db.prepare('SELECT pole, category_id FROM pole_categories').all() as { pole: string; category_id: string }[]
-  const result: Record<string, string[]> = {}
-  for (const r of rows) {
-    if (!result[r.pole]) result[r.pole] = []
-    result[r.pole].push(r.category_id)
-  }
-  return result
+export async function getCategoryIdsByPole(): Promise<Record<string, string[]>> {
+    const rows = await getDb().prepare<{
+        pole: string;
+        category_id: string;
+    }>('SELECT pole, category_id FROM pole_categories').all();
+    const result: Record<string, string[]> = {};
+    for (const r of rows) {
+        if (!result[r.pole])
+            result[r.pole] = [];
+        result[r.pole].push(r.category_id);
+    }
+    return result;
 }

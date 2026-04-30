@@ -8,7 +8,7 @@ const SANITIZE_OPTIONS = {
 }
 
 describe('markdown to email HTML pipeline', () => {
-  it('converts basic markdown to safe HTML', () => {
+  it('converts basic markdown to safe HTML', async () => {
     const md = '**Bonjour** Jean,\n\nVotre candidature a été **retenue**.'
     const html = sanitizeHtml(marked(md) as string, SANITIZE_OPTIONS)
     expect(html).toContain('<strong>Bonjour</strong>')
@@ -16,7 +16,7 @@ describe('markdown to email HTML pipeline', () => {
     expect(html).not.toContain('<script>')
   })
 
-  it('strips dangerous HTML from markdown output', () => {
+  it('strips dangerous HTML from markdown output', async () => {
     const md = 'Hello <script>alert("xss")</script> world'
     const html = sanitizeHtml(marked(md) as string, SANITIZE_OPTIONS)
     expect(html).not.toContain('<script>')
@@ -24,14 +24,14 @@ describe('markdown to email HTML pipeline', () => {
     expect(html).toContain('world')
   })
 
-  it('preserves links but strips onclick attributes', () => {
+  it('preserves links but strips onclick attributes', async () => {
     const md = '[SINAPSE](https://sinapse.nc)'
     const html = sanitizeHtml(marked(md) as string, SANITIZE_OPTIONS)
     expect(html).toContain('href="https://sinapse.nc"')
     expect(html).not.toContain('onclick')
   })
 
-  it('handles GFM lists correctly', () => {
+  it('handles GFM lists correctly', async () => {
     const md = '- Point 1\n- Point 2\n- **Point 3**'
     const html = sanitizeHtml(marked(md) as string, SANITIZE_OPTIONS)
     expect(html).toContain('<ul>')
@@ -39,12 +39,12 @@ describe('markdown to email HTML pipeline', () => {
     expect(html).toContain('<strong>Point 3</strong>')
   })
 
-  it('handles empty markdown gracefully', () => {
+  it('handles empty markdown gracefully', async () => {
     const html = sanitizeHtml(marked('') as string, SANITIZE_OPTIONS)
     expect(html).toBe('')
   })
 
-  it('strips image tags (not allowed in emails)', () => {
+  it('strips image tags (not allowed in emails)', async () => {
     const md = '![alt](https://evil.com/tracker.png)'
     const html = sanitizeHtml(marked(md) as string, SANITIZE_OPTIONS)
     expect(html).not.toContain('<img')
@@ -58,19 +58,19 @@ describe('PII sanitization for AI prompts', () => {
       .replace(/(\+?\d[\d\s.-]{7,})/g, '[téléphone masqué]')
   }
 
-  it('masks email addresses', () => {
+  it('masks email addresses', async () => {
     const text = 'Contact: jean.dupont@sinapse.nc pour plus de détails'
     expect(sanitizePII(text)).toContain('[email masqué]')
     expect(sanitizePII(text)).not.toContain('jean.dupont@sinapse.nc')
   })
 
-  it('masks phone numbers', () => {
+  it('masks phone numbers', async () => {
     const text = 'Téléphone: +687 28 45 67'
     expect(sanitizePII(text)).toContain('[téléphone masqué]')
     expect(sanitizePII(text)).not.toContain('28 45 67')
   })
 
-  it('masks multiple PII in same text', () => {
+  it('masks multiple PII in same text', async () => {
     const text = 'Jean, email: j@test.com, tel: 06 12 34 56 78, skills: Java'
     const result = sanitizePII(text)
     expect(result).not.toContain('j@test.com')
@@ -79,14 +79,14 @@ describe('PII sanitization for AI prompts', () => {
     expect(result).toContain('Java')
   })
 
-  it('preserves text without PII', () => {
+  it('preserves text without PII', async () => {
     const text = 'Expérience: 5 ans en Java, Spring Boot, Angular'
     expect(sanitizePII(text)).toBe(text)
   })
 })
 
 describe('candidature_events schema', () => {
-  it('valid event types include email_sent and email_failed', () => {
+  it('valid event types include email_sent and email_failed', async () => {
     const VALID_TYPES = ['status_change', 'note', 'entretien', 'document', 'email', 'email_sent', 'email_failed', 'email_open']
     expect(VALID_TYPES).toContain('email_sent')
     expect(VALID_TYPES).toContain('email_failed')
@@ -95,7 +95,7 @@ describe('candidature_events schema', () => {
 })
 
 describe('email snapshot structure', () => {
-  it('serializes and deserializes email snapshot correctly', () => {
+  it('serializes and deserializes email snapshot correctly', async () => {
     const snapshot = {
       subject: 'Candidature retenue — Dev Senior chez SINAPSE',
       body: 'Bonjour Jean, votre candidature a été retenue.',
@@ -108,7 +108,7 @@ describe('email snapshot structure', () => {
     expect(parsed.messageId).toBe(snapshot.messageId)
   })
 
-  it('handles null email snapshot gracefully', () => {
+  it('handles null email snapshot gracefully', async () => {
     const event = { id: 1, type: 'status_change', email_snapshot: null }
     expect(event.email_snapshot).toBeNull()
   })
@@ -125,24 +125,24 @@ describe('document status tracking', () => {
     embauche: ['cv', 'lettre', 'aboro', 'entretien', 'proposition', 'administratif'],
   }
 
-  it('early pipeline stages require fewer documents', () => {
+  it('early pipeline stages require fewer documents', async () => {
     expect(EXPECTED_DOCUMENTS['postule']).toHaveLength(1)
     expect(EXPECTED_DOCUMENTS['postule']).toContain('cv')
   })
 
-  it('later stages accumulate document requirements', () => {
+  it('later stages accumulate document requirements', async () => {
     expect(EXPECTED_DOCUMENTS['embauche']).toHaveLength(6)
     expect(EXPECTED_DOCUMENTS['embauche']).toContain('administratif')
   })
 
-  it('calculates document completion correctly', () => {
+  it('calculates document completion correctly', async () => {
     const uploadedTypes = new Set(['cv', 'lettre'])
     const expectedTypes = EXPECTED_DOCUMENTS['entretien_1']
     const complete = expectedTypes.every(t => uploadedTypes.has(t))
     expect(complete).toBe(true)
   })
 
-  it('detects missing documents', () => {
+  it('detects missing documents', async () => {
     const uploadedTypes = new Set(['cv'])
     const expectedTypes = EXPECTED_DOCUMENTS['aboro']
     const missing = expectedTypes.filter(t => !uploadedTypes.has(t))
@@ -163,18 +163,18 @@ describe('transition state machine', () => {
     proposition: ['embauche', 'refuse'],
   }
 
-  it('refuse is always an option (except terminal states)', () => {
+  it('refuse is always an option (except terminal states)', async () => {
     for (const [, transitions] of Object.entries(TRANSITION_MAP)) {
       expect(transitions).toContain('refuse')
     }
   })
 
-  it('embauche and refuse are terminal states', () => {
+  it('embauche and refuse are terminal states', async () => {
     expect(TRANSITION_MAP['embauche']).toBeUndefined()
     expect(TRANSITION_MAP['refuse']).toBeUndefined()
   })
 
-  it('pipeline progresses linearly for happy path', () => {
+  it('pipeline progresses linearly for happy path', async () => {
     const happyPath = ['postule', 'preselectionne', 'skill_radar_envoye', 'skill_radar_complete', 'entretien_1', 'aboro', 'entretien_2', 'proposition', 'embauche']
     for (let i = 0; i < happyPath.length - 1; i++) {
       const current = happyPath[i]
@@ -186,7 +186,7 @@ describe('transition state machine', () => {
     }
   })
 
-  it('notes required for refuse and embauche transitions', () => {
+  it('notes required for refuse and embauche transitions', async () => {
     const NOTES_REQUIRED = ['refuse', 'embauche']
     expect(NOTES_REQUIRED).toContain('refuse')
     expect(NOTES_REQUIRED).toContain('embauche')
@@ -194,7 +194,7 @@ describe('transition state machine', () => {
 })
 
 describe('open tracking idempotency', () => {
-  it('deduplicates events by messageId', () => {
+  it('deduplicates events by messageId', async () => {
     const existingEvents = [
       { type: 'email_open', email_snapshot: JSON.stringify({ messageId: 'msg_123' }) },
     ]
@@ -209,7 +209,7 @@ describe('open tracking idempotency', () => {
     expect(isDuplicate).toBe(true)
   })
 
-  it('allows new events for different messageIds', () => {
+  it('allows new events for different messageIds', async () => {
     const existingEvents = [
       { type: 'email_open', email_snapshot: JSON.stringify({ messageId: 'msg_123' }) },
     ]
@@ -226,13 +226,13 @@ describe('open tracking idempotency', () => {
 })
 
 describe('batch ZIP validation', () => {
-  it('rejects requests with more than 20 candidatures', () => {
+  it('rejects requests with more than 20 candidatures', async () => {
     const MAX_BATCH = 20
     const ids = Array.from({ length: 21 }, (_, i) => `id-${i}`)
     expect(ids.length).toBeGreaterThan(MAX_BATCH)
   })
 
-  it('generates unique folder names for duplicate candidate names', () => {
+  it('generates unique folder names for duplicate candidate names', async () => {
     function uniqueFolderNames(names: string[]): string[] {
       const counts = new Map<string, number>()
       return names.map(name => {

@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 import express from 'express'
 import supertest from 'supertest'
 
@@ -24,10 +24,10 @@ vi.mock('../middleware/require-lead.js', () => ({
   },
 }))
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -68,12 +68,12 @@ function seedCandidature(canal: 'cabinet' | 'site' | 'candidature_directe' | 're
 }
 
 describe('PATCH /api/recruitment/candidatures/:id/canal', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeed()
-    initDatabase()
+    await initDatabase()
   })
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 

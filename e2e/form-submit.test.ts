@@ -6,22 +6,13 @@ const FORM_URL = `/form/${SLUG}`
 /**
  * These E2E tests require authentication.
  *
- * Option 1 (recommended): Set E2E_PIN to your user's PIN:
- *   E2E_PIN=123456 npx playwright test
- *
- * Option 2: Use saved auth state:
+ * Use saved auth state:
  *   1. Log in manually: npx playwright codegen --save-storage=e2e/auth.json http://localhost:5173
  *   2. Run tests (they'll use the saved session cookies)
  */
 
 // Helper: authenticate via the login dialog
 async function login(page: import('@playwright/test').Page) {
-  const pin = process.env.E2E_PIN
-  if (!pin) {
-    test.skip(true, 'E2E_PIN env var not set — skipping auth-dependent tests')
-    return
-  }
-
   await page.goto('/')
 
   // If already on form page (session still valid), done
@@ -31,20 +22,7 @@ async function login(page: import('@playwright/test').Page) {
     return
   }
 
-  await loginBtn.click()
-  await page.getByText('Yolan M.').click()
-  await page.getByPlaceholder('Code a 6 chiffres').fill(pin)
-  await page.getByPlaceholder('Code a 6 chiffres').press('Enter')
-
-  // Handle potential PIN customization dialog
-  const customizeHeading = page.getByText('Choisissez votre code personnel')
-  if (await customizeHeading.isVisible({ timeout: 2000 }).catch(() => false)) {
-    // Already customized or skip — just navigate directly
-    test.skip(true, 'PIN customization required — set up user first')
-    return
-  }
-
-  await page.waitForURL(`**/form/${SLUG}`, { timeout: 10_000 })
+  test.skip(true, 'Auth-dependent E2E tests require saved magic-link session state in e2e/auth.json')
 }
 
 test.describe('Form submit flow', () => {

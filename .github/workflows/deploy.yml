@@ -1,4 +1,4 @@
-name: Deploy to GKE (Prod)
+name: Deploy to Cloud Run (Prod)
 
 on:
   push:
@@ -32,12 +32,9 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: github-deploy@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+          service_account: skill-radar-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Install gke-gcloud-auth-plugin
-        run: gcloud components install gke-gcloud-auth-plugin --quiet
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
@@ -46,6 +43,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -56,29 +54,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Get GKE credentials
+      - name: Deploy to Cloud Run
         run: |
-          gcloud container clusters get-credentials cloud-sinapse \
-            --region asia-northeast1 \
-            --project ${{ vars.GCP_PROJECT_ID }}
-
-      - name: Deploy to GKE
-        run: |
-          cd k8s
-          kustomize edit set image skill-radar=asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar:${{ github.sha }}
-          kubectl apply -k .
-          kubectl -n public-webapp rollout status deployment/skill-radar --timeout=120s
+          gcloud run services update skill-radar \
+            --image="asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cloud-sinapse/skill-radar@${{ steps.build.outputs.digest }}" \
+            --region=asia-northeast1 \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --quiet
+          gcloud run services describe skill-radar \
+            --region=asia-northeast1 \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --format='value(status.latestReadyRevisionName)'
 
       - name: Smoke test
         run: |
-          kubectl -n public-webapp rollout status deployment/skill-radar --timeout=90s
-          kubectl -n public-webapp port-forward deploy/skill-radar 9090:8080 &
-          PF_PID=$!
-          sleep 3
-          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:9090/health")
-          kill $PF_PID 2>/dev/null || true
-          if [ "$STATUS" = "200" ]; then
-            echo "Health check passed (via port-forward)"
-          else
-            echo "Health check failed: HTTP $STATUS" && exit 1
-          fi
+          for i in $(seq 1 30); do
+            STATUS=$(curl -fsS -o /tmp/skill-radar-health.json -w '%{http_code}' https://dev.radar.sinapse.nc/health || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              cat /tmp/skill-radar-health.json
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
+            sleep 10
+          done
+          echo "Cloud Run smoke test failed" && exit 1

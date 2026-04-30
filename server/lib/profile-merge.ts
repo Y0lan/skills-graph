@@ -1,6 +1,13 @@
-import { getDb } from './db.js'
-import { emptyProfile, type AiProfile, type ProfileField } from './profile-schema.js'
-
+import { getDb } from './db.js';
+import { emptyProfile, type AiProfile, type ProfileField } from './profile-schema.js';
+const AI_PROFILE_CAS_CONFLICT = 'AI_PROFILE_CAS_CONFLICT';
+const AI_PROFILE_MAX_RETRIES = 5;
+function isAiProfileCasConflict(err: unknown): boolean {
+    return err instanceof Error && err.message === AI_PROFILE_CAS_CONFLICT;
+}
+function profileRetryDelay(attempt: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+}
 /**
  * Hydrate a possibly-partial stored `ai_profile` against the full schema.
  * Legacy rows written by older extraction passes can contain only an
@@ -13,28 +20,28 @@ import { emptyProfile, type AiProfile, type ProfileField } from './profile-schem
  * value", same as if the sub-object had been there with every field null.
  */
 function hydrateAiProfile(raw: Partial<AiProfile> | null): AiProfile {
-  const empty = emptyProfile()
-  if (!raw) return empty
-  return {
-    ...empty,
-    ...raw,
-    identity: { ...empty.identity, ...(raw.identity ?? {}) },
-    contact: { ...empty.contact, ...(raw.contact ?? {}) },
-    location: { ...empty.location, ...(raw.location ?? {}) },
-    currentRole: { ...empty.currentRole, ...(raw.currentRole ?? {}) },
-    availability: { ...empty.availability, ...(raw.availability ?? {}) },
-    softSignals: { ...empty.softSignals, ...(raw.softSignals ?? {}) },
-    openSource: { ...empty.openSource, ...(raw.openSource ?? {}) },
-    totalExperienceYears: raw.totalExperienceYears ?? empty.totalExperienceYears,
-    education: raw.education ?? empty.education,
-    experience: raw.experience ?? empty.experience,
-    languages: raw.languages ?? empty.languages,
-    certifications: raw.certifications ?? empty.certifications,
-    publications: raw.publications ?? empty.publications,
-    additionalFacts: raw.additionalFacts ?? empty.additionalFacts,
-  }
+    const empty = emptyProfile();
+    if (!raw)
+        return empty;
+    return {
+        ...empty,
+        ...raw,
+        identity: { ...empty.identity, ...(raw.identity ?? {}) },
+        contact: { ...empty.contact, ...(raw.contact ?? {}) },
+        location: { ...empty.location, ...(raw.location ?? {}) },
+        currentRole: { ...empty.currentRole, ...(raw.currentRole ?? {}) },
+        availability: { ...empty.availability, ...(raw.availability ?? {}) },
+        softSignals: { ...empty.softSignals, ...(raw.softSignals ?? {}) },
+        openSource: { ...empty.openSource, ...(raw.openSource ?? {}) },
+        totalExperienceYears: raw.totalExperienceYears ?? empty.totalExperienceYears,
+        education: raw.education ?? empty.education,
+        experience: raw.experience ?? empty.experience,
+        languages: raw.languages ?? empty.languages,
+        certifications: raw.certifications ?? empty.certifications,
+        publications: raw.publications ?? empty.publications,
+        additionalFacts: raw.additionalFacts ?? empty.additionalFacts,
+    };
 }
-
 /**
  * Merge a newly-extracted profile into the candidate's stored profile.
  *
@@ -58,80 +65,62 @@ function hydrateAiProfile(raw: Partial<AiProfile> | null): AiProfile {
  * guard per-field so a concurrent lock-click never gets clobbered.
  */
 export interface MergeOptions {
-  runId: string
+    runId: string;
 }
-
-export function mergeProfiles(
-  existing: AiProfile | null,
-  incoming: AiProfile,
-  opts: MergeOptions,
-): AiProfile {
-  const base = existing ?? emptyProfile()
-  const merged: AiProfile = emptyProfile()
-
-  // Top-level objects with ProfileField children
-  mergeFieldGroup(merged.identity, base.identity, incoming.identity, opts)
-  mergeFieldGroup(merged.contact, base.contact, incoming.contact, opts)
-  mergeFieldGroup(merged.location, base.location, incoming.location, opts)
-  mergeFieldGroup(merged.currentRole, base.currentRole, incoming.currentRole, opts)
-  mergeFieldGroup(merged.availability, base.availability, incoming.availability, opts)
-  mergeFieldGroup(merged.softSignals, base.softSignals, incoming.softSignals, opts)
-  merged.totalExperienceYears = mergeField(base.totalExperienceYears, incoming.totalExperienceYears, opts)
-  merged.openSource.githubUsername = mergeField(base.openSource.githubUsername, incoming.openSource.githubUsername, opts)
-
-  // Arrays: replace when incoming has entries; preserve prior otherwise.
-  merged.education = incoming.education.length > 0 ? incoming.education : base.education
-  merged.experience = incoming.experience.length > 0 ? incoming.experience : base.experience
-  merged.languages = incoming.languages.length > 0 ? incoming.languages : base.languages
-  merged.certifications = incoming.certifications.length > 0 ? incoming.certifications : base.certifications
-  merged.publications = incoming.publications.length > 0 ? incoming.publications : base.publications
-  merged.openSource.notableProjects = incoming.openSource.notableProjects.length > 0
-    ? incoming.openSource.notableProjects
-    : base.openSource.notableProjects
-  merged.additionalFacts = incoming.additionalFacts.length > 0 ? incoming.additionalFacts : base.additionalFacts
-
-  return merged
+export function mergeProfiles(existing: AiProfile | null, incoming: AiProfile, opts: MergeOptions): AiProfile {
+    const base = existing ?? emptyProfile();
+    const merged: AiProfile = emptyProfile();
+    // Top-level objects with ProfileField children
+    mergeFieldGroup(merged.identity, base.identity, incoming.identity, opts);
+    mergeFieldGroup(merged.contact, base.contact, incoming.contact, opts);
+    mergeFieldGroup(merged.location, base.location, incoming.location, opts);
+    mergeFieldGroup(merged.currentRole, base.currentRole, incoming.currentRole, opts);
+    mergeFieldGroup(merged.availability, base.availability, incoming.availability, opts);
+    mergeFieldGroup(merged.softSignals, base.softSignals, incoming.softSignals, opts);
+    merged.totalExperienceYears = mergeField(base.totalExperienceYears, incoming.totalExperienceYears, opts);
+    merged.openSource.githubUsername = mergeField(base.openSource.githubUsername, incoming.openSource.githubUsername, opts);
+    // Arrays: replace when incoming has entries; preserve prior otherwise.
+    merged.education = incoming.education.length > 0 ? incoming.education : base.education;
+    merged.experience = incoming.experience.length > 0 ? incoming.experience : base.experience;
+    merged.languages = incoming.languages.length > 0 ? incoming.languages : base.languages;
+    merged.certifications = incoming.certifications.length > 0 ? incoming.certifications : base.certifications;
+    merged.publications = incoming.publications.length > 0 ? incoming.publications : base.publications;
+    merged.openSource.notableProjects = incoming.openSource.notableProjects.length > 0
+        ? incoming.openSource.notableProjects
+        : base.openSource.notableProjects;
+    merged.additionalFacts = incoming.additionalFacts.length > 0 ? incoming.additionalFacts : base.additionalFacts;
+    return merged;
 }
-
 /**
  * Merge every ProfileField in a sub-object (identity, contact, etc).
  * Mutates `target` in-place.
  */
-function mergeFieldGroup<T extends Record<string, ProfileField<unknown>>>(
-  target: T,
-  base: T,
-  incoming: T,
-  opts: MergeOptions,
-): void {
-  for (const key of Object.keys(target) as Array<keyof T>) {
-    ;(target[key] as ProfileField<unknown>) = mergeField(base[key], incoming[key], opts)
-  }
+function mergeFieldGroup<T extends Record<string, ProfileField<unknown>>>(target: T, base: T, incoming: T, opts: MergeOptions): void {
+    for (const key of Object.keys(target) as Array<keyof T>) {
+        (target[key] as ProfileField<unknown>) = mergeField(base[key], incoming[key], opts);
+    }
 }
-
 /**
  * Per-field merge logic. The pure JS version of the lock rule.
  * SQL-level enforcement happens in persistMergedProfile (next function).
  */
-function mergeField<T>(
-  base: ProfileField<T>,
-  incoming: ProfileField<T>,
-  opts: MergeOptions,
-): ProfileField<T> {
-  // Locked: keep base as-is.
-  if (base.humanLockedAt) return base
-  // New extraction had no value → preserve base (latest-wins only applies when new IS present)
-  if (incoming.value === null || incoming.value === undefined) return base
-  // Latest-wins with fresh provenance
-  return {
-    value: incoming.value,
-    runId: opts.runId,
-    sourceDoc: incoming.sourceDoc ?? 'cv',
-    confidence: incoming.confidence,
-    humanLockedAt: null,
-    humanLockedBy: null,
-  }
+function mergeField<T>(base: ProfileField<T>, incoming: ProfileField<T>, opts: MergeOptions): ProfileField<T> {
+    // Locked: keep base as-is.
+    if (base.humanLockedAt)
+        return base;
+    // New extraction had no value → preserve base (latest-wins only applies when new IS present)
+    if (incoming.value === null || incoming.value === undefined)
+        return base;
+    // Latest-wins with fresh provenance
+    return {
+        value: incoming.value,
+        runId: opts.runId,
+        sourceDoc: incoming.sourceDoc ?? 'cv',
+        confidence: incoming.confidence,
+        humanLockedAt: null,
+        humanLockedBy: null,
+    };
 }
-
 /**
  * Persist a merged profile with SQL-level lock protection.
  *
@@ -147,22 +136,40 @@ function mergeField<T>(
  * as they stood at read time), and write. CAS: the UPDATE also checks the
  * candidate row hasn't been concurrently modified.
  */
-export function persistMergedProfile(candidateId: string, incoming: AiProfile, runId: string): AiProfile {
-  const db = getDb()
-  // Transaction so the read-merge-write is atomic against concurrent
-  // lock/unlock writes going through setProfileFieldLock below.
-  const tx = db.transaction((): AiProfile => {
-    const row = db.prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(candidateId) as { ai_profile: string | null } | undefined
-    const existing: AiProfile | null = row?.ai_profile
-      ? stripLegacyPhotoAssetId(hydrateAiProfile(JSON.parse(row.ai_profile) as Partial<AiProfile>))
-      : null
-    const merged = mergeProfiles(existing, stripLegacyPhotoAssetId(hydrateAiProfile(incoming)), { runId })
-    db.prepare('UPDATE candidates SET ai_profile = ? WHERE id = ?').run(JSON.stringify(merged), candidateId)
-    return merged
-  })
-  return tx()
+export async function persistMergedProfile(candidateId: string, incoming: AiProfile, runId: string): Promise<AiProfile> {
+    const db = getDb();
+    for (let attempt = 0; attempt < AI_PROFILE_MAX_RETRIES; attempt++) {
+        // Transaction so the read-merge-write is atomic against concurrent
+        // lock/unlock writes going through setProfileFieldLock below.
+        const tx = db.transaction(async (): Promise<AiProfile> => {
+            const row = await db.prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(candidateId) as {
+                ai_profile: string | null;
+            } | undefined;
+            const originalProfile = row?.ai_profile ?? null;
+            const existing: AiProfile | null = originalProfile
+                ? stripLegacyPhotoAssetId(hydrateAiProfile(JSON.parse(originalProfile) as Partial<AiProfile>))
+                : null;
+            const merged = mergeProfiles(existing, stripLegacyPhotoAssetId(hydrateAiProfile(incoming)), { runId });
+            const result = await db.prepare(`
+                UPDATE candidates
+                SET ai_profile = ?
+                WHERE id = ? AND ai_profile IS NOT DISTINCT FROM ?
+            `).run(JSON.stringify(merged), candidateId, originalProfile);
+            if (result.changes === 0)
+                throw new Error(AI_PROFILE_CAS_CONFLICT);
+            return merged;
+        });
+        try {
+            return await tx();
+        }
+        catch (err) {
+            if (!isAiProfileCasConflict(err) || attempt === AI_PROFILE_MAX_RETRIES - 1)
+                throw err;
+            await profileRetryDelay(attempt);
+        }
+    }
+    throw new Error(AI_PROFILE_CAS_CONFLICT);
 }
-
 /**
  * Strip the legacy `identity.photoAssetId` key. The auto photo extractor
  * is gone (CLAUDE.md CV Intelligence rule #3 — GDPR + non-functional in
@@ -171,56 +178,87 @@ export function persistMergedProfile(candidateId: string, incoming: AiProfile, r
  * profile (codex challenge rev 1 finding #9). Idempotent.
  */
 function stripLegacyPhotoAssetId(profile: AiProfile): AiProfile {
-  const identity = profile.identity as Record<string, unknown> | undefined
-  if (identity && 'photoAssetId' in identity) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { photoAssetId, ...rest } = identity
-    return { ...profile, identity: rest as AiProfile['identity'] }
-  }
-  return profile
+    const identity = profile.identity as Record<string, unknown> | undefined;
+    if (identity && 'photoAssetId' in identity) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { photoAssetId, ...rest } = identity;
+        return { ...profile, identity: rest as AiProfile['identity'] };
+    }
+    return profile;
 }
-
 /**
  * Toggle a lock on a specific ProfileField within ai_profile. The field
  * is addressed by a dotted path like "contact.phone" or "identity.fullName".
  * Path must resolve to a ProfileField<T>, not a bare value or array.
  *
- * SQL-level race protection: the whole set happens inside a SQLite
- * transaction, so a concurrent extraction merge (via persistMergedProfile)
- * either sees the lock state BEFORE our toggle or AFTER it, never a torn
- * in-between state.
+ * SQL-level race protection: the whole set happens inside one transaction,
+ * so a concurrent extraction merge (via persistMergedProfile) either sees
+ * the lock state BEFORE our toggle or AFTER it, never a torn in-between
+ * state.
  */
-export function setProfileFieldLock(params: {
-  candidateId: string
-  fieldPath: string
-  locked: boolean
-  userSlug: string | null
-}): { ok: boolean; notFound?: boolean; error?: string } {
-  const db = getDb()
-  const tx = db.transaction((): { ok: boolean; notFound?: boolean; error?: string } => {
-    const row = db.prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(params.candidateId) as { ai_profile: string | null } | undefined
-    if (!row) return { ok: false, notFound: true }
-    const profile: AiProfile = row.ai_profile ? JSON.parse(row.ai_profile) : emptyProfile()
-    const parts = params.fieldPath.split('.')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let cursor: any = profile
-    for (const p of parts) {
-      if (cursor == null || typeof cursor !== 'object') return { ok: false, error: 'bad-path' }
-      cursor = cursor[p]
+export async function setProfileFieldLock(params: {
+    candidateId: string;
+    fieldPath: string;
+    locked: boolean;
+    userSlug: string | null;
+}): Promise<{
+    ok: boolean;
+    notFound?: boolean;
+    error?: string;
+}> {
+    const db = getDb();
+    for (let attempt = 0; attempt < AI_PROFILE_MAX_RETRIES; attempt++) {
+        const tx = db.transaction(async (): Promise<{
+            ok: boolean;
+            notFound?: boolean;
+            error?: string;
+        }> => {
+            const row = await db.prepare('SELECT ai_profile FROM candidates WHERE id = ?').get(params.candidateId) as {
+                ai_profile: string | null;
+            } | undefined;
+            if (!row)
+                return { ok: false, notFound: true };
+            const originalProfile = row.ai_profile ?? null;
+            const profile: AiProfile = originalProfile ? JSON.parse(originalProfile) : emptyProfile();
+            const parts = params.fieldPath.split('.');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            let cursor: any = profile;
+            for (const p of parts) {
+                if (cursor == null || typeof cursor !== 'object')
+                    return { ok: false, error: 'bad-path' };
+                cursor = cursor[p];
+            }
+            if (!cursor || typeof cursor !== 'object' || !('humanLockedAt' in cursor)) {
+                return { ok: false, error: 'not-a-profile-field' };
+            }
+            const field = cursor as ProfileField<unknown>;
+            if (params.locked) {
+                field.humanLockedAt = new Date().toISOString();
+                field.humanLockedBy = params.userSlug;
+            }
+            else {
+                field.humanLockedAt = null;
+                field.humanLockedBy = null;
+            }
+            const result = await db.prepare(`
+                UPDATE candidates
+                SET ai_profile = ?
+                WHERE id = ? AND ai_profile IS NOT DISTINCT FROM ?
+            `).run(JSON.stringify(profile), params.candidateId, originalProfile);
+            if (result.changes === 0)
+                throw new Error(AI_PROFILE_CAS_CONFLICT);
+            return { ok: true };
+        });
+        try {
+            return await tx();
+        }
+        catch (err) {
+            if (!isAiProfileCasConflict(err))
+                throw err;
+            if (attempt === AI_PROFILE_MAX_RETRIES - 1)
+                return { ok: false, error: 'conflict' };
+            await profileRetryDelay(attempt);
+        }
     }
-    if (!cursor || typeof cursor !== 'object' || !('humanLockedAt' in cursor)) {
-      return { ok: false, error: 'not-a-profile-field' }
-    }
-    const field = cursor as ProfileField<unknown>
-    if (params.locked) {
-      field.humanLockedAt = new Date().toISOString()
-      field.humanLockedBy = params.userSlug
-    } else {
-      field.humanLockedAt = null
-      field.humanLockedBy = null
-    }
-    db.prepare('UPDATE candidates SET ai_profile = ? WHERE id = ?').run(JSON.stringify(profile), params.candidateId)
-    return { ok: true }
-  })
-  return tx()
+    return { ok: false, error: 'conflict' };
 }

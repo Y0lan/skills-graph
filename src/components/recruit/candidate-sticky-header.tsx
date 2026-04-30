@@ -60,7 +60,7 @@ export default function CandidateStickyHeader({
       // a documented a11y anti-pattern). The runtime cast is the safest
       // way to set the boolean attribute without TS yelling on older
       // React types.
-      {...({ inert: visible ? undefined : '' } as Record<string, string | undefined>)}
+      {...({ inert: visible ? undefined : true } as Record<string, boolean | undefined>)}
       className={`sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b transition-transform duration-200 motion-reduce:transition-none ${
         visible ? 'translate-y-0 shadow-sm' : '-translate-y-full'
       }`}

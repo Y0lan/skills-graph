@@ -46,7 +46,7 @@ describe('formatCvDateRange', () => {
 })
 
 describe('formatDateTime (regression)', () => {
-  it('treats SQLite datetime (no TZ) as UTC', () => {
+  it('treats database timestamps without TZ as UTC', () => {
     const out = formatDateTime('2026-04-21 07:04:25')
     // Rendering is locale-dependent; just verify it didn't interpret
     // the naive string as local (would drop by 11h in NC) — output must

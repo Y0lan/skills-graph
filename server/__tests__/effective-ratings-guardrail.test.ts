@@ -46,7 +46,7 @@ function findHits(pattern: RegExp): Hit[] {
 }
 
 describe('Effective Ratings Module — codebase guardrail', () => {
-  it('no inline `{ ...aiSuggestions, ...ratings }` merge anywhere in server/', () => {
+  it('no inline `{ ...aiSuggestions, ...ratings }` merge anywhere in server/', async () => {
     // Catches the original drift pattern: spreading both at once
     // anywhere in server code. The Module is the only place this
     // shape should appear, and its file is exempted.
@@ -61,7 +61,7 @@ describe('Effective Ratings Module — codebase guardrail', () => {
     expect(hits).toEqual([])
   })
 
-  it('no inline either/or `roleAware ?? ai` shape (the compat-breakdown bug)', () => {
+  it('no inline either/or `roleAware ?? ai` shape (the compat-breakdown bug)', async () => {
     // The old compat-breakdown handler did:
     //   r.role_aware_suggestions ? safeJsonParse(r.role_aware_suggestions, {}) : safeJsonParse(r.ai_suggestions ...)
     // That either/or dropped manual ratings entirely. Catches the

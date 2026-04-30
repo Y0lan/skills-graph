@@ -46,7 +46,7 @@ function* walk(dir: string): Generator<string> {
 }
 
 describe('Extraction-run lifecycle guardrail', () => {
-  it('no direct startRun/finishRun imports outside the allowed perimeter', () => {
+  it('no direct startRun/finishRun imports outside the allowed perimeter', async () => {
     const offenders: { file: string; line: number; text: string }[] = []
     for (const file of walk(SERVER_ROOT)) {
       const rel = path.relative(SERVER_ROOT, file)

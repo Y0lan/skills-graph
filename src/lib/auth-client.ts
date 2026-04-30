@@ -8,7 +8,6 @@ export const authClient = createAuthClient({
     inferAdditionalFields({
       user: {
         slug: { type: 'string', required: false },
-        pinCustomized: { type: 'boolean', required: false },
       },
     }),
     magicLinkClient(),

@@ -107,7 +107,10 @@ export default function CandidateScoreSummary({
                   {t.label}
                 </p>
                 <Tooltip>
-                  <TooltipTrigger className="cursor-help" onClick={(e) => e.stopPropagation()}>
+                  <TooltipTrigger
+                    render={<span className="cursor-help inline-flex" />}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Info className="h-2.5 w-2.5 text-muted-foreground/50" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[240px] text-xs">{TILE_TOOLTIPS[t.label]}</TooltipContent>

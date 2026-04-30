@@ -28,11 +28,11 @@ describe('buildCompactSkillSummary (chatbot global-context trim)', () => {
    * top weaknesses. See plan §Item 1.
    */
 
-  it('returns "pas d\'évaluations" sentinel when ratings empty', () => {
+  it('returns "pas d\'évaluations" sentinel when ratings empty', async () => {
     expect(buildCompactSkillSummary({})).toMatch(/pas d'évaluations/i)
   })
 
-  it('keeps top-N strongest skills (level ≥ 4) sorted descending', () => {
+  it('keeps top-N strongest skills (level ≥ 4) sorted descending', async () => {
     const ratings: Record<string, number> = {}
     for (let i = 0; i < 10; i++) ratings[`core-${i}`] = i % 6 // 0..5 cycling
     const out = buildCompactSkillSummary(ratings, 3, 0)
@@ -45,7 +45,7 @@ describe('buildCompactSkillSummary (chatbot global-context trim)', () => {
     expect(idxFive).toBeLessThan(idxFour)
   })
 
-  it('keeps top-M weakest evaluated skills (level ≤ 1) sorted ascending', () => {
+  it('keeps top-M weakest evaluated skills (level ≤ 1) sorted ascending', async () => {
     const ratings: Record<string, number> = {
       'core-0': 0,
       'core-1': 1,
@@ -59,7 +59,7 @@ describe('buildCompactSkillSummary (chatbot global-context trim)', () => {
     expect(out.match(/1\/5/g)?.length ?? 0).toBeLessThanOrEqual(1)
   })
 
-  it('output stays compact: a 30-skill rating set produces well under 1KB', () => {
+  it('output stays compact: a 30-skill rating set produces well under 1KB', async () => {
     // 30 skills × ~30 chars/skill in the OLD descriptor-rich format ≈ 900 chars
     // per member. With 10 members that's ~9 KB just for skills. Times 178
     // catalog skills (real catalog) the system prompt blows past 250 KB.
@@ -72,7 +72,7 @@ describe('buildCompactSkillSummary (chatbot global-context trim)', () => {
     expect(out.length).toBeLessThan(1000)
   })
 
-  it('falls back to "pas d\'extrêmes notables" when nothing scores ≥4 or ≤1', () => {
+  it('falls back to "pas d\'extrêmes notables" when nothing scores ≥4 or ≤1', async () => {
     // All ratings in the middle (2-3) — neither strong nor weak.
     const ratings: Record<string, number> = {
       'core-0': 2, 'core-1': 3, 'core-2': 2, 'core-3': 3,

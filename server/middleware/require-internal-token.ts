@@ -1,5 +1,4 @@
-import type { Request, Response, NextFunction } from 'express'
-
+import type { Request, Response, NextFunction } from 'express';
 /**
  * Auth gate for internal cron endpoints (the k8s CronJob hits these
  * with a shared secret). Different posture from `requireLead`:
@@ -12,30 +11,29 @@ import type { Request, Response, NextFunction } from 'express'
  * to test the cron path manually).
  */
 export function requireInternalToken(req: Request, res: Response, next: NextFunction): void {
-  const token = process.env.INTERNAL_CRON_TOKEN?.trim()
-  if (!token) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error('[require-internal-token] INTERNAL_CRON_TOKEN not set — rejecting cron request')
-      res.status(500).json({ error: 'Cron secret not configured' })
-      return
+    const token = process.env.INTERNAL_CRON_TOKEN?.trim();
+    if (!token) {
+        if (process.env.NODE_ENV === 'production') {
+            console.error('[require-internal-token] INTERNAL_CRON_TOKEN not set — rejecting cron request');
+            res.status(500).json({ error: 'Cron secret not configured' });
+            return;
+        }
+        if (!warnedUnconfigured) {
+            console.warn('[require-internal-token] INTERNAL_CRON_TOKEN not set — open in non-production');
+            warnedUnconfigured = true;
+        }
+        next();
+        return;
     }
-    if (!warnedUnconfigured) {
-      console.warn('[require-internal-token] INTERNAL_CRON_TOKEN not set — open in non-production')
-      warnedUnconfigured = true
+    const provided = req.headers['authorization'];
+    if (typeof provided !== 'string' || !provided.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'Authorization Bearer token requis' });
+        return;
     }
-    next()
-    return
-  }
-  const provided = req.headers['authorization']
-  if (typeof provided !== 'string' || !provided.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Authorization Bearer token requis' })
-    return
-  }
-  if (provided.slice('Bearer '.length).trim() !== token) {
-    res.status(401).json({ error: 'Token invalide' })
-    return
-  }
-  next()
+    if (provided.slice('Bearer '.length).trim() !== token) {
+        res.status(401).json({ error: 'Token invalide' });
+        return;
+    }
+    next();
 }
-
-let warnedUnconfigured = false
+let warnedUnconfigured = false;

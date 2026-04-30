@@ -90,9 +90,10 @@ export default function ConfidentialitePage() {
           <section>
             <h2 className="text-lg font-semibold">Hébergement et sécurité</h2>
             <p>
-              Les données sont hébergées sur Google Cloud Platform (GKE Autopilot, région asia-northeast1).
-              Les communications sont chiffrées en transit (TLS). Les sauvegardes sont répliquées
-              via Litestream vers Google Cloud Storage.
+              Les données sont hébergées sur Google Cloud Platform (Cloud Run, Cloud SQL et
+              Google Cloud Storage, région asia-northeast1). Les communications sont chiffrées
+              en transit (TLS). Les sauvegardes sont assurées par les sauvegardes Cloud SQL et
+              le stockage durable Google Cloud Storage.
             </p>
           </section>
         </div>

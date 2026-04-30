@@ -293,10 +293,10 @@ function NoteContent({ content }: { content: string }) {
  *  for rows without event_id (new uploads carry the id explicitly). */
 const ATTACHED_DOC_WINDOW_MS = 60_000
 
-/** Parse SQLite-style "YYYY-MM-DD HH:MM:SS" (no timezone) as UTC, same as
+/** Parse "YYYY-MM-DD HH:MM:SS" timestamps without timezone as UTC, same as
  *  Date's native handling for ISO strings. Without this, new Date(str)
  *  interprets it as LOCAL time and comparisons against ISO timestamps
- *  drift by the local TZ offset — blowing past the 60s attach window. */
+ *  drift by the local TZ offset, blowing past the 60s attach window. */
 function parseUtcMs(s: string): number {
   return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z').getTime()
 }

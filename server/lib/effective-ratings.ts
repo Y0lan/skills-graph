@@ -1,6 +1,5 @@
-import { getDb } from './db.js'
-import { safeJsonParse } from './types.js'
-
+import { getDb } from './db.js';
+import { safeJsonParse } from './types.js';
 /**
  * Effective Ratings Module — the ONE true seam for the
  * `{ ai, roleAware, manual }` merge.
@@ -48,44 +47,40 @@ import { safeJsonParse } from './types.js'
  *
  * Two adapters means a real seam, per the LANGUAGE.md principle.
  */
-
-export type EffectiveRatingsMode = 'current-poste' | 'cross-poste-baseline'
-
+export type EffectiveRatingsMode = 'current-poste' | 'cross-poste-baseline';
 export interface EffectiveRatingsSources {
-  ai: boolean
-  roleAware: boolean
-  manual: boolean
+    ai: boolean;
+    roleAware: boolean;
+    manual: boolean;
 }
-
 export interface EffectiveRatings {
-  ratings: Record<string, number>
-  /** What was non-empty in the underlying row, regardless of mode.
-   *  Reading "did this candidate self-evaluate?" → check
-   *  `availableSources.manual`. */
-  availableSources: EffectiveRatingsSources
-  /** What actually contributed to the merged ratings. With
-   *  `cross-poste-baseline`, `mergedSources.roleAware === false`
-   *  even when `availableSources.roleAware === true`. Reading
-   *  "is this score role-calibrated?" → check
-   *  `mergedSources.roleAware`. */
-  mergedSources: EffectiveRatingsSources
+    ratings: Record<string, number>;
+    /** What was non-empty in the underlying row, regardless of mode.
+     *  Reading "did this candidate self-evaluate?" → check
+     *  `availableSources.manual`. */
+    availableSources: EffectiveRatingsSources;
+    /** What actually contributed to the merged ratings. With
+     *  `cross-poste-baseline`, `mergedSources.roleAware === false`
+     *  even when `availableSources.roleAware === true`. Reading
+     *  "is this score role-calibrated?" → check
+     *  `mergedSources.roleAware`. */
+    mergedSources: EffectiveRatingsSources;
 }
-
 /** Raw column values, either as JSON strings (typical DB shape) or
  *  pre-parsed records. Pre-parsing is supported for the hot-loop
  *  case where the caller already parsed once for other UI fields. */
 export interface RawRatingColumns {
-  ai: string | Record<string, number> | null
-  roleAware: string | Record<string, number> | null
-  manual: string | Record<string, number> | null
+    ai: string | Record<string, number> | null;
+    roleAware: string | Record<string, number> | null;
+    manual: string | Record<string, number> | null;
 }
-
 function parseColumn(v: string | Record<string, number> | null): Record<string, number> {
-  if (v == null) return {}
-  if (typeof v === 'string') return safeJsonParse<Record<string, number>>(v, {})
-  return v
+    if (v == null)
+        return {};
+    if (typeof v === 'string')
+        return safeJsonParse<Record<string, number>>(v, {});
+    return v;
 }
-
 /**
  * In-memory variant — given pre-loaded raw column values + a mode,
  * return the merged ratings + source bookkeeping. Pure; no DB I/O.
@@ -94,40 +89,32 @@ function parseColumn(v: string | Record<string, number> | null): Record<string, 
  * candidates list, cross-poste comparison) so each row doesn\'t
  * trigger an extra round-trip.
  */
-export function mergeEffectiveRatings(
-  raw: RawRatingColumns,
-  mode: EffectiveRatingsMode = 'current-poste',
-): EffectiveRatings {
-  const ai = parseColumn(raw.ai)
-  const roleAware = parseColumn(raw.roleAware)
-  const manual = parseColumn(raw.manual)
-
-  const availableSources: EffectiveRatingsSources = {
-    ai: Object.keys(ai).length > 0,
-    roleAware: Object.keys(roleAware).length > 0,
-    manual: Object.keys(manual).length > 0,
-  }
-
-  // Precedence: manual > role-aware > ai. In `cross-poste-baseline`
-  // mode, role-aware is excluded entirely (it was calibrated to a
-  // different poste than the comparison target).
-  const ratings = mode === 'cross-poste-baseline'
-    ? { ...ai, ...manual }
-    : { ...ai, ...roleAware, ...manual }
-
-  const mergedSources: EffectiveRatingsSources = {
-    ai: availableSources.ai,
-    // In cross-poste-baseline mode, role-aware never contributes,
-    // even when present in the DB. Callers checking
-    // `mergedSources.roleAware` see the truth of what was scored
-    // against, not what was available.
-    roleAware: mode === 'cross-poste-baseline' ? false : availableSources.roleAware,
-    manual: availableSources.manual,
-  }
-
-  return { ratings, availableSources, mergedSources }
+export function mergeEffectiveRatings(raw: RawRatingColumns, mode: EffectiveRatingsMode = 'current-poste'): EffectiveRatings {
+    const ai = parseColumn(raw.ai);
+    const roleAware = parseColumn(raw.roleAware);
+    const manual = parseColumn(raw.manual);
+    const availableSources: EffectiveRatingsSources = {
+        ai: Object.keys(ai).length > 0,
+        roleAware: Object.keys(roleAware).length > 0,
+        manual: Object.keys(manual).length > 0,
+    };
+    // Precedence: manual > role-aware > ai. In `cross-poste-baseline`
+    // mode, role-aware is excluded entirely (it was calibrated to a
+    // different poste than the comparison target).
+    const ratings = mode === 'cross-poste-baseline'
+        ? { ...ai, ...manual }
+        : { ...ai, ...roleAware, ...manual };
+    const mergedSources: EffectiveRatingsSources = {
+        ai: availableSources.ai,
+        // In cross-poste-baseline mode, role-aware never contributes,
+        // even when present in the DB. Callers checking
+        // `mergedSources.roleAware` see the truth of what was scored
+        // against, not what was available.
+        roleAware: mode === 'cross-poste-baseline' ? false : availableSources.roleAware,
+        manual: availableSources.manual,
+    };
+    return { ratings, availableSources, mergedSources };
 }
-
 /**
  * DB-backed variant — given a candidatureId, query the three columns
  * and merge. Returns empty ratings + all-false sources for unknown
@@ -135,11 +122,8 @@ export function mergeEffectiveRatings(
  * read `availableSources.manual === false && availableSources.ai === false`
  * to detect it).
  */
-export function loadEffectiveRatings(
-  candidatureId: string,
-  mode: EffectiveRatingsMode = 'current-poste',
-): EffectiveRatings {
-  const row = getDb().prepare(`
+export async function loadEffectiveRatings(candidatureId: string, mode: EffectiveRatingsMode = 'current-poste'): Promise<EffectiveRatings> {
+    const row = await getDb().prepare(`
     SELECT
       cand.ratings AS manual,
       cand.ai_suggestions AS ai,
@@ -148,18 +132,13 @@ export function loadEffectiveRatings(
     JOIN candidates cand ON cand.id = c.candidate_id
     WHERE c.id = ?
   `).get(candidatureId) as {
-    manual: string | null
-    ai: string | null
-    role_aware: string | null
-  } | undefined
-
-  if (!row) {
-    const empty: EffectiveRatingsSources = { ai: false, roleAware: false, manual: false }
-    return { ratings: {}, availableSources: empty, mergedSources: empty }
-  }
-
-  return mergeEffectiveRatings(
-    { ai: row.ai, roleAware: row.role_aware, manual: row.manual },
-    mode,
-  )
+        manual: string | null;
+        ai: string | null;
+        role_aware: string | null;
+    } | undefined;
+    if (!row) {
+        const empty: EffectiveRatingsSources = { ai: false, roleAware: false, manual: false };
+        return { ratings: {}, availableSources: empty, mergedSources: empty };
+    }
+    return mergeEffectiveRatings({ ai: row.ai, roleAware: row.role_aware, manual: row.manual }, mode);
 }

@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import crypto from 'crypto'
-import Database from 'better-sqlite3'
+import Database from '../../tests/helpers/postgres-sync-test-db.js'
 import express from 'express'
 import supertest from 'supertest'
 
@@ -35,12 +35,12 @@ vi.mock('../middleware/require-lead.js', async () => {
   return { ...actual, requireLead: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next() }
 })
 
-const { initDatabase, getDb, DB_PATH } = await import('../lib/db.js')
+const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
 const { startRun, finishRun } = await import('../lib/extraction-runs.js')
 const { putAsset } = await import('../lib/asset-storage.js')
 
 function preSeed() {
-  const db = new Database(DB_PATH)
+  const db = new Database(TEST_DATABASE_HANDLE)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -102,15 +102,15 @@ function mockProfile() {
 }
 
 describe('Phase 8: re-extract + history + diff', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     preSeed()
-    initDatabase()
+    await initDatabase()
   })
-  afterAll(() => {
-    try { getDb().close() } catch { /* ignore */ }
+  afterAll(async () => {
+    try { await getDb().close() } catch { /* ignore */ }
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
     mockExtractText.mockResolvedValue({ text: 'A'.repeat(200) })
   })
@@ -126,7 +126,7 @@ describe('Phase 8: re-extract + history + diff', () => {
 
     it('happy path: runs pipeline, returns status', async () => {
       const cid = seedCandidateWithPoste()
-      putAsset({ candidateId: cid, kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
+      await putAsset({ candidateId: cid, kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
 
       mockCreate.mockResolvedValueOnce(mockToolResponse())
       mockCreate.mockResolvedValueOnce(mockProfile())
@@ -139,7 +139,7 @@ describe('Phase 8: re-extract + history + diff', () => {
 
     it('returns 409 when another extraction is running (CAS lock)', async () => {
       const cid = seedCandidateWithPoste()
-      putAsset({ candidateId: cid, kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
+      await putAsset({ candidateId: cid, kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
       // Manually mark running
       getDb().prepare("UPDATE candidates SET extraction_status = 'running' WHERE id = ?").run(cid)
 
@@ -153,8 +153,8 @@ describe('Phase 8: re-extract + history + diff', () => {
   describe('GET /candidates/:id/extraction-runs', () => {
     it('returns metadata only (no payloads)', async () => {
       const cid = seedCandidateWithPoste()
-      const rid = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-      finishRun({ runId: rid, status: 'success', payload: { huge: 'X'.repeat(10000) } })
+      const rid = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+      await finishRun({ runId: rid, status: 'success', payload: { huge: 'X'.repeat(10000) } })
 
       const app = await buildApp()
       const res = await supertest(app).get(`/api/recruitment/candidates/${cid}/extraction-runs`)
@@ -167,8 +167,8 @@ describe('Phase 8: re-extract + history + diff', () => {
     it('respects limit param', async () => {
       const cid = seedCandidateWithPoste()
       for (let i = 0; i < 5; i++) {
-        const rid = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-        finishRun({ runId: rid, status: 'success', payload: { i } })
+        const rid = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+        await finishRun({ runId: rid, status: 'success', payload: { i } })
       }
       const app = await buildApp()
       const res = await supertest(app).get(`/api/recruitment/candidates/${cid}/extraction-runs?limit=3`)
@@ -179,8 +179,8 @@ describe('Phase 8: re-extract + history + diff', () => {
   describe('GET /extraction-runs/:runId/payload', () => {
     it('returns payload when present', async () => {
       const cid = seedCandidateWithPoste()
-      const rid = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-      finishRun({ runId: rid, status: 'success', payload: { ratings: { java: 4 } } })
+      const rid = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+      await finishRun({ runId: rid, status: 'success', payload: { ratings: { java: 4 } } })
 
       const app = await buildApp()
       const res = await supertest(app).get(`/api/recruitment/extraction-runs/${rid}/payload`)
@@ -190,8 +190,8 @@ describe('Phase 8: re-extract + history + diff', () => {
 
     it('410 Gone when payload has been pruned', async () => {
       const cid = seedCandidateWithPoste()
-      const rid = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-      finishRun({ runId: rid, status: 'success', payload: { ratings: { java: 4 } } })
+      const rid = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+      await finishRun({ runId: rid, status: 'success', payload: { ratings: { java: 4 } } })
       getDb().prepare('UPDATE cv_extraction_runs SET payload = NULL WHERE id = ?').run(rid)
 
       const app = await buildApp()
@@ -210,10 +210,10 @@ describe('Phase 8: re-extract + history + diff', () => {
   describe('POST /extraction-runs/compare', () => {
     it('diffs two skill runs', async () => {
       const cid = seedCandidateWithPoste()
-      const r1 = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-      finishRun({ runId: r1, status: 'success', payload: { ratings: { java: 3 } } })
-      const r2 = startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
-      finishRun({ runId: r2, status: 'success', payload: { ratings: { java: 4, python: 3 } } })
+      const r1 = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+      await finishRun({ runId: r1, status: 'success', payload: { ratings: { java: 3 } } })
+      const r2 = await startRun({ candidateId: cid, kind: 'skills_baseline', promptVersion: 2, model: 't' })
+      await finishRun({ runId: r2, status: 'success', payload: { ratings: { java: 4, python: 3 } } })
 
       const app = await buildApp()
       const res = await supertest(app).post('/api/recruitment/extraction-runs/compare').send({ runIdA: r1, runIdB: r2 })
@@ -225,10 +225,10 @@ describe('Phase 8: re-extract + history + diff', () => {
 
     it('diffs two profile runs', async () => {
       const cid = seedCandidateWithPoste()
-      const r1 = startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 't' })
-      finishRun({ runId: r1, status: 'success', payload: { identity: { fullName: { value: 'Old Name', humanLockedAt: null } } } })
-      const r2 = startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 't' })
-      finishRun({ runId: r2, status: 'success', payload: { identity: { fullName: { value: 'New Name', humanLockedAt: null } } } })
+      const r1 = await startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 't' })
+      await finishRun({ runId: r1, status: 'success', payload: { identity: { fullName: { value: 'Old Name', humanLockedAt: null } } } })
+      const r2 = await startRun({ candidateId: cid, kind: 'profile', promptVersion: 2, model: 't' })
+      await finishRun({ runId: r2, status: 'success', payload: { identity: { fullName: { value: 'New Name', humanLockedAt: null } } } })
 
       const app = await buildApp()
       const res = await supertest(app).post('/api/recruitment/extraction-runs/compare').send({ runIdA: r1, runIdB: r2 })
