@@ -3,7 +3,7 @@
 # ── Stage 1: build ────────────────────────────────────────────────────
 # Compiles TypeScript + Vite. Dev deps stay in this stage only.
 # BuildKit cache mounts persist npm + vite caches between CI runs.
-FROM node:22-slim AS builder
+FROM node:22-slim AS build-base
 WORKDIR /app
 
 COPY package*.json ./
@@ -15,8 +15,13 @@ RUN --mount=type=cache,target=/app/node_modules/.vite,sharing=locked \
     --mount=type=cache,target=/app/node_modules/.cache,sharing=locked \
     npm run build
 
+# Ops image: keeps scripts + dev dependencies for one-off migrations.
+# Do not deploy it as the web runtime.
+FROM build-base AS ops
+
 # Drop dev dependencies — prod image only needs runtime deps.
 # Keep the npm cache mount so this stage reuses downloads.
+FROM build-base AS builder
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm prune --omit=dev --legacy-peer-deps
 
