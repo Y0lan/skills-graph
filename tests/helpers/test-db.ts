@@ -1,14 +1,40 @@
 import pg from 'pg'
+import crypto from 'crypto'
 import Database from './postgres-sync-test-db.js'
 
+function quoteIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function scopedUrl(baseUrl: string, schemaName: string): string {
+  const url = new URL(baseUrl)
+  url.searchParams.set('options', `-csearch_path=${schemaName},public`)
+  return url.toString()
+}
+
 export async function createTestDb() {
-  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 })
+  const globals = globalThis as unknown as {
+    __skillRadarBaseDatabaseUrl?: string
+    __skillRadarDatabaseUrl?: string
+  }
+  const baseUrl = globals.__skillRadarBaseDatabaseUrl ?? process.env.DATABASE_URL
+  if (!baseUrl)
+    throw new Error('[test-db] DATABASE_URL is required')
+  const schemaName = `helper_${crypto.randomUUID().replace(/-/g, '')}`
+  const pool = new pg.Pool({ connectionString: baseUrl, max: 1 })
   try {
-    await pool.query('DROP SCHEMA IF EXISTS public CASCADE')
-    await pool.query('CREATE SCHEMA public')
+    const { rows } = await pool.query('SELECT current_database() AS name')
+    const databaseName = String(rows[0]?.name ?? '')
+    if (!databaseName.includes('test')) {
+      throw new Error(`[test-db] Refusing to use non-test database: ${databaseName}`)
+    }
+    await pool.query(`CREATE SCHEMA ${quoteIdentifier(schemaName)}`)
   } finally {
     await pool.end()
   }
+  const url = scopedUrl(baseUrl, schemaName)
+  process.env.DATABASE_URL = url
+  globals.__skillRadarDatabaseUrl = url
 
   const db = new Database('postgres-test-helper')
   db.exec(`

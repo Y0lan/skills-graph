@@ -132,6 +132,7 @@ describe('findPendingScheduledEmails query shape', () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sched-email-'))
     db = new Database(path.join(tmp, 'test.db'))
     db.exec(`
+      DROP TABLE IF EXISTS candidature_events;
       CREATE TABLE candidature_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         candidature_id TEXT NOT NULL,

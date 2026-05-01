@@ -1581,7 +1581,7 @@ protectedRouter.patch('/candidatures/:id/stages/:stage/data', requireSameOrigin,
     }
     // Read existing row (or empty), merge, re-validate full schema.
     const existingRow = await getDb().prepare(`
-      SELECT data_json, updated_at FROM candidature_stage_data
+      SELECT data_json, updated_at::text AS updated_at FROM candidature_stage_data
        WHERE candidature_id = ? AND stage = ?
     `).get(req.params.id, stageInput) as {
         data_json: string;
@@ -1634,7 +1634,7 @@ protectedRouter.patch('/candidatures/:id/stages/:stage/data', requireSameOrigin,
             SET data_json  = excluded.data_json,
                 updated_at = now(),
                 updated_by = excluded.updated_by
-          RETURNING updated_at
+          RETURNING updated_at::text AS updated_at
         `).get(req.params.id, stageInput, dataJson, slug) as {
                 updated_at: string;
             };

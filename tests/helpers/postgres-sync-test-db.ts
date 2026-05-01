@@ -25,10 +25,26 @@ class Statement {
   }
 }
 
+function quoteIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function resetCurrentSchema(): void {
+  const row = __syncDbForTests.all<{ name: string }>('SELECT current_schema() AS name')[0]
+  const schemaName = row?.name
+  if (!schemaName) return
+  const quoted = quoteIdentifier(schemaName)
+  __syncDbForTests.exec(`DROP SCHEMA IF EXISTS ${quoted} CASCADE; CREATE SCHEMA ${quoted}`)
+}
+
 export default class Database {
   lastInsertRowid: number | string | null = null
 
-  constructor(_filename?: string) {}
+  constructor(filename?: string) {
+    if (filename && filename !== 'postgres' && filename !== 'postgres-test-helper') {
+      resetCurrentSchema()
+    }
+  }
 
   prepare(sql: string): Statement {
     return new Statement(sql, this)

@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { SkillFormSchema, type SkillFormValues } from '@/lib/schemas'
 
@@ -13,10 +13,10 @@ export function useSkillForm({ defaultValues }: UseSkillFormOptions) {
     mode: 'onChange',
   })
 
-  const ratings = form.watch('ratings')
-  const experience = form.watch('experience')
-  const skippedCategories = form.watch('skippedCategories')
-  const declinedCategories = form.watch('declinedCategories')
+  const ratings = useWatch({ control: form.control, name: 'ratings' })
+  const experience = useWatch({ control: form.control, name: 'experience' })
+  const skippedCategories = useWatch({ control: form.control, name: 'skippedCategories' })
+  const declinedCategories = useWatch({ control: form.control, name: 'declinedCategories' })
 
   function setRating(skillId: string, value: number) {
     form.setValue(`ratings.${skillId}`, value, { shouldDirty: true })

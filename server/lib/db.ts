@@ -179,6 +179,10 @@ function translateSql(sql: string): string {
 function isSyncTestMode(): boolean {
     return process.env.POSTGRES_SYNC_TEST_MODE === 'true';
 }
+function configuredDatabaseUrl(): string | undefined {
+    const scoped = (globalThis as unknown as { __skillRadarDatabaseUrl?: string }).__skillRadarDatabaseUrl;
+    return scoped || process.env.DATABASE_URL;
+}
 function sqlLiteral(value: unknown): string {
     if (value === null || value === undefined)
         return 'NULL';
@@ -288,7 +292,7 @@ function injectLiteralParams(sql: string, params: unknown[]): string {
     return convertPlaceholders(out);
 }
 function syncPsql(sql: string): string {
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString = configuredDatabaseUrl();
     if (!connectionString)
         throw new Error('DATABASE_URL is required for Postgres test queries.');
     try {
@@ -397,17 +401,17 @@ export class AsyncStmt<TDefault = unknown> {
         this.sql = sql;
     }
     all<T = TDefault>(...params: unknown[]): Promise<T[]> {
-        if (isSyncTestMode())
+        if (isSyncTestMode() && !txClientStore.getStore())
             return syncAll<T>(this.sql, normalizeParams(params)) as unknown as Promise<T[]>;
         return query(this.sql, normalizeParams(params)).then((result) => result.rows as T[]);
     }
     get<T = TDefault>(...params: unknown[]): Promise<T | undefined> {
-        if (isSyncTestMode())
+        if (isSyncTestMode() && !txClientStore.getStore())
             return syncAll<T>(this.sql, normalizeParams(params))[0] as unknown as Promise<T | undefined>;
         return query(this.sql, normalizeParams(params)).then((result) => result.rows[0] as T | undefined);
     }
     run(...params: unknown[]): Promise<DbRunResult> {
-        if (isSyncTestMode())
+        if (isSyncTestMode() && !txClientStore.getStore())
             return syncRun(this.sql, normalizeParams(params)) as unknown as Promise<DbRunResult>;
         return query(this.sql, normalizeParams(params)).then((result) => {
             const first = result.rows[0] as {
@@ -528,7 +532,7 @@ async function applySchemaAndSeedData(): Promise<void> {
 export async function initDatabase(): Promise<void> {
     if (db)
         return;
-    const connectionString = process.env.DATABASE_URL;
+    const connectionString = configuredDatabaseUrl();
     if (!connectionString) {
         throw new Error('DATABASE_URL is required. Skill Radar starts only with Postgres.');
     }
