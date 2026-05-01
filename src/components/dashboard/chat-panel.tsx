@@ -301,7 +301,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
                   <span className="italic">Toute l'équipe</span>
                 </button>
                 {filteredMembers
-                  .filter(m => m.submittedAt)
+                  .filter(m => m.status === 'submitted')
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map(m => (
                     <button

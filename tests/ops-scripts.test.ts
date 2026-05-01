@@ -79,9 +79,30 @@ describe('ops scripts', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('imports team evaluations from restored SQLite only with --apply and is idempotent', async () => {
+  it('imports team evaluations from restored SQLite, then prunes pre-cutover test answers explicitly', async () => {
     const sourcePath = createSourceSqlite()
-    const dryRun = await importTeamEvaluationsFromSqlite({ sourcePath, apply: false, initialize: false })
+    await getDb().prepare(`
+      INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (slug) DO UPDATE SET ratings = EXCLUDED.ratings
+    `).run('alexandre-thomas', JSON.stringify({ java: 5 }), '{}', '[]', '[]', '2026-02-01T00:00:00.000Z', 'test data')
+    await getDb().prepare(`
+      INSERT INTO skill_changes (slug, skill_id, old_level, new_level)
+      VALUES (?, ?, ?, ?)
+    `).run('alexandre-thomas', 'java', 0, 5)
+    await getDb().prepare(`
+      INSERT INTO comparison_summaries (slug_a, slug_b, summary)
+      VALUES (?, ?, ?)
+      ON CONFLICT (slug_a, slug_b) DO UPDATE SET summary = EXCLUDED.summary
+    `).run('alexandre-thomas', 'yolan-maldonado', 'stale')
+
+    const dryRun = await importTeamEvaluationsFromSqlite({
+      sourcePath,
+      apply: false,
+      initialize: false,
+      pruneNonSource: true,
+      resetSkillChanges: true,
+    })
     expect(dryRun).toMatchObject({
       apply: false,
       totalSourceRows: 2,
@@ -91,14 +112,33 @@ describe('ops scripts', () => {
       skippedUnknownRows: 1,
       importedRows: 0,
     })
+    expect(dryRun.prunedEvaluationRows).toBeGreaterThanOrEqual(1)
+    expect(dryRun.resetSkillChangeRows).toBeGreaterThanOrEqual(1)
+    expect(dryRun.clearedComparisonRows).toBeGreaterThanOrEqual(1)
     expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('yolan-maldonado')).toBeUndefined()
 
-    const applied = await importTeamEvaluationsFromSqlite({ sourcePath, apply: true, initialize: false })
-    const appliedAgain = await importTeamEvaluationsFromSqlite({ sourcePath, apply: true, initialize: false })
+    const applied = await importTeamEvaluationsFromSqlite({
+      sourcePath,
+      apply: true,
+      initialize: false,
+      pruneNonSource: true,
+      resetSkillChanges: true,
+    })
+    const appliedAgain = await importTeamEvaluationsFromSqlite({
+      sourcePath,
+      apply: true,
+      initialize: false,
+      pruneNonSource: true,
+      resetSkillChanges: true,
+    })
     expect(applied.importedRows).toBe(1)
     expect(appliedAgain.importedRows).toBe(1)
     expect(applied.skippedUnknownRows).toBe(1)
     expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('legacy-ex-team-member')).toBeUndefined()
+    expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('alexandre-thomas')).toBeUndefined()
+    expect(await getDb().prepare('SELECT slug FROM skill_changes WHERE slug = ?').get('alexandre-thomas')).toBeUndefined()
+    expect(await getDb().prepare('SELECT slug_a FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?')
+      .get('alexandre-thomas', 'alexandre-thomas')).toBeUndefined()
 
     const row = await getDb().prepare('SELECT ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary FROM evaluations WHERE slug = ?')
       .get('yolan-maldonado') as {

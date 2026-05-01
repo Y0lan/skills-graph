@@ -33,7 +33,7 @@ interface PersonalOverviewProps {
 }
 
 export default function PersonalOverview({ aggregate, teamMembers, teamCategories, isOwnProfile = true, poleFilterActive, onFindExpert, onCompareChange, onOpenChat }: PersonalOverviewProps) {
-  const { memberId, memberName, submittedAt, categories, topGaps, topStrengths } = aggregate
+  const { memberId, memberName, submittedAt, status, categories, topGaps, topStrengths } = aggregate
   const hasRatings = aggregate.hasRatings ?? categories.some((c) => c.avgRank > 0)
   const [view, setView] = useChartView()
   const [compareSlug, setCompareSlug] = useState<string | null>(null)
@@ -46,7 +46,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
 
   const comparableMembers = useMemo(() => {
     if (!teamMembers) return []
-    return teamMembers.filter(m => m.slug !== memberId && m.submittedAt)
+    return teamMembers.filter(m => m.slug !== memberId && m.status === 'submitted')
   }, [teamMembers, memberId])
 
   // Group comparable members by pole for the dropdown
@@ -318,7 +318,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
     )
   }
 
-  const isDraft = !submittedAt
+  const isDraft = status !== 'submitted'
 
   // Header stats
   const ratedCategories = categories.filter(c => c.avgRank > 0)
@@ -534,7 +534,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
           <div className="rounded-md border bg-muted/40 px-4 py-3 text-sm">
             {profileSummary ? (
               <p className="text-muted-foreground italic">{profileSummary}</p>
-            ) : isOwnProfile && submittedAt ? (
+            ) : isOwnProfile && status === 'submitted' ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -545,7 +545,7 @@ export default function PersonalOverview({ aggregate, teamMembers, teamCategorie
                 {summaryLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                 Générer ma synthèse
               </Button>
-            ) : isOwnProfile && !submittedAt ? (
+            ) : isOwnProfile && status !== 'submitted' ? (
               <p className="text-muted-foreground text-xs">
                 Terminez votre évaluation pour générer une synthèse.{' '}
                 <Link to={`/form/${memberId}`} className="text-primary hover:underline">Reprendre →</Link>

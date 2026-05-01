@@ -23,5 +23,6 @@ export function useTeamStatus(enabled: boolean) {
   }, [enabled])
 
   const submittedCount = [...statusMap.values()].filter(s => s === 'submitted').length
-  return { statusMap, submittedCount }
+  const draftCount = [...statusMap.values()].filter(s => s === 'draft').length
+  return { statusMap, submittedCount, draftCount }
 }

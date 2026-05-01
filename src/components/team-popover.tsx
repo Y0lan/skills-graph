@@ -16,7 +16,7 @@ interface TeamPopoverProps {
 export function TeamPopover({ currentSlug }: TeamPopoverProps) {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
-  const { statusMap, submittedCount } = useTeamStatus(open)
+  const { statusMap, submittedCount, draftCount } = useTeamStatus(open)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -29,7 +29,7 @@ export function TeamPopover({ currentSlug }: TeamPopoverProps) {
       <PopoverContent align="start" className="w-72 p-0">
         <div className="border-b px-3 py-2 flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
-            {submittedCount}/{teamMembers.length} évaluations soumises
+            {submittedCount} complètes · {draftCount} brouillon{draftCount > 1 ? 's' : ''}
           </p>
           <button
             type="button"

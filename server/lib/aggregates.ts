@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { getSkillCategories } from './catalog.js';
 import { teamMembers } from '../data/team-roster.js';
 import { getAllEvaluations, getDb } from './db.js';
+import { computeEvaluationProgress, type EvaluationStatus } from './evaluation-progress.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TARGETS_FILE = path.join(__dirname, '..', 'data', 'targets.json');
 function readTargets(): Record<string, Record<string, number>> {
@@ -61,6 +62,10 @@ interface MemberAggregateResponse {
     memberName: string;
     role: string;
     submittedAt: string | null;
+    status: EvaluationStatus;
+    answeredCount: number;
+    coveredCount: number;
+    totalCount: number;
     hasRatings: boolean;
     categories: CategoryAggregateResponse[];
     topGaps: GapResponse[];
@@ -86,6 +91,10 @@ interface TeamMemberAggregateResponse {
     team: string;
     pole: string | null;
     submittedAt: string | null;
+    status: EvaluationStatus;
+    answeredCount: number;
+    coveredCount: number;
+    totalCount: number;
     categoryAverages: Record<string, number>;
     skillRatings: Record<string, number>;
     topGaps: {
@@ -117,8 +126,9 @@ export async function computeMemberAggregate(slug: string): Promise<MemberAggreg
     const targets = readTargets();
     const memberData = allRatings[slug];
     const hasRatings = !!memberData && Object.keys(memberData.ratings).length > 0;
-    // Get submitted members for team average calculation
-    const submittedEntries = Object.entries(allRatings).filter(([, data]) => data.submittedAt !== null);
+    const memberProgress = computeEvaluationProgress(memberData ?? null, skillCategories);
+    // Team averages use complete evaluations only; stale submitted_at flags do not count.
+    const submittedEntries = Object.entries(allRatings).filter(([, data]) => computeEvaluationProgress(data, skillCategories).status === 'submitted');
     const memberRatings = memberData?.ratings ?? {};
     const roleTargets = targets[member.role] ?? {};
     const categories: CategoryAggregateResponse[] = skillCategories.map((cat) => {
@@ -165,7 +175,11 @@ export async function computeMemberAggregate(slug: string): Promise<MemberAggreg
         memberId: member.slug,
         memberName: member.name,
         role: member.role,
-        submittedAt: memberData?.submittedAt ?? null,
+        submittedAt: memberProgress.status === 'submitted' ? memberData?.submittedAt ?? null : null,
+        status: memberProgress.status,
+        answeredCount: memberProgress.answeredCount,
+        coveredCount: memberProgress.coveredCount,
+        totalCount: memberProgress.totalCount,
         hasRatings,
         categories,
         topGaps,
@@ -194,7 +208,16 @@ export async function computeTeamAggregate(pole?: string): Promise<TeamAggregate
         ? teamMembers.filter(m => m.pole === pole || m.pole === null)
         : teamMembers;
     const filteredSlugs = new Set(filteredMembers.map(m => m.slug));
-    const submittedEntries = Object.entries(allRatings).filter(([slug, data]) => data.submittedAt !== null && filteredSlugs.has(slug));
+    const progressBySlug = new Map<string, ReturnType<typeof computeEvaluationProgress>>();
+    for (const member of filteredMembers) {
+        progressBySlug.set(member.slug, computeEvaluationProgress(allRatings[member.slug] ?? null, allSkillCategories));
+    }
+    const submittedEntries = Object.entries(allRatings).filter(([slug, data]) => {
+        if (!filteredSlugs.has(slug))
+            return false;
+        const progress = progressBySlug.get(slug) ?? computeEvaluationProgress(data, allSkillCategories);
+        return progress.status === 'submitted';
+    });
     const submittedCount = submittedEntries.length;
     // Team-level category stats
     const categories: TeamCategoryAggregateResponse[] = skillCategories.map((cat) => {
@@ -275,6 +298,7 @@ export async function computeTeamAggregate(pole?: string): Promise<TeamAggregate
     const members: TeamMemberAggregateResponse[] = filteredMembers.map((member) => {
         const memberData = allRatings[member.slug];
         const memberRatings = memberData?.ratings ?? {};
+        const progress = progressBySlug.get(member.slug) ?? computeEvaluationProgress(memberData ?? null, allSkillCategories);
         const roleTargets = targets[member.role] ?? {};
         const categoryAverages: Record<string, number> = {};
         for (const cat of skillCategories) {
@@ -320,7 +344,11 @@ export async function computeTeamAggregate(pole?: string): Promise<TeamAggregate
             role: member.role,
             team: member.team,
             pole: member.pole,
-            submittedAt: memberData?.submittedAt ?? null,
+            submittedAt: progress.status === 'submitted' ? memberData?.submittedAt ?? null : null,
+            status: progress.status,
+            answeredCount: progress.answeredCount,
+            coveredCount: progress.coveredCount,
+            totalCount: progress.totalCount,
             categoryAverages,
             skillRatings,
             topGaps,

@@ -5,6 +5,7 @@ import { generateAndSaveSummary } from '../lib/summary.js';
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js';
 import { getSkillById } from '../lib/catalog.js';
 import { scheduleAllCandidatureScoreRecalculation } from '../lib/scoring-helpers.js';
+import { computeEvaluationProgress } from '../lib/evaluation-progress.js';
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug));
 export const ratingsRouter = Router();
 
@@ -16,13 +17,9 @@ function scheduleRecruitScoresAfterTeamChange(reason: string): void {
 ratingsRouter.get('/status', async (_req, res) => {
     const all = await getAllEvaluations();
     const result: Record<string, string> = {};
-    for (const [slug, eval_] of Object.entries(all)) {
-        if (eval_.submittedAt)
-            result[slug] = 'submitted';
-        else if (Object.keys(eval_.ratings).length > 0)
-            result[slug] = 'draft';
-        else
-            result[slug] = 'none';
+    for (const member of teamMembers) {
+        const progress = computeEvaluationProgress(all[member.slug] ?? null);
+        result[member.slug] = progress.status;
     }
     res.json(result);
 });
@@ -125,6 +122,13 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, r
     const memberData = await getEvaluation(slug);
     if (!memberData || Object.keys(memberData.ratings).length === 0) {
         res.status(400).json({ error: 'Aucune évaluation à soumettre' });
+        return;
+    }
+    const progress = computeEvaluationProgress(memberData);
+    if (progress.status !== 'submitted') {
+        res.status(400).json({
+            error: `Évaluation incomplète : ${progress.coveredCount}/${progress.totalCount} questions couvertes`,
+        });
         return;
     }
     await submitEvaluation(slug);

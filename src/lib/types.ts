@@ -40,6 +40,10 @@ export interface MemberAggregateResponse {
   memberName: string
   role: string
   submittedAt: string | null
+  status: 'none' | 'draft' | 'submitted'
+  answeredCount: number
+  coveredCount: number
+  totalCount: number
   categories: CategoryAggregateResponse[]
   topGaps: GapResponse[]
   topStrengths: { categoryId: string; categoryLabel: string; avgRank: number }[]
@@ -89,6 +93,10 @@ export interface TeamMemberAggregateResponse {
   team: string
   pole: string | null
   submittedAt: string | null
+  status: 'none' | 'draft' | 'submitted'
+  answeredCount: number
+  coveredCount: number
+  totalCount: number
   categoryAverages: Record<string, number>
   skillRatings: Record<string, number>
   topGaps: { categoryId: string; gap: number }[]

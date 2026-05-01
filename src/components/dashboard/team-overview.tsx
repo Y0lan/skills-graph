@@ -63,7 +63,7 @@ export default function TeamOverview({
           <CardTitle>Vue d'ensemble de l'équipe</CardTitle>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
-              {submittedCount}/{teamSize} évaluations soumises
+              {submittedCount}/{teamSize} évaluations complètes
             </span>
             <ChartViewToggle view={view} onChange={setView} />
           </div>

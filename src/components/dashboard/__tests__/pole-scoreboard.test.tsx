@@ -16,6 +16,10 @@ function makeMember(overrides: Partial<TeamMemberAggregateResponse> = {}): TeamM
     team: 'Eng',
     pole: 'java_modernisation',
     submittedAt: '2026-04-01T00:00:00Z',
+    status: 'submitted',
+    answeredCount: 1,
+    coveredCount: 1,
+    totalCount: 1,
     lastActivityAt: '2026-04-01T00:00:00Z',
     progressionDelta: 0,
     categoryAverages: { 'core-engineering': 4 },
@@ -62,7 +66,7 @@ describe('PoleScoreboard', () => {
 
   it('shows 0/N evaluated when nobody in the pôle submitted', () => {
     const members = [
-      makeMember({ slug: 'a', pole: 'legacy', categoryAverages: { x: 0 }, submittedAt: null }),
+      makeMember({ slug: 'a', pole: 'legacy', categoryAverages: { x: 0 }, submittedAt: null, status: 'none' }),
     ]
     render(<PoleScoreboard members={members} />)
     expect(screen.getByText('Legacy (Adélia / IBMi)')).toBeInTheDocument()

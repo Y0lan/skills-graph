@@ -11,6 +11,8 @@ interface ImportArgs {
   sourcePath: string;
   apply: boolean;
   includeUnknownSlugs: boolean;
+  pruneNonSource: boolean;
+  resetSkillChanges: boolean;
 }
 
 interface SourceEvaluation {
@@ -33,28 +35,41 @@ export interface ImportTeamEvaluationsResult {
   skippedUnknownRows: number;
   slugs: string[];
   importedRows: number;
+  prunedEvaluationRows: number;
+  resetSkillChangeRows: number;
+  clearedComparisonRows: number;
   rescoredCandidatures: number;
 }
 
 function usage(): string {
   return `Usage:
-  SQLITE_PATH=/path/to/restored.db tsx scripts/import-team-evaluations-from-sqlite.ts [--apply] [--include-unknown-slugs]
-  tsx scripts/import-team-evaluations-from-sqlite.ts --source=/path/to/restored.db [--apply] [--include-unknown-slugs]
+  SQLITE_PATH=/path/to/restored.db tsx scripts/import-team-evaluations-from-sqlite.ts [--apply] [--include-unknown-slugs] [--prune-non-source] [--reset-skill-changes]
+  tsx scripts/import-team-evaluations-from-sqlite.ts --source=/path/to/restored.db [--apply] [--include-unknown-slugs] [--prune-non-source] [--reset-skill-changes]
 
 Dry-run is the default. --apply is required to mutate the app database.
-Unknown slugs from the historical SQLite source are reported but skipped by default.`;
+Unknown slugs from the historical SQLite source are reported but skipped by default.
+--prune-non-source deletes target evaluations that are not present in the imported source rows.
+--reset-skill-changes deletes team skill-up history, useful when the target DB contains pre-cutover test activity.`;
 }
 
 export function parseImportTeamEvaluationsArgs(argv: string[]): ImportArgs {
   let sourcePath = process.env.SQLITE_PATH ?? '';
   let apply = false;
   let includeUnknownSlugs = false;
+  let pruneNonSource = false;
+  let resetSkillChanges = false;
   for (const arg of argv) {
     if (arg === '--apply') {
       apply = true;
     }
     else if (arg === '--include-unknown-slugs') {
       includeUnknownSlugs = true;
+    }
+    else if (arg === '--prune-non-source') {
+      pruneNonSource = true;
+    }
+    else if (arg === '--reset-skill-changes') {
+      resetSkillChanges = true;
     }
     else if (arg.startsWith('--source=')) {
       sourcePath = arg.slice('--source='.length);
@@ -69,7 +84,7 @@ export function parseImportTeamEvaluationsArgs(argv: string[]): ImportArgs {
   }
   if (!sourcePath)
     throw new Error(`Missing SQLite source path.\n${usage()}`);
-  return { sourcePath, apply, includeUnknownSlugs };
+  return { sourcePath, apply, includeUnknownSlugs, pruneNonSource, resetSkillChanges };
 }
 
 function normalizeJson(raw: unknown, fallback: string): string {
@@ -85,7 +100,7 @@ function normalizeJson(raw: unknown, fallback: string): string {
 
 function hasNonEmptyRatings(rawJson: string): boolean {
   const ratings = JSON.parse(rawJson) as Record<string, unknown>;
-  return Object.values(ratings).some((level) => typeof level === 'number' && Number.isFinite(level) && level > 0);
+  return Object.values(ratings).some((level) => typeof level === 'number' && Number.isFinite(level) && level >= 0);
 }
 
 function sourceColumns(sqlite: Database.Database): Set<string> {
@@ -132,6 +147,8 @@ export async function importTeamEvaluationsFromSqlite(options: {
   sourcePath: string;
   apply?: boolean;
   includeUnknownSlugs?: boolean;
+  pruneNonSource?: boolean;
+  resetSkillChanges?: boolean;
   initialize?: boolean;
 }): Promise<ImportTeamEvaluationsResult> {
   const sourcePath = path.resolve(options.sourcePath);
@@ -142,6 +159,34 @@ export async function importTeamEvaluationsFromSqlite(options: {
   const rowsToImport = includeUnknownSlugs ? rows : rows.filter((row) => knownSlugs.has(row.slug));
   const knownTeamRows = rows.filter((row) => knownSlugs.has(row.slug)).length;
   const nonEmptyRatings = rows.filter((row) => hasNonEmptyRatings(row.ratings)).length;
+  let initializedTarget = false;
+  const ensureTargetDatabase = async () => {
+    if (!initializedTarget && options.initialize !== false) {
+      await initDatabase();
+      initializedTarget = true;
+    }
+  };
+  let prunedEvaluationRows = 0;
+  let resetSkillChangeRows = 0;
+  let clearedComparisonRows = 0;
+  const importSlugs = rowsToImport.map((row) => row.slug);
+  if (options.pruneNonSource || options.resetSkillChanges) {
+    await ensureTargetDatabase();
+    const targetDb = getDb();
+    if (options.pruneNonSource) {
+      const countSql = importSlugs.length > 0
+        ? 'SELECT COUNT(*) AS c FROM evaluations WHERE NOT (slug = ANY($1::text[]))'
+        : 'SELECT COUNT(*) AS c FROM evaluations';
+      const row = await targetDb.prepare(countSql).get(...(importSlugs.length > 0 ? [importSlugs] : [])) as { c: number } | undefined;
+      prunedEvaluationRows = row?.c ?? 0;
+    }
+    if (options.resetSkillChanges) {
+      const row = await targetDb.prepare('SELECT COUNT(*) AS c FROM skill_changes').get() as { c: number } | undefined;
+      resetSkillChangeRows = row?.c ?? 0;
+    }
+    const row = await targetDb.prepare('SELECT COUNT(*) AS c FROM comparison_summaries').get() as { c: number } | undefined;
+    clearedComparisonRows = row?.c ?? 0;
+  }
   if (!options.apply) {
     return {
       apply: false,
@@ -155,11 +200,13 @@ export async function importTeamEvaluationsFromSqlite(options: {
       skippedUnknownRows: rows.length - rowsToImport.length,
       slugs: rows.map((row) => row.slug),
       importedRows: 0,
+      prunedEvaluationRows,
+      resetSkillChangeRows,
+      clearedComparisonRows,
       rescoredCandidatures: 0,
     };
   }
-  if (options.initialize !== false)
-    await initDatabase();
+  await ensureTargetDatabase();
   const postgresDb = getDb();
   const upsert = postgresDb.prepare(`
     INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary)
@@ -180,6 +227,19 @@ export async function importTeamEvaluationsFromSqlite(options: {
     for (const row of rowsToImport) {
       await deleteComparisons.run(row.slug, row.slug);
     }
+    if (options.pruneNonSource) {
+      const deleteSql = importSlugs.length > 0
+        ? 'DELETE FROM evaluations WHERE NOT (slug = ANY($1::text[]))'
+        : 'DELETE FROM evaluations';
+      const result = await postgresDb.prepare(deleteSql).run(...(importSlugs.length > 0 ? [importSlugs] : []));
+      prunedEvaluationRows = result.changes;
+    }
+    if (options.resetSkillChanges) {
+      const result = await postgresDb.prepare('DELETE FROM skill_changes').run();
+      resetSkillChangeRows = result.changes;
+    }
+    const cleared = await postgresDb.prepare('DELETE FROM comparison_summaries').run();
+    clearedComparisonRows = cleared.changes;
   })();
   const rescored = await recalculateAllCandidatureScores('team-evaluations-sqlite-import');
   return {
@@ -194,6 +254,9 @@ export async function importTeamEvaluationsFromSqlite(options: {
     skippedUnknownRows: rows.length - rowsToImport.length,
     slugs: rows.map((row) => row.slug),
     importedRows: rowsToImport.length,
+    prunedEvaluationRows,
+    resetSkillChangeRows,
+    clearedComparisonRows,
     rescoredCandidatures: rescored.scored,
   };
 }

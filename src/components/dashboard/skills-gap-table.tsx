@@ -92,7 +92,7 @@ export default function SkillsGapTable({ members, categories }: SkillsGapTablePr
     const groups: MemberGroup[] = []
 
     for (const member of members) {
-      if (!member.submittedAt) continue
+      if (member.status !== 'submitted') continue
       const memberGaps: GapRow[] = []
       for (const g of member.topGaps) {
         if (g.gap <= 0) continue

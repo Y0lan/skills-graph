@@ -36,9 +36,9 @@ export default function PoleScoreboard({ members, poleFilter, onSelectPole }: Po
       const prev = byPole.get(pole) ?? { count: 0, submitted: 0, sumAvg: 0 }
       prev.count += 1
       const score = memberOverallAvg(m)
-      if (score > 0) {
+      if (m.status === 'submitted') {
         prev.submitted += 1
-        prev.sumAvg += score
+        if (score > 0) prev.sumAvg += score
       }
       byPole.set(pole, prev)
     }

@@ -23,7 +23,7 @@ export default function CategoryDeepDive({
 
   // Find the viewer member for overlay
   const viewer = viewerSlug
-    ? members.find((m) => m.slug === viewerSlug && m.submittedAt !== null)
+    ? members.find((m) => m.slug === viewerSlug && m.status === 'submitted')
     : undefined
 
   return (
@@ -36,7 +36,7 @@ export default function CategoryDeepDive({
         {skillCategories.filter((cat) => categories.some((c) => c.categoryId === cat.id)).map((cat) => {
           const catAgg = categories.find((c) => c.categoryId === cat.id)
 
-          const submittedMembers = members.filter((m) => m.submittedAt !== null)
+          const submittedMembers = members.filter((m) => m.status === 'submitted')
 
           // Strip parenthetical details from skill labels for readability
 

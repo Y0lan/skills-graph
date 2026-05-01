@@ -20,6 +20,7 @@ interface MemberRow {
   ratedCount: number
   totalCount: number
   submittedAt: string | null
+  status: 'none' | 'draft' | 'submitted'
   lastActivityAt: string | null
 }
 
@@ -39,6 +40,10 @@ interface AggregatesMember {
   team: string
   pole: string | null
   submittedAt: string | null
+  status: 'none' | 'draft' | 'submitted'
+  answeredCount: number
+  coveredCount: number
+  totalCount: number
   categoryAverages: Record<string, number>
   lastActivityAt: string | null
 }
@@ -110,6 +115,7 @@ export default function EquipePage() {
               ratedCount: 0,
               totalCount: catCount,
               submittedAt: null,
+              status: 'none',
               lastActivityAt: null,
             }
           }
@@ -118,7 +124,6 @@ export default function EquipePage() {
           const avgScore = avgs.length > 0
             ? Math.round((avgs.reduce((a, b) => a + b, 0) / avgs.length) * 100) / 100
             : null
-          const ratedCount = avgs.length
 
           return {
             slug: m.slug,
@@ -127,9 +132,10 @@ export default function EquipePage() {
             team: m.team,
             pole: m.pole,
             avgScore,
-            ratedCount,
-            totalCount: catCount,
+            ratedCount: agg.coveredCount,
+            totalCount: agg.totalCount,
             submittedAt: agg.submittedAt,
+            status: agg.status,
             lastActivityAt: agg.lastActivityAt,
           }
         })
@@ -181,7 +187,7 @@ export default function EquipePage() {
           cmp = (a.avgScore ?? -1) - (b.avgScore ?? -1)
           break
         case 'completion':
-          cmp = a.ratedCount - b.ratedCount
+          cmp = (a.totalCount > 0 ? a.ratedCount / a.totalCount : 0) - (b.totalCount > 0 ? b.ratedCount / b.totalCount : 0)
           break
         case 'lastEval':
           cmp = (a.lastActivityAt ?? '').localeCompare(b.lastActivityAt ?? '')
@@ -220,7 +226,7 @@ export default function EquipePage() {
         <div>
           <h1 className="text-xl font-semibold">Equipe</h1>
           <p className="text-sm text-muted-foreground">
-            {members.length} membres — {members.filter(m => m.submittedAt).length} evaluations soumises
+            {members.length} membres — {members.filter(m => m.status === 'submitted').length} evaluations completes
           </p>
         </div>
       </div>
@@ -325,6 +331,7 @@ export default function EquipePage() {
                         <span className="text-xs text-muted-foreground tabular-nums">
                           {m.ratedCount}/{m.totalCount}
                         </span>
+                        {m.status === 'draft' && <Badge variant="outline" className="text-[10px]">Brouillon</Badge>}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground tabular-nums">

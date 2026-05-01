@@ -194,7 +194,7 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
             </thead>
             <tbody>
               {filtered.map(member => {
-                const hasSubmitted = member.submittedAt !== null
+                const hasSubmitted = member.status === 'submitted'
                 const expanded = visibleExpandedSlug === member.slug
                 const score = memberOverallAvg(member)
                 const lastTouchAt = member.lastActivityAt ?? member.submittedAt
@@ -232,7 +232,8 @@ export default function TeamMembersGrid({ members, poleCategoryIds }: TeamMember
                           >
                             {member.name}
                           </Link>
-                          {!hasSubmitted && <Badge variant="outline" className="text-[10px]">En attente</Badge>}
+                          {member.status === 'draft' && <Badge variant="outline" className="text-[10px]">Brouillon</Badge>}
+                          {member.status === 'none' && <Badge variant="outline" className="text-[10px]">En attente</Badge>}
                         </div>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground hidden md:table-cell">{member.role}</td>
