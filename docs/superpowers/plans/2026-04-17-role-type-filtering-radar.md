@@ -99,7 +99,7 @@ Yellow alert above the table:
   - Frontend component: table renders in rank order, gap chips show plain
     labels, checkbox max 4 enforced, row actions trigger transitions, all 6
     states render.
-- Visual QA on dev.radar.sinapse.nc: BA poste (poste-7) + Java poste (poste-4),
+- Visual QA on competences.sinapse.nc: BA poste (poste-7) + Java poste (poste-4),
   both views.
 
 **NOT in scope**
@@ -237,7 +237,7 @@ Both buttons disabled if:
 
 1. One commit on dev branch.
 2. `npm run build && npm test` must pass (build is stricter than lint — learned this the hard way).
-3. CI deploys to dev.radar.sinapse.nc.
+3. CI deploys to competences.sinapse.nc.
 4. Visual QA per above.
 5. Prod push: separate decision.
 

@@ -928,7 +928,7 @@ Gate must PASS (no P1 findings).
 
 Validate decomposed structure, service boundaries, data flow.
 
-- [ ] **Step 4: Push to dev.radar.sinapse.nc**
+- [ ] **Step 4: Push to competences.sinapse.nc**
 
 ```bash
 git push origin feat/candidate-evaluator
@@ -938,4 +938,4 @@ CI deploys automatically via deploy-dev.yml.
 
 - [ ] **Step 5: Verify deployment**
 
-Wait for CI to pass, then check `https://dev.radar.sinapse.nc/health` returns `{ status: 'ok' }`.
+Wait for CI to pass, then check `https://competences.sinapse.nc/health` returns `{ status: 'ok' }`.

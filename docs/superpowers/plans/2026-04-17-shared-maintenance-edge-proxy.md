@@ -86,7 +86,7 @@ JSON 503 for API clients.
                │ namespace: gateway     │
                └──────┬──────────┬──────┘
                       │          │
-              sinapse.nc    dev.radar.sinapse.nc
+              sinapse.nc    competences.sinapse.nc
                       │          │
                       ▼          ▼
                  ┌────────┐  ┌──────────────┐
@@ -228,10 +228,10 @@ http {
     }
   }
 
-  # Skill Radar — radar.sinapse.nc + dev.radar.sinapse.nc
+  # Skill Radar — competences.sinapse.nc + competences.sinapse.nc
   server {
     listen 80;
-    server_name radar.sinapse.nc dev.radar.sinapse.nc;
+    server_name competences.sinapse.nc competences.sinapse.nc;
 
     location = /edge-health { access_log off; return 200 "ok\n"; }
 
@@ -417,7 +417,7 @@ Document this in the infra repo README under "Edge proxy operations."
    - Container DNS overrides mean `proxy_pass` hits the mocks.
 3. **Assertions**:
    - `curl -H "Host: sinapse.nc" localhost:8080/` → 200 with "drupal mock" body.
-   - `curl -H "Host: dev.radar.sinapse.nc" localhost:8080/` → 200 with "skill-radar mock".
+   - `curl -H "Host: competences.sinapse.nc" localhost:8080/` → 200 with "skill-radar mock".
    - `curl -H "Host: random.invalid" localhost:8080/` → 404 (catch-all).
    - Stop drupal mock → `curl -H "Host: sinapse.nc" -H "Accept: text/html" localhost:8080/` → 503 with HTML containing "Mise à jour".
    - Same but `-H "Accept: application/json"` → 503 with JSON `{"error":"service_unavailable",...}`.
@@ -434,7 +434,7 @@ Document this in the infra repo README under "Edge proxy operations."
 1. Apply edge-proxy manifests, verify pods ready, `/edge-health` responds 200.
 2. Apply ReferenceGrants.
 3. Update dev HTTPRoute (skill-radar-dev) first, validate end-to-end.
-4. Verify `dev.radar.sinapse.nc` loads normally, rate limiting still uses real client IPs.
+4. Verify `competences.sinapse.nc` loads normally, rate limiting still uses real client IPs.
 5. `kubectl -n apps scale deploy/skill-radar --replicas=0` → verify maintenance HTML for a browser, JSON 503 for `curl -H "Accept: application/json"`.
 6. Restore, repeat for Drupal.
 

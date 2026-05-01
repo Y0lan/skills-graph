@@ -19,11 +19,11 @@ process.env.RESEND_API_KEY = 're_test_dummy'
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
 const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
-const { loadEffectiveRatings, rescoreCandidature, rescorePoste } = await import('../lib/scoring-helpers.js')
-const { calculatePosteCompatibility } = await import('../lib/compatibility.js')
+const { loadEffectiveRatings, rescoreCandidature, rescorePoste, recalculateAllCandidatureScores } = await import('../lib/scoring-helpers.js')
+const { calculatePosteCompatibility, calculateEquipeCompatibility, TEAM_DRAFT_MIN_RATED_SKILLS } = await import('../lib/compatibility.js')
 
 function preSeed() {
-  const db = new Database(TEST_DATABASE_HANDLE)
+  const db = new Database(`${TEST_DATABASE_HANDLE}-scoring-helpers`)
   db.pragma('journal_mode = WAL')
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
@@ -181,5 +181,68 @@ describe('rescorePoste — batch update', () => {
     if (!row) return
     const results = await rescorePoste(row.id)
     expect(results).toEqual([])
+  })
+})
+
+describe('team baseline scoring', () => {
+  it('ignores under-threshold draft team ratings for EQUIPE scoring', async () => {
+    const db = getDb()
+    db.prepare('DELETE FROM evaluations').run()
+    db.prepare('INSERT OR IGNORE INTO categories (id, label, emoji, sort_order) VALUES (?, ?, ?, ?)').run('draft-baseline-cat', 'Draft Baseline', '*', 999)
+    for (let i = 1; i <= TEAM_DRAFT_MIN_RATED_SKILLS; i++) {
+      db.prepare('INSERT OR IGNORE INTO skills (id, category_id, label, sort_order) VALUES (?, ?, ?, ?)').run(`draft-baseline-skill-${i}`, 'draft-baseline-cat', `Draft baseline skill ${i}`, i)
+    }
+    db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)').run('draft-baseline-role', 'Draft Baseline Role', 'test')
+    db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)').run('draft-baseline-role', 'draft-baseline-cat')
+    db.prepare(`
+      INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at)
+      VALUES (?, ?, '{}', '[]', '[]', NULL)
+      ON CONFLICT (slug) DO UPDATE SET ratings = EXCLUDED.ratings, submitted_at = NULL
+    `).run('draft-team-member', JSON.stringify({ 'draft-baseline-skill-1': 5 }))
+
+    const score = await calculateEquipeCompatibility({ 'draft-baseline-skill-1': 1 }, 'draft-baseline-role')
+    expect(score).toBe(0)
+  })
+
+  it('uses draft team ratings once the completeness threshold is met', async () => {
+    const db = getDb()
+    db.prepare('DELETE FROM evaluations').run()
+    const ratings = Object.fromEntries(
+      Array.from({ length: TEAM_DRAFT_MIN_RATED_SKILLS }, (_, i) => [`draft-baseline-skill-${i + 1}`, 5]),
+    )
+    const candidateRatings = Object.fromEntries(
+      Array.from({ length: TEAM_DRAFT_MIN_RATED_SKILLS }, (_, i) => [`draft-baseline-skill-${i + 1}`, 1]),
+    )
+    db.prepare(`
+      INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at)
+      VALUES (?, ?, '{}', '[]', '[]', NULL)
+      ON CONFLICT (slug) DO UPDATE SET ratings = EXCLUDED.ratings, submitted_at = NULL
+    `).run('complete-draft-team-member', JSON.stringify(ratings))
+
+    const score = await calculateEquipeCompatibility(candidateRatings, 'draft-baseline-role')
+    expect(score).toBe(16)
+  })
+
+  it('ignores empty team ratings for EQUIPE scoring', async () => {
+    const db = getDb()
+    db.prepare('DELETE FROM evaluations').run()
+    db.prepare(`
+      INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at)
+      VALUES (?, '{}', '{}', '[]', '[]', NULL)
+      ON CONFLICT (slug) DO UPDATE SET ratings = EXCLUDED.ratings, submitted_at = NULL
+    `).run('empty-draft-team-member')
+
+    const score = await calculateEquipeCompatibility({ 'draft-baseline-skill-1': 1 }, 'draft-baseline-role')
+    expect(score).toBe(0)
+  })
+})
+
+describe('recalculateAllCandidatureScores', () => {
+  it('rescores every candidature and reports per-row failures without throwing', async () => {
+    const result = await recalculateAllCandidatureScores('test:all')
+    expect(result.reason).toBe('test:all')
+    expect(result.total).toBeGreaterThanOrEqual(2)
+    expect(result.scored).toBe(result.total)
+    expect(result.failed).toEqual([])
   })
 })

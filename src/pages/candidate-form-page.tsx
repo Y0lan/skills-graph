@@ -16,7 +16,6 @@ interface CandidateFormData {
   role: string
   posteTitres?: string[]
   submitted: boolean
-  aiSuggestions: Record<string, number> | null
   roleCategories: string[] | null
   cvDerivedCategories?: Array<{ categoryId: string; confidence: number; evidenceSnippets: string[] }>
   categoryIdsByPole: Record<string, string[]> | null

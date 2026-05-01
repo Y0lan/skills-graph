@@ -516,7 +516,9 @@ async function applySchemaAndSeedData(): Promise<void> {
     await requirePool().query("SELECT pg_advisory_lock(hashtext('skill-radar-schema-init'))");
     try {
         await requirePool().query(initSql);
-        await seedBaselineData();
+        if (process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED !== 'true') {
+            await seedBaselineData();
+        }
         await reloadCatalogCacheIfAvailable();
     }
     finally {

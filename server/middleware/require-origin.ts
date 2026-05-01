@@ -7,8 +7,8 @@ import type { Request, Response, NextFunction } from 'express';
  * against our cookie-auth-only mutation routes.
  *
  * Trusted origins:
- *   - `process.env.APP_PUBLIC_ORIGIN` (e.g. https://radar.sinapse.nc)
- *   - `process.env.APP_DEV_ORIGIN`   (optional, e.g. https://dev.radar.sinapse.nc)
+ *   - `process.env.APP_PUBLIC_ORIGIN` (e.g. https://competences.sinapse.nc)
+ *   - `process.env.APP_DEV_ORIGIN`   (optional dev/staging origin)
  *   - localhost / 127.0.0.1 in non-production NODE_ENV (so vitest +
  *     `npm run dev` work without setting envs).
  *

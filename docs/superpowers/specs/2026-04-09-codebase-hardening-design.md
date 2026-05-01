@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-09
 **Branch:** feat/candidate-evaluator
-**Target:** dev.radar.sinapse.nc
+**Target:** competences.sinapse.nc
 **Approach:** Security-first (Phase A), then full architecture decomposition (Phase B), with verification gates between each phase.
 
 ## Context
@@ -288,7 +288,7 @@ Adversarial review of the refactored code. Run `codex review` on the full diff f
 
 Architecture and execution validation. Review the decomposed structure, verify service boundaries are clean, data flow is traceable.
 
-### C4. Push to dev.radar.sinapse.nc
+### C4. Push to competences.sinapse.nc
 
 Push branch, CI deploys automatically via deploy-dev.yml.
 

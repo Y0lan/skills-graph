@@ -42,6 +42,15 @@ export interface RescoreResult {
     tauxGlobal: number | null;
     source: 'rescore';
 }
+export interface RecalculateAllCandidatureScoresResult {
+    reason: string;
+    total: number;
+    scored: number;
+    failed: Array<{ candidatureId: string; error: string }>;
+}
+let scheduledAllScoresTimer: NodeJS.Timeout | null = null;
+const scheduledAllScoresReasons = new Set<string>();
+
 export async function rescoreCandidature(candidatureId: string): Promise<RescoreResult> {
     const row = await getDb().prepare(`
     SELECT c.poste_id, p.role_id
@@ -87,4 +96,64 @@ export async function rescorePoste(posteId: string): Promise<RescoreResult[]> {
         id: string;
     }[];
     return Promise.all(rows.map(r => rescoreCandidature(r.id)));
+}
+
+async function hasRecruitCandidaturesTable(): Promise<boolean> {
+    const row = await getDb().prepare("SELECT to_regclass('candidatures') AS name").get() as {
+        name: string | null;
+    } | undefined;
+    return Boolean(row?.name);
+}
+
+/**
+ * Recompute all recruit scores that depend on the team baseline.
+ * Use after team rating mutations, historical team imports, recruit resets and
+ * CV replay. It is intentionally per-row tolerant: one bad candidature is
+ * reported without preventing the rest from being refreshed.
+ */
+export async function recalculateAllCandidatureScores(reason: string): Promise<RecalculateAllCandidatureScoresResult> {
+    if (!(await hasRecruitCandidaturesTable())) {
+        return { reason, total: 0, scored: 0, failed: [] };
+    }
+    const rows = await getDb().prepare('SELECT id FROM candidatures ORDER BY created_at ASC, id ASC').all() as {
+        id: string;
+    }[];
+    const failed: RecalculateAllCandidatureScoresResult['failed'] = [];
+    let scored = 0;
+    for (const row of rows) {
+        try {
+            await rescoreCandidature(row.id);
+            scored += 1;
+        }
+        catch (err) {
+            failed.push({
+                candidatureId: row.id,
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+    if (rows.length > 0 || failed.length > 0) {
+        console.info('[scoring] recalculateAllCandidatureScores', {
+            reason,
+            total: rows.length,
+            scored,
+            failed: failed.length,
+        });
+    }
+    return { reason, total: rows.length, scored, failed };
+}
+
+export function scheduleAllCandidatureScoreRecalculation(reason: string, delayMs = 500): void {
+    scheduledAllScoresReasons.add(reason);
+    if (scheduledAllScoresTimer)
+        return;
+    scheduledAllScoresTimer = setTimeout(() => {
+        scheduledAllScoresTimer = null;
+        const reasons = [...scheduledAllScoresReasons];
+        scheduledAllScoresReasons.clear();
+        recalculateAllCandidatureScores(`scheduled:${reasons.join(',')}`).catch((err) => {
+            console.error('[scoring] scheduled recalculateAllCandidatureScores failed:', err);
+        });
+    }, delayMs);
+    scheduledAllScoresTimer.unref?.();
 }

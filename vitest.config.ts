@@ -8,11 +8,13 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['server/__tests__/**/*.test.ts', 'tests/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
+    include: ['server/__tests__/**/*.test.ts', 'scripts/__tests__/**/*.test.ts', 'tests/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
     environmentMatchGlobs: [['src/**', 'jsdom']],
     globalSetup: ['./tests/helpers/postgres-global-setup.ts'],
     setupFiles: ['./tests/helpers/postgres-setup.ts'],
+    pool: 'forks',
     fileParallelism: false,
+    maxWorkers: 1,
     testTimeout: 60_000,
   },
 })

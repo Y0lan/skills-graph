@@ -38,6 +38,7 @@ import { validatePartialFichePatch, validateMergedFiche } from '../../src/lib/st
 import { requireSameOrigin } from '../middleware/require-origin.js';
 import { requireInternalToken } from '../middleware/require-internal-token.js';
 import { sendDailyRecap } from '../lib/daily-recap.js';
+import { resolveAppPublicOrigin } from '../lib/public-origin.js';
 interface ParsedIntake {
     fields: Record<string, string>;
     files: Map<string, {
@@ -975,7 +976,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
             poste_titre: string;
         } | undefined;
         if (candidateInfo?.email) {
-            const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`;
+            const baseUrl = resolveAppPublicOrigin(req);
             const userSlug = user.slug || 'unknown';
             // Delay candidate-facing emails by REVERT_WINDOW_MS so the lead can
             // undo the transition (and cancel the scheduled send) or force-send
@@ -2183,7 +2184,7 @@ protectedRouter.post('/postes/:posteId/outreach', heavyRateLimit, async (req, re
                 failed.push({ candidatureId: cid, error: 'Candidat sans email' });
                 continue;
             }
-            const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`;
+            const baseUrl = resolveAppPublicOrigin(req);
             const result = await sendTransitionEmail({
                 to: row.email,
                 candidateName: row.name,
@@ -2802,7 +2803,7 @@ protectedRouter.post('/emails/preview', async (req, res) => {
         res.status(404).json({ error: 'Candidature introuvable' });
         return;
     }
-    const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = resolveAppPublicOrigin(req);
     renderTransitionEmail({
         candidateName: cand.name,
         role: cand.poste_titre,
@@ -3138,7 +3139,7 @@ protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, asyn
         res.status(502).json({ error: 'Impossible d’annuler la programmation actuelle — réessayez.' });
         return;
     }
-    const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = resolveAppPublicOrigin(req);
     const statut = snapshot.statut ?? info.statut;
     const result = await sendTransitionEmail({
         to: info.email,
@@ -3792,7 +3793,7 @@ protectedRouter.post('/candidatures/batch-zip', heavyRateLimit, async (req, res)
 //   - Set up MX records for the receiving alias on Cloud DNS:
 //       recrutement.sinapse.nc.  IN MX 10  inbound.resend.com.
 //   - Configure the alias as an inbound parse rule in Resend dashboard,
-//     pointing the webhook to https://radar.sinapse.nc/api/recruitment/webhooks/resend-inbound
+//     pointing the webhook to https://competences.sinapse.nc/api/recruitment/webhooks/resend-inbound
 //   - Set RESEND_INBOUND_WEBHOOK_SECRET in the cluster secret.
 //
 // Without those steps the endpoint exists but no traffic ever arrives.
@@ -4365,17 +4366,7 @@ protectedRouter.post('/reports/cross-poste-comparison', async (req, res) => {
 // digest with the same content.
 recruitmentRouter.post('/jobs/daily-recap', requireInternalToken, async (req, res) => {
     try {
-        // Codex round-2 P2: when the cron POSTs from inside the cluster,
-        // `req.get('host')` is `skill-radar:8080` — useless in an email
-        // link. Walk the env chain in order of "public-ness":
-        //   1. APP_PUBLIC_ORIGIN  (preferred — set explicitly on prod)
-        //   2. BETTER_AUTH_URL    (always set, points at the user-facing host)
-        //   3. CORS_ORIGIN        (also user-facing)
-        // Last fallback to the request host is only safe in local dev.
-        const baseUrl = process.env.APP_PUBLIC_ORIGIN?.trim()
-            ?? process.env.BETTER_AUTH_URL?.trim()
-            ?? process.env.CORS_ORIGIN?.trim()
-            ?? `${req.protocol}://${req.get('host')}`;
+        const baseUrl = resolveAppPublicOrigin(req);
         const result = await sendDailyRecap({ baseUrl });
         res.json(result);
     }

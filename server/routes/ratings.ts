@@ -4,8 +4,16 @@ import { getAllEvaluations, getEvaluation, upsertEvaluation, submitEvaluation, r
 import { generateAndSaveSummary } from '../lib/summary.js';
 import { requireAuth, requireOwnership } from '../middleware/require-auth.js';
 import { getSkillById } from '../lib/catalog.js';
+import { recalculateAllCandidatureScores, scheduleAllCandidatureScoreRecalculation } from '../lib/scoring-helpers.js';
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug));
 export const ratingsRouter = Router();
+
+function scheduleRecruitScoresAfterTeamChange(reason: string): void {
+    scheduleAllCandidatureScoreRecalculation(reason);
+}
+async function refreshRecruitScoresAfterTeamReset(reason: string): Promise<void> {
+    await recalculateAllCandidatureScores(reason);
+}
 // GET /status — lightweight public endpoint for status dots (no auth required)
 // Returns { slug: 'submitted' | 'draft' | 'none' } only, no scores or summaries
 ratingsRouter.get('/status', async (_req, res) => {
@@ -88,6 +96,11 @@ ratingsRouter.put('/:slug', requireAuth, requireOwnership, async (req, res) => {
         return;
     }
     const memberData = await upsertEvaluation(slug, ratings, expObj, skipped, declined);
+    try {
+        await getDb().prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(slug, slug);
+    }
+    catch { /* Table may not exist yet */ }
+    scheduleRecruitScoresAfterTeamChange(`team-rating-upsert:${slug}`);
     res.json(memberData);
 });
 // DELETE /:slug — reset evaluation (auth + ownership required)
@@ -98,6 +111,11 @@ ratingsRouter.delete('/:slug', requireAuth, requireOwnership, async (req, res) =
         return;
     }
     await deleteEvaluation(slug);
+    try {
+        await getDb().prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(slug, slug);
+    }
+    catch { /* Table may not exist yet */ }
+    await refreshRecruitScoresAfterTeamReset(`team-rating-delete:${slug}`);
     res.json({ ok: true });
 });
 // POST /:slug/submit — finalize evaluation (auth + ownership required)
@@ -126,6 +144,7 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, r
         await getDb().prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(slug, slug);
     }
     catch { /* Table may not exist yet */ }
+    scheduleRecruitScoresAfterTeamChange(`team-rating-submit:${slug}`);
     // Re-read after potential summary write so response includes profileSummary
     res.json(await getEvaluation(slug));
 });
@@ -199,6 +218,7 @@ ratingsRouter.post('/:slug/skill-up', requireAuth, requireOwnership, async (req,
         await db.prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(slug, slug);
     }
     catch { /* Table may not exist yet */ }
+    scheduleRecruitScoresAfterTeamChange(`team-skill-up:${slug}`);
     console.log(`[SKILL-UP] ${slug} ${skillId}: ${oldLevel} → ${newLevel}`);
     res.json({ ok: true, oldLevel, newLevel, skillId });
 });

@@ -2,11 +2,12 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { getDb, getCategoriesForCandidate, getCategoryIdsByPole } from '../lib/db.js';
 import { sendCandidateSubmitted } from '../lib/email.js';
-import { validateRatings, filterValidRatings } from '../lib/validation.js';
-import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js';
+import { validateRatings } from '../lib/validation.js';
+import { getUser, type CandidateRow } from '../lib/types.js';
 import { rescoreCandidature } from '../lib/scoring-helpers.js';
 import { requireLead } from '../middleware/require-lead.js';
 import { recruitmentBus } from '../lib/event-bus.js';
+import { resolveAppPublicOrigin } from '../lib/public-origin.js';
 export const evaluateRouter = Router();
 // Rate limit: 30 requests per minute per IP on all public endpoints
 const publicRateLimit = rateLimit({
@@ -56,103 +57,18 @@ evaluateRouter.get('/:id/form', async (req, res) => {
   `).all(row.id) as {
         poste_titre: string;
     }[];
-    const cvDerivedCategories = await computeCvDerivedCategories(row.id, candidateCategories);
-    // Read-time defensive filter: drop any non-catalog skill IDs from
-    // ai_suggestions before sending to the form. Heals legacy rows where
-    // multipass reconcile (pre-fix) wrote hallucinated keys like "oracle".
-    // Without this, the candidate's form state seeds with unknown keys
-    // that ride invisibly into the autosave/submit payload and get
-    // rejected by validateRatings — leaving the candidate stuck with no
-    // way to remove the offending key. See plan §Item 2.
-    const rawSuggestions = safeJsonParse<Record<string, unknown> | null>(row.ai_suggestions, null);
-    const aiSuggestions = rawSuggestions ? filterValidRatings(rawSuggestions) : null;
     res.json({
         id: row.id,
         name: row.name,
         role: row.role,
         posteTitres: candidatureRows.map(r => r.poste_titre),
         submitted: !!row.submitted_at,
-        aiSuggestions,
         roleCategories: candidateCategories.length > 0 ? candidateCategories : null,
-        cvDerivedCategories,
+        cvDerivedCategories: [],
         categoryIdsByPole: await getCategoryIdsByPole(),
         version: row.version,
     });
 });
-/**
- * Compute which catalog categories should be appended to the candidate's
- * form because their CV revealed skills OUTSIDE the role's default set.
- *
- * Invariant: never invent categories. Every returned `categoryId` MUST
- * exist in the `categories` table — we derive it by looking up skill IDs
- * against `skills.category_id`. LLM returning a bogus skill id means that
- * skill gets silently dropped, the category never gets added.
- *
- * Population criteria (all required, AND):
- *   - Category is in the canonical catalog (skill → category join).
- *   - ≥1 skill in the category has ai_suggestions[skillId] ≥ 3 (Autonome+).
- *   - LLM provided an evidence snippet (ai_reasoning[skillId]) for at
- *     least one skill in that category.
- *   - Category is NOT already in the role's default set.
- *   - Top-5 cap, ranked by max rating across skills in the category.
- */
-const PHASE_6_TOP_N = 5;
-const PHASE_6_RATING_FLOOR = 3;
-interface CvDerivedCategory {
-    categoryId: string;
-    confidence: number;
-    evidenceSnippets: string[];
-}
-async function computeCvDerivedCategories(candidateId: string, roleCategoryIds: string[]): Promise<CvDerivedCategory[]> {
-    const row = await getDb().prepare('SELECT ai_suggestions, ai_reasoning FROM candidates WHERE id = ?').get(candidateId) as {
-        ai_suggestions: string | null;
-        ai_reasoning: string | null;
-    } | undefined;
-    if (!row?.ai_suggestions)
-        return [];
-    const suggestions = safeJsonParse<Record<string, number>>(row.ai_suggestions, {});
-    const reasoning = safeJsonParse<Record<string, string>>(row.ai_reasoning, {});
-    const roleSet = new Set(roleCategoryIds);
-    const skillRows = await getDb().prepare('SELECT id, category_id FROM skills').all() as Array<{
-        id: string;
-        category_id: string;
-    }>;
-    const catalogCategoryBySkill = new Map<string, string>();
-    for (const s of skillRows)
-        catalogCategoryBySkill.set(s.id, s.category_id);
-    const byCategory = new Map<string, {
-        maxRating: number;
-        evidence: string[];
-    }>();
-    for (const [skillId, rating] of Object.entries(suggestions)) {
-        if (typeof rating !== 'number' || rating < PHASE_6_RATING_FLOOR)
-            continue;
-        const catId = catalogCategoryBySkill.get(skillId);
-        if (!catId)
-            continue; // skill not in catalog — invariant: catalog authoritative
-        if (roleSet.has(catId))
-            continue; // already in role defaults
-        const existing = byCategory.get(catId) ?? { maxRating: 0, evidence: [] };
-        if (rating > existing.maxRating)
-            existing.maxRating = rating;
-        const snippet = reasoning[skillId];
-        if (snippet)
-            existing.evidence.push(snippet);
-        byCategory.set(catId, existing);
-    }
-    const candidates: CvDerivedCategory[] = [];
-    for (const [categoryId, data] of byCategory) {
-        if (data.evidence.length === 0)
-            continue; // evidence gate
-        candidates.push({
-            categoryId,
-            confidence: Math.min(1, data.maxRating / 5),
-            evidenceSnippets: data.evidence.slice(0, 3),
-        });
-    }
-    candidates.sort((a, b) => b.confidence - a.confidence || a.categoryId.localeCompare(b.categoryId));
-    return candidates.slice(0, PHASE_6_TOP_N);
-}
 // Save candidate ratings (public — autosave)
 evaluateRouter.put('/:id/ratings', async (req, res) => {
     const row = await getCandidateGuard(req.params.id, res);
@@ -254,7 +170,7 @@ evaluateRouter.post('/:id/submit', async (req, res) => {
         }
     }
     // Notify the lead who created this candidate (non-blocking)
-    const baseUrl = process.env.BETTER_AUTH_URL || 'https://radar.sinapse.nc';
+    const baseUrl = resolveAppPublicOrigin(req);
     const leadSlug = row.created_by;
     if (leadSlug) {
         const leadEmail = leadSlug.replaceAll('-', '.') + '@sinapse.nc';

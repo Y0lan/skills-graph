@@ -1,6 +1,48 @@
 import { getDb } from './db.js';
 import { safeJsonParse } from './types.js';
 const GAP_BONUS_MULTIPLIER = 10;
+export const TEAM_DRAFT_MIN_RATED_SKILLS = 5;
+
+interface TeamRatingBaseline {
+    slug: string;
+    ratings: Record<string, number>;
+}
+
+function positiveRatingCount(ratings: Record<string, number>): number {
+    return Object.values(ratings).filter((level) => Number.isFinite(level) && level > 0).length;
+}
+
+function hasUsableRatings(ratings: Record<string, number>, submittedAt: string | null): boolean {
+    if (Object.keys(ratings).length === 0)
+        return false;
+    if (submittedAt)
+        return true;
+    return positiveRatingCount(ratings) >= TEAM_DRAFT_MIN_RATED_SKILLS;
+}
+
+/**
+ * Team baseline for recruit scoring.
+ *
+ * Submitted evaluations count when they have any ratings. Draft evaluations
+ * count only once at least TEAM_DRAFT_MIN_RATED_SKILLS positive answers exist,
+ * which avoids letting one or two autosaved answers distort recruit EQUIPE
+ * scores.
+ */
+export async function loadTeamRatingBaseline(): Promise<TeamRatingBaseline[]> {
+    const rows = await getDb().prepare('SELECT slug, ratings, submitted_at FROM evaluations').all() as {
+        slug: string;
+        ratings: string;
+        submitted_at: string | null;
+    }[];
+    return rows
+        .map((row) => ({
+            slug: row.slug,
+            ratings: safeJsonParse<Record<string, number>>(row.ratings, {}, `evaluations.ratings:${row.slug}`),
+            submittedAt: row.submitted_at,
+        }))
+        .filter((row) => hasUsableRatings(row.ratings, row.submittedAt))
+        .map(({ slug, ratings }) => ({ slug, ratings }));
+}
 /**
  * Calculate compatibility score between a candidate and a poste.
  *
@@ -118,12 +160,8 @@ export async function calculateEquipeCompatibility(candidateRatings: Record<stri
     }[];
     if (roleCats.length === 0)
         return 0;
-    // Get all submitted team member evaluations
-    const teamMembers = await db.prepare('SELECT slug, ratings FROM evaluations WHERE submitted_at IS NOT NULL').all() as {
-        slug: string;
-        ratings: string;
-    }[];
-    if (teamMembers.length === 0)
+    const teamRatings = await loadTeamRatingBaseline();
+    if (teamRatings.length === 0)
         return 0;
     // Get all skills per category
     const skills = await db.prepare('SELECT id, category_id FROM skills').all() as {
@@ -136,11 +174,6 @@ export async function calculateEquipeCompatibility(candidateRatings: Record<stri
         list.push(s.id);
         skillsByCategory.set(s.category_id, list);
     }
-    // Parse team ratings
-    const teamRatings = teamMembers.map(m => ({
-        slug: m.slug,
-        ratings: safeJsonParse<Record<string, number>>(m.ratings, {}),
-    }));
     let totalScore = 0;
     let totalWeight = 0;
     for (const { category_id: catId } of roleCats) {
@@ -347,10 +380,7 @@ export async function getEquipeCompatBreakdown(candidateRatings: Record<string, 
     }[];
     if (roleCats.length === 0)
         return { total: 0, items: [] };
-    const teamMembers = await db.prepare('SELECT slug, ratings FROM evaluations WHERE submitted_at IS NOT NULL').all() as {
-        slug: string;
-        ratings: string;
-    }[];
+    const teamMembers = await loadTeamRatingBaseline();
     const skills = await db.prepare('SELECT id, category_id FROM skills').all() as {
         id: string;
         category_id: string;
@@ -366,7 +396,7 @@ export async function getEquipeCompatBreakdown(candidateRatings: Record<string, 
         list.push(s.id);
         skillsByCategory.set(s.category_id, list);
     }
-    const teamRatings = teamMembers.map(m => safeJsonParse<Record<string, number>>(m.ratings, {}));
+    const teamRatings = teamMembers.map(m => m.ratings);
     let totalScore = 0;
     let totalWeight = 0;
     const items: EquipeCompatBreakdown['items'] = [];
@@ -452,10 +482,7 @@ export async function getGapAnalysis(candidateRatings: Record<string, number>, p
         list.push(s.id);
         skillsByCategory.set(s.category_id, list);
     }
-    const teamMembers = await db.prepare('SELECT ratings FROM evaluations WHERE submitted_at IS NOT NULL').all() as {
-        ratings: string;
-    }[];
-    const teamRatings = teamMembers.map(m => safeJsonParse<Record<string, number>>(m.ratings, {}));
+    const teamRatings = (await loadTeamRatingBaseline()).map(m => m.ratings);
     const gaps: {
         categoryId: string;
         categoryLabel: string;

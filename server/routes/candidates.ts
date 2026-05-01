@@ -8,6 +8,7 @@ import { requireLead } from '../middleware/require-lead.js';
 import { generateCandidateAnalysis } from '../lib/candidate-analysis.js';
 import { sendCandidateInvite } from '../lib/email.js';
 import { processCvForCandidate } from '../lib/cv-pipeline.js';
+import { resolveAppPublicOrigin } from '../lib/public-origin.js';
 import { setProfileFieldLock } from '../lib/profile-merge.js';
 import { getLatestAsset } from '../lib/asset-storage.js';
 import { safeJsonParse, getUser, type CandidateRow } from '../lib/types.js';
@@ -209,7 +210,7 @@ candidatesRouter.post('/', createRateLimit, async (req, res) => {
     // Re-fetch after CV processing for consistent response
     const candidate = await getDb().prepare('SELECT * FROM candidates WHERE id = ?').get(id) as CandidateRow;
     // Send invite email if candidate has an email address
-    const baseUrl = process.env.BETTER_AUTH_URL || `${req.protocol}://${req.get('host')}`;
+    const baseUrl = resolveAppPublicOrigin(req);
     const evaluationUrl = `${baseUrl}/evaluate/${id}`;
     if (email?.trim()) {
         sendCandidateInvite({

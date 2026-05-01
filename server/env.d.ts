@@ -2,6 +2,10 @@ declare namespace NodeJS {
     interface ProcessEnv {
         BETTER_AUTH_SECRET?: string;
         BETTER_AUTH_URL?: string;
+        APP_PUBLIC_ORIGIN?: string;
+        APP_DEV_ORIGIN?: string;
+        CORS_ORIGIN?: string;
+        SKILL_RADAR_SKIP_BOOTSTRAP_SEED?: string;
         RESEND_API_KEY?: string;
         VIRUSTOTAL_API_KEY?: string;
         CLAMAV_SOCKET?: string;

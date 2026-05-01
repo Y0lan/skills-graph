@@ -28,11 +28,7 @@ class Statement {
 export default class Database {
   lastInsertRowid: number | string | null = null
 
-  constructor(filename?: string) {
-    if (filename && filename !== 'postgres' && filename !== 'postgres-test-helper') {
-      __syncDbForTests.exec('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public')
-    }
-  }
+  constructor(_filename?: string) {}
 
   prepare(sql: string): Statement {
     return new Statement(sql, this)

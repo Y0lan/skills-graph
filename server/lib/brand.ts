@@ -7,8 +7,8 @@ import path from 'path';
 // Email logo: attached as inline file via Resend, referenced by cid in HTML.
 //
 // History of what failed before this:
-//   1. External URL (radar.sinapse.nc/email-logo-...): forbidden — emails must
-//      never point to radar.sinapse.nc (only the magic /evaluate link does).
+//   1. External app-host URL: forbidden — emails must not depend on the
+//      application domain for static logo assets.
 //   2. data: URL in <img src>: Gmail (and Yahoo, iCloud) strip data URLs from
 //      <img src> for spam/security. Logo rendered as a broken-image icon.
 // Current approach: Resend attachment with contentId, referenced as

@@ -24,7 +24,7 @@ fire so any open candidature page refreshes the timeline live.
 Choose where candidates' replies should land. Conventions:
 - `recrutement@sinapse.nc` — easy to remember, fits the existing
   `radar@sinapse.nc` outbound brand.
-- `reply@radar.sinapse.nc` — separate subdomain, clean DNS isolation.
+- `reply@competences.sinapse.nc` — separate subdomain, clean DNS isolation.
 
 Recommendation: **`recrutement@sinapse.nc`**. Recruiters can give it
 verbally over the phone without spelling subdomains.
@@ -35,7 +35,7 @@ In the Resend dashboard:
 
 1. Go to **Inbound → Add address**.
 2. Address: `recrutement@sinapse.nc` (or your choice).
-3. Forward to webhook: `https://radar.sinapse.nc/api/recruitment/webhooks/resend-inbound`
+3. Forward to webhook: `https://competences.sinapse.nc/api/recruitment/webhooks/resend-inbound`
 4. Save the webhook signing secret Resend gives you.
 
 ### 3. Set the secret

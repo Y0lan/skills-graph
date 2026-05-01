@@ -20,6 +20,7 @@
 import { Resend } from 'resend';
 import { getDb } from './db.js';
 import { RECRUITMENT_LEADS } from '../middleware/require-lead.js';
+import { resolveAppPublicOrigin } from './public-origin.js';
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'Radar SINAPSE <radar@sinapse.nc>';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -336,7 +337,7 @@ export interface SendDailyRecapResult {
 export async function sendDailyRecap(opts: {
     baseUrl: string;
     now?: Date;
-} = { baseUrl: 'https://radar.sinapse.nc' }): Promise<SendDailyRecapResult> {
+} = { baseUrl: resolveAppPublicOrigin() }): Promise<SendDailyRecapResult> {
     const now = opts.now ?? new Date();
     const payload = await buildDailyRecap(now);
     if (!payload) {
