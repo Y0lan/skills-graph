@@ -1,7 +1,9 @@
 #!/usr/bin/env tsx
 import { pathToFileURL } from 'url';
+import fs from 'fs';
 import { initDatabase, getDb } from '../server/lib/db.js';
 import { readAssetBuffer } from '../server/lib/asset-storage.js';
+import { getDocumentForDownload } from '../server/lib/document-service.js';
 import { processCvForCandidate } from '../server/lib/cv-pipeline.js';
 import { recalculateAllCandidatureScores } from '../server/lib/scoring-helpers.js';
 
@@ -22,6 +24,7 @@ export interface FreshStartReplayResult {
   totalCandidates: number;
   totalCandidatesWithRawPdf: number;
   resetCandidates: number;
+  preservedFieldOverrides: number;
   replayedCandidates: number;
   skippedAlreadyReplayed: number;
   failedCandidates: Array<{ candidateId: string; error: string }>;
@@ -34,7 +37,8 @@ function usage(): string {
   return `Usage:
   tsx scripts/fresh-start-recruit-cv-replay.ts [--apply] [--concurrency=1|2]
 
-Dry-run is the default. --apply is required to reset manual candidate answers and replay CV extraction.`;
+Dry-run is the default. --apply is required to reset manual candidate answers and replay CV extraction.
+Recruiter-locked candidate_field_overrides are preserved and reported.`;
 }
 
 export function parseFreshStartReplayArgs(argv: string[]): ReplayArgs {
@@ -118,6 +122,66 @@ async function loadCandidateCount(): Promise<number> {
   return row?.c ?? 0;
 }
 
+async function loadFieldOverrideCount(candidateIds: string[]): Promise<number> {
+  if (candidateIds.length === 0)
+    return 0;
+  const table = await getDb().prepare(`
+    SELECT 1 AS ok
+    FROM information_schema.tables
+    WHERE table_schema = current_schema()
+      AND table_name = 'candidate_field_overrides'
+  `).get() as { ok: number } | undefined;
+  if (!table)
+    return 0;
+  const row = await getDb().prepare(`
+    SELECT COUNT(*) AS c
+    FROM candidate_field_overrides
+    WHERE candidate_id = ANY($1::text[])
+  `).get(candidateIds) as { c: number } | undefined;
+  return row?.c ?? 0;
+}
+
+async function readLatestCandidateCvDocumentBuffer(candidateId: string): Promise<Buffer | null> {
+  const row = await getDb().prepare(`
+    SELECT cd.id
+    FROM candidature_documents cd
+    JOIN candidatures c ON c.id = cd.candidature_id
+    WHERE c.candidate_id = ?
+      AND cd.type = 'cv'
+      AND cd.deleted_at IS NULL
+    ORDER BY cd.created_at DESC, cd.id DESC
+    LIMIT 1
+  `).get(candidateId) as { id: string } | undefined;
+  if (!row)
+    return null;
+  const fetched = await getDocumentForDownload(row.id);
+  if ('error' in fetched)
+    return null;
+  if (fetched.kind === 'gcs')
+    return fetched.buffer;
+  try {
+    return fs.readFileSync(fetched.filePath);
+  }
+  catch {
+    return null;
+  }
+}
+
+async function readReplayCvBuffer(target: RawPdfTarget): Promise<Buffer | null> {
+  try {
+    const assetBuffer = await readAssetBuffer(target.assetId);
+    if (assetBuffer)
+      return assetBuffer;
+  }
+  catch { /* fall through to stored CV document fallback */ }
+  try {
+    return await readLatestCandidateCvDocumentBuffer(target.candidateId);
+  }
+  catch {
+    return null;
+  }
+}
+
 async function runBounded<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
   let index = 0;
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -141,12 +205,14 @@ export async function freshStartRecruitCvReplay(options: {
   const targets = await loadRawPdfTargets();
   const totalCandidates = await loadCandidateCount();
   const replayTargets = targets.filter((target) => !target.alreadyReplayed);
+  const preservedFieldOverrides = await loadFieldOverrideCount(replayTargets.map((target) => target.candidateId));
   if (!options.apply) {
     return {
       apply: false,
       totalCandidates,
       totalCandidatesWithRawPdf: targets.length,
       resetCandidates: 0,
+      preservedFieldOverrides,
       replayedCandidates: 0,
       skippedAlreadyReplayed: targets.length - replayTargets.length,
       failedCandidates: [],
@@ -155,9 +221,27 @@ export async function freshStartRecruitCvReplay(options: {
   }
   await ensureReplayLedger();
   let resetCandidates = 0;
+  const failedCandidates: Array<{ candidateId: string; error: string }> = [];
+  let replayableTargets = replayTargets;
   await db.transaction(async () => {
     const targetIds = replayTargets.map((target) => target.candidateId);
     if (targetIds.length === 0)
+      return;
+    const runningRows = await db.prepare(`
+      SELECT id
+      FROM candidates
+      WHERE id = ANY($1::text[])
+        AND extraction_status = 'running'
+    `).all(targetIds) as Array<{ id: string }>;
+    const runningIds = new Set(runningRows.map((row) => row.id));
+    replayableTargets = replayTargets.filter((target) => !runningIds.has(target.candidateId));
+    for (const target of replayTargets) {
+      if (runningIds.has(target.candidateId)) {
+        failedCandidates.push({ candidateId: target.candidateId, error: 'extraction already running' });
+      }
+    }
+    const replayableIds = replayableTargets.map((target) => target.candidateId);
+    if (replayableIds.length === 0)
       return;
     const reset = await db.prepare(`
       UPDATE candidates
@@ -168,28 +252,32 @@ export async function freshStartRecruitCvReplay(options: {
           submitted_at = NULL,
           version = version + 1
       WHERE id = ANY($1::text[])
-    `).run(targetIds);
+    `).run(replayableIds);
     resetCandidates = reset.changes;
-    for (const target of replayTargets) {
+    for (const target of replayableTargets) {
       await db.prepare(`
         UPDATE candidates
         SET extraction_status = 'idle',
             lock_acquired_at = NULL
         WHERE id = ?
+          AND extraction_status <> 'running'
       `).run(target.candidateId);
     }
   })();
   const processCv = options.processCv ?? processCvForCandidate;
-  const failedCandidates: Array<{ candidateId: string; error: string }> = [];
   let replayedCandidates = 0;
-  await runBounded(replayTargets, options.concurrency ?? 1, async (target) => {
-    const buffer = await readAssetBuffer(target.assetId);
+  await runBounded(replayableTargets, options.concurrency ?? 1, async (target) => {
+    const buffer = await readReplayCvBuffer(target);
     if (!buffer) {
-      failedCandidates.push({ candidateId: target.candidateId, error: 'raw_pdf asset bytes not readable' });
+      failedCandidates.push({ candidateId: target.candidateId, error: 'raw_pdf asset bytes and latest CV document are not readable' });
       return;
     }
     try {
-      await processCv(target.candidateId, buffer, { source: 'reextract' });
+      const result = await processCv(target.candidateId, buffer, { source: 'reextract' });
+      if (result.status === 'skipped' || result.status === 'failed') {
+        failedCandidates.push({ candidateId: target.candidateId, error: result.error ?? result.status });
+        return;
+      }
       await getDb().prepare(`
         INSERT INTO ops_cv_replay_runs (candidate_id, raw_pdf_sha256)
         VALUES (?, ?)
@@ -207,6 +295,7 @@ export async function freshStartRecruitCvReplay(options: {
     totalCandidates,
     totalCandidatesWithRawPdf: targets.length,
     resetCandidates,
+    preservedFieldOverrides,
     replayedCandidates,
     skippedAlreadyReplayed: targets.length - replayTargets.length,
     failedCandidates,

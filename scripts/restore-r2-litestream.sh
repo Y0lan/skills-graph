@@ -38,6 +38,9 @@ mkdir -p "$(dirname "$RESTORE_PATH")"
 config="$(mktemp)"
 trap 'rm -f "$config"' EXIT
 
+echo "Restoring historical Skill Radar team-evaluation SQLite replica from Cloudflare R2."
+echo "This restore is an input to import-team-evaluations-from-sqlite.ts only; it is not the full current production data migration path."
+
 cat >"$config" <<YAML
 access-key-id: \${AWS_ACCESS_KEY_ID}
 secret-access-key: \${AWS_SECRET_ACCESS_KEY}

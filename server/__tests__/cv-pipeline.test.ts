@@ -60,7 +60,7 @@ function preSeedSchema() {
   `)
   // Pre-seed the catalog_meta version so initDatabase skips catalog seeding,
   // and pre-seed every category referenced by role/poste seeds to keep FK happy.
-  db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', ?)").run('5.1.0')
+  db.prepare("INSERT INTO catalog_meta (key, value) VALUES ('version', ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run('5.1.0')
   const allCats = [
     'core-engineering', 'backend-integration', 'frontend-ui', 'platform-engineering',
     'observability-reliability', 'security-compliance', 'architecture-governance',

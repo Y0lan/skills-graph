@@ -129,35 +129,159 @@ function convertPlaceholders(sql: string): string {
     }
     return out;
 }
+type ProtectedSqlPartKind = 'single' | 'double' | 'line-comment' | 'block-comment' | 'dollar';
+interface ProtectedSqlPart {
+    token: string;
+    kind: ProtectedSqlPartKind;
+    value: string;
+}
+function protectSqlParts(sql: string): { sql: string; parts: ProtectedSqlPart[] } {
+    const parts: ProtectedSqlPart[] = [];
+    let out = '';
+    let index = 0;
+    function protect(kind: ProtectedSqlPartKind, value: string): string {
+        const token = `__SQL_PROTECTED_${parts.length}__`;
+        parts.push({ token, kind, value });
+        return token;
+    }
+    while (index < sql.length) {
+        const ch = sql[index];
+        const next = sql[index + 1];
+        if (ch === '-' && next === '-') {
+            const end = sql.indexOf('\n', index + 2);
+            const stop = end === -1 ? sql.length : end;
+            out += protect('line-comment', sql.slice(index, stop));
+            index = stop;
+            continue;
+        }
+        if (ch === '/' && next === '*') {
+            const end = sql.indexOf('*/', index + 2);
+            const stop = end === -1 ? sql.length : end + 2;
+            out += protect('block-comment', sql.slice(index, stop));
+            index = stop;
+            continue;
+        }
+        if (ch === "'") {
+            let stop = index + 1;
+            while (stop < sql.length) {
+                if (sql[stop] === "'" && sql[stop + 1] === "'") {
+                    stop += 2;
+                    continue;
+                }
+                if (sql[stop] === "'") {
+                    stop++;
+                    break;
+                }
+                stop++;
+            }
+            out += protect('single', sql.slice(index, stop));
+            index = stop;
+            continue;
+        }
+        if (ch === '"') {
+            let stop = index + 1;
+            while (stop < sql.length) {
+                if (sql[stop] === '"' && sql[stop + 1] === '"') {
+                    stop += 2;
+                    continue;
+                }
+                if (sql[stop] === '"') {
+                    stop++;
+                    break;
+                }
+                stop++;
+            }
+            out += protect('double', sql.slice(index, stop));
+            index = stop;
+            continue;
+        }
+        if (ch === '$') {
+            const match = sql.slice(index).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+            if (match) {
+                const opener = match[0];
+                const closeAt = sql.indexOf(opener, index + opener.length);
+                if (closeAt !== -1) {
+                    const stop = closeAt + opener.length;
+                    out += protect('dollar', sql.slice(index, stop));
+                    index = stop;
+                    continue;
+                }
+            }
+        }
+        out += ch;
+        index++;
+    }
+    return { sql: out, parts };
+}
+function restoreSqlParts(sql: string, parts: ProtectedSqlPart[]): string {
+    let out = sql;
+    for (const part of parts) {
+        out = out.replaceAll(part.token, part.value);
+    }
+    return out;
+}
+function protectedSingleValue(parts: ProtectedSqlPart[], token: string): string | null {
+    const part = parts.find((candidate) => candidate.token === token);
+    if (!part || part.kind !== 'single')
+        return null;
+    return part.value.slice(1, -1).replace(/''/g, "'");
+}
+function protectedDateBase(parts: ProtectedSqlPart[], raw: string): string {
+    const expr = raw.trim();
+    const literal = protectedSingleValue(parts, expr);
+    if (literal?.toLowerCase() === 'now')
+        return 'now()';
+    return `${expr}::timestamptz`;
+}
+function normalizeIntervalUnit(unit: string): string {
+    return unit.toLowerCase().replace(/s$/, '');
+}
+function translateProtectedDatetime(sql: string, parts: ProtectedSqlPart[]): string {
+    let out = sql.replace(/\bdatetime\(\s*(__SQL_PROTECTED_\d+__)\s*,\s*(__SQL_PROTECTED_\d+__)\s*\|\|\s*(\?)\s*\|\|\s*(__SQL_PROTECTED_\d+__)\s*\)/gi, (match, baseToken: string, signToken: string, param: string, unitToken: string) => {
+        const base = protectedSingleValue(parts, baseToken);
+        const sign = protectedSingleValue(parts, signToken);
+        const unit = protectedSingleValue(parts, unitToken)?.trim();
+        if (base?.toLowerCase() === 'now' && (sign === '-' || sign === '+') && unit && /^(minutes?|hours?|days?)$/i.test(unit)) {
+            return `now() ${sign} ((${param})::text || ' ${normalizeIntervalUnit(unit)}')::interval`;
+        }
+        return match;
+    });
+    out = out.replace(/\bdatetime\(\s*([^,()]+)\s*,\s*(__SQL_PROTECTED_\d+__)\s*\)/gi, (match, baseExpr: string, modifierToken: string) => {
+        const modifier = protectedSingleValue(parts, modifierToken);
+        const parsed = modifier?.match(/^([+-])(\d+)\s+(minutes?|hours?|days?)$/i);
+        if (!parsed)
+            return match;
+        const [, sign, amount, unit] = parsed;
+        return `${protectedDateBase(parts, baseExpr)} ${sign} interval '${amount} ${normalizeIntervalUnit(unit)}'`;
+    });
+    return out.replace(/\bdatetime\(\s*([^,()]+)\s*\)/gi, (_match, baseExpr: string) => protectedDateBase(parts, baseExpr));
+}
+function translateProtectedJson(sql: string, parts: ProtectedSqlPart[]): string {
+    const out = sql.replace(/\bjson_extract\(\s*([a-zA-Z_][\w.]*)\s*,\s*(__SQL_PROTECTED_\d+__)\s*\)/gi, (match, column: string, pathToken: string) => {
+        const path = protectedSingleValue(parts, pathToken);
+        const parsed = path?.match(/^\$\.([A-Za-z0-9_]+)$/);
+        return parsed ? `(${column}::jsonb)->>'${parsed[1]}'` : match;
+    });
+    return out.replace(/\b([a-zA-Z_][\w.]*)\s*->>\s*(__SQL_PROTECTED_\d+__)/g, (match, column: string, pathToken: string) => {
+        const path = protectedSingleValue(parts, pathToken);
+        return path && /^[A-Za-z0-9_]+$/.test(path) ? `(${column}::jsonb)->>'${path}'` : match;
+    });
+}
 function translateSqlDialect(sql: string): string {
-    let out = sql.trim().replace(/;+\s*$/g, '');
+    const trimmed = sql.trim().replace(/;+\s*$/g, '');
+    const protectedSql = protectSqlParts(trimmed);
+    if (/\bINSERT\s+OR\s+REPLACE\s+INTO\b/i.test(protectedSql.sql)) {
+        throw new Error('INSERT OR REPLACE is not supported under Postgres. Use INSERT ... ON CONFLICT DO UPDATE.');
+    }
+    let out = translateProtectedJson(translateProtectedDatetime(protectedSql.sql, protectedSql.parts), protectedSql.parts);
     out = out
         .replace(/\bPRAGMA\b[^\n;]*(;)?/gi, '')
         .replace(/\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b/gi, 'INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY')
         .replace(/\bAUTOINCREMENT\b/gi, '')
         .replace(/\bCREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?user\b/gi, 'CREATE TABLE $1"user"')
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+minutes?'\s*\)/gi, "($1::timestamptz - interval '$2 minutes')")
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+hours?'\s*\)/gi, "($1::timestamptz - interval '$2 hours')")
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'-(\d+)\s+days?'\s*\)/gi, "($1::timestamptz - interval '$2 days')")
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+minutes?'\s*\)/gi, "($1::timestamptz + interval '$2 minutes')")
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+hours?'\s*\)/gi, "($1::timestamptz + interval '$2 hours')")
-        .replace(/\bdatetime\(\s*([^,()]+)\s*,\s*'\+(\d+)\s+days?'\s*\)/gi, "($1::timestamptz + interval '$2 days')")
-        .replace(/\bdatetime\('now'\s*,\s*'-'\s*\|\|\s*(\?)\s*\|\|\s*'\s+minutes?'\s*\)/gi, "now() - (($1)::text || ' minutes')::interval")
-        .replace(/\bdatetime\('now'\s*,\s*'-'\s*\|\|\s*(\?)\s*\|\|\s*'\s+days?'\s*\)/gi, "now() - (($1)::text || ' days')::interval")
-        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+days?'\)/gi, "now() + interval '$1 days'")
-        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+days?'\)/gi, "now() - interval '$1 days'")
-        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+hours?'\)/gi, "now() + interval '$1 hours'")
-        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+hours?'\)/gi, "now() - interval '$1 hours'")
-        .replace(/\bdatetime\('now'\s*,\s*'\+(\d+)\s+minutes?'\)/gi, "now() + interval '$1 minutes'")
-        .replace(/\bdatetime\('now'\s*,\s*'-(\d+)\s+minutes?'\)/gi, "now() - interval '$1 minutes'")
-        .replace(/\bdatetime\('now'\)/gi, 'now()')
-        .replace(/\bdatetime\(([^)]+)\)/gi, '$1::timestamptz')
         .replace(/\bCURRENT_TIMESTAMP\b/g, 'now()')
         .replace(/\bINSERT\s+OR\s+IGNORE\s+INTO\b/gi, 'INSERT INTO')
         .replace(/\bUPDATE\s+OR\s+IGNORE\b/gi, 'UPDATE')
-        .replace(/\bINSERT\s+OR\s+REPLACE\s+INTO\b/gi, 'INSERT INTO')
-        .replace(/\b([a-zA-Z_][\w.]*)\s*->>\s*'([a-zA-Z0-9_]+)'/g, "($1::jsonb)->>'$2'")
-        .replace(/\bjson_extract\(\s*([a-zA-Z_][\w.]*)\s*,\s*'\$\.([a-zA-Z0-9_]+)'\s*\)/gi, "($1->>'$2')")
         .replace(/\bUPDATE\s+user\b/gi, 'UPDATE "user"')
         .replace(/\bFROM\s+user\b/gi, 'FROM "user"')
         .replace(/\bJOIN\s+user\b/gi, 'JOIN "user"')
@@ -167,11 +291,11 @@ function translateSqlDialect(sql: string): string {
         .replace(/\bemailVerified\b/g, '"emailVerified"')
         .replace(/\buserId\b/g, '"userId"');
     const isInsert = /^\s*INSERT\s+INTO\b/i.test(out);
-    const cameFromIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(sql);
+    const cameFromIgnore = /\bINSERT\s+OR\s+IGNORE\s+INTO\b/i.test(protectedSql.sql);
     if (isInsert && cameFromIgnore && !/\bON\s+CONFLICT\b/i.test(out)) {
         out += ' ON CONFLICT DO NOTHING';
     }
-    return out;
+    return restoreSqlParts(out, protectedSql.parts);
 }
 function translateSql(sql: string): string {
     return convertPlaceholders(translateSqlDialect(sql));
@@ -429,7 +553,7 @@ export class AsyncDb {
         return new AsyncStmt<T>(sql);
     }
     exec(sql: string): Promise<void> {
-        if (isSyncTestMode()) {
+        if (isSyncTestMode() && !txClientStore.getStore()) {
             syncExec(sql);
             return undefined as unknown as Promise<void>;
         }

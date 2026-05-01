@@ -19,7 +19,7 @@ process.env.RESEND_API_KEY = 're_test_dummy'
 vi.mock('../lib/seed-catalog.js', () => ({ seedCatalog: vi.fn() }))
 
 const { initDatabase, getDb, TEST_DATABASE_HANDLE } = await import('../lib/db.js')
-const { loadEffectiveRatings, rescoreCandidature, rescorePoste, recalculateAllCandidatureScores } = await import('../lib/scoring-helpers.js')
+const { loadEffectiveRatings, rescoreCandidature, rescorePoste, recalculateAllCandidatureScores, scheduleAllCandidatureScoreRecalculation } = await import('../lib/scoring-helpers.js')
 const { calculatePosteCompatibility, calculateEquipeCompatibility, TEAM_DRAFT_MIN_RATED_SKILLS } = await import('../lib/compatibility.js')
 
 function preSeed() {
@@ -29,7 +29,7 @@ function preSeed() {
     CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, label TEXT NOT NULL, emoji TEXT NOT NULL, sort_order INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT);
   `)
-  db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', '5.1.0')").run()
+  db.prepare("INSERT INTO catalog_meta (key, value) VALUES ('version', '5.1.0') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run()
   const cats = ['core-engineering','backend-integration','frontend-ui','platform-engineering','observability-reliability','security-compliance','architecture-governance','soft-skills-delivery','domain-knowledge','ai-engineering','qa-test-engineering','infrastructure-systems-network','analyse-fonctionnelle','project-management-pmo','change-management-training','design-ux','data-engineering-governance','management-leadership','legacy-ibmi-adelia','javaee-jboss']
   const ins = db.prepare('INSERT OR IGNORE INTO categories (id, label, emoji, sort_order) VALUES (?, ?, ?, ?)')
   cats.forEach((c, i) => ins.run(c, c, '*', i))
@@ -185,15 +185,20 @@ describe('rescorePoste — batch update', () => {
 })
 
 describe('team baseline scoring', () => {
-  it('ignores under-threshold draft team ratings for EQUIPE scoring', async () => {
+  function seedDraftBaselineFixtures() {
     const db = getDb()
-    db.prepare('DELETE FROM evaluations').run()
     db.prepare('INSERT OR IGNORE INTO categories (id, label, emoji, sort_order) VALUES (?, ?, ?, ?)').run('draft-baseline-cat', 'Draft Baseline', '*', 999)
     for (let i = 1; i <= TEAM_DRAFT_MIN_RATED_SKILLS; i++) {
       db.prepare('INSERT OR IGNORE INTO skills (id, category_id, label, sort_order) VALUES (?, ?, ?, ?)').run(`draft-baseline-skill-${i}`, 'draft-baseline-cat', `Draft baseline skill ${i}`, i)
     }
     db.prepare('INSERT OR IGNORE INTO roles (id, label, created_by) VALUES (?, ?, ?)').run('draft-baseline-role', 'Draft Baseline Role', 'test')
     db.prepare('INSERT OR IGNORE INTO role_categories (role_id, category_id) VALUES (?, ?)').run('draft-baseline-role', 'draft-baseline-cat')
+  }
+
+  it('ignores under-threshold draft team ratings for EQUIPE scoring', async () => {
+    const db = getDb()
+    db.prepare('DELETE FROM evaluations').run()
+    seedDraftBaselineFixtures()
     db.prepare(`
       INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at)
       VALUES (?, ?, '{}', '[]', '[]', NULL)
@@ -207,6 +212,7 @@ describe('team baseline scoring', () => {
   it('uses draft team ratings once the completeness threshold is met', async () => {
     const db = getDb()
     db.prepare('DELETE FROM evaluations').run()
+    seedDraftBaselineFixtures()
     const ratings = Object.fromEntries(
       Array.from({ length: TEAM_DRAFT_MIN_RATED_SKILLS }, (_, i) => [`draft-baseline-skill-${i + 1}`, 5]),
     )
@@ -226,6 +232,7 @@ describe('team baseline scoring', () => {
   it('ignores empty team ratings for EQUIPE scoring', async () => {
     const db = getDb()
     db.prepare('DELETE FROM evaluations').run()
+    seedDraftBaselineFixtures()
     db.prepare(`
       INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at)
       VALUES (?, '{}', '{}', '[]', '[]', NULL)
@@ -244,5 +251,25 @@ describe('recalculateAllCandidatureScores', () => {
     expect(result.total).toBeGreaterThanOrEqual(2)
     expect(result.scored).toBe(result.total)
     expect(result.failed).toEqual([])
+  })
+
+  it('coalesces scheduled global recalculations', async () => {
+    vi.useFakeTimers()
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      scheduleAllCandidatureScoreRecalculation('team-rating-upsert:a', 10)
+      scheduleAllCandidatureScoreRecalculation('team-rating-upsert:b', 10)
+
+      await vi.advanceTimersByTimeAsync(10)
+      await vi.waitFor(() => {
+        expect(infoSpy).toHaveBeenCalledWith('[scoring] recalculateAllCandidatureScores', expect.objectContaining({
+          reason: 'scheduled:team-rating-upsert:a,team-rating-upsert:b',
+        }))
+      })
+    }
+    finally {
+      infoSpy.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })

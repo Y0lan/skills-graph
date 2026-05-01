@@ -6,6 +6,11 @@ import Database from 'better-sqlite3'
 import SyncDatabase from './helpers/postgres-sync-test-db.js'
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-scripts-'))
+const previousEnv = {
+  DATA_DIR: process.env.DATA_DIR,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  SKILL_RADAR_SKIP_BOOTSTRAP_SEED: process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED,
+}
 process.env.DATA_DIR = tmpDir
 process.env.RESEND_API_KEY = 're_test_dummy'
 process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED = 'true'
@@ -48,7 +53,11 @@ function createSourceSqlite(): string {
   sqlite.prepare(`
     INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run('imported-member', JSON.stringify({ java: 4 }), JSON.stringify({ java: 2 }), JSON.stringify(['legacy']), JSON.stringify(['core-engineering']), '2026-01-01T00:00:00.000Z', 'stale')
+  `).run('yolan-maldonado', JSON.stringify({ java: 4 }), JSON.stringify({ java: 2 }), JSON.stringify(['legacy']), JSON.stringify(['core-engineering']), '2026-01-01T00:00:00.000Z', 'stale')
+  sqlite.prepare(`
+    INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run('legacy-ex-team-member', JSON.stringify({ java: 5 }), JSON.stringify({ java: 5 }), JSON.stringify([]), JSON.stringify([]), '2026-01-01T00:00:00.000Z', 'stale')
   sqlite.close()
   return sourcePath
 }
@@ -61,23 +70,38 @@ describe('ops scripts', () => {
 
   afterAll(async () => {
     try { await getDb().close() } catch { /* ignore */ }
-    delete process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED
+    if (previousEnv.DATA_DIR === undefined) delete process.env.DATA_DIR
+    else process.env.DATA_DIR = previousEnv.DATA_DIR
+    if (previousEnv.RESEND_API_KEY === undefined) delete process.env.RESEND_API_KEY
+    else process.env.RESEND_API_KEY = previousEnv.RESEND_API_KEY
+    if (previousEnv.SKILL_RADAR_SKIP_BOOTSTRAP_SEED === undefined) delete process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED
+    else process.env.SKILL_RADAR_SKIP_BOOTSTRAP_SEED = previousEnv.SKILL_RADAR_SKIP_BOOTSTRAP_SEED
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
   it('imports team evaluations from restored SQLite only with --apply and is idempotent', async () => {
     const sourcePath = createSourceSqlite()
     const dryRun = await importTeamEvaluationsFromSqlite({ sourcePath, apply: false, initialize: false })
-    expect(dryRun).toMatchObject({ apply: false, totalSourceRows: 1, importedRows: 0 })
-    expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('imported-member')).toBeUndefined()
+    expect(dryRun).toMatchObject({
+      apply: false,
+      totalSourceRows: 2,
+      knownTeamRows: 1,
+      unknownSlugs: ['legacy-ex-team-member'],
+      importableRows: 1,
+      skippedUnknownRows: 1,
+      importedRows: 0,
+    })
+    expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('yolan-maldonado')).toBeUndefined()
 
     const applied = await importTeamEvaluationsFromSqlite({ sourcePath, apply: true, initialize: false })
     const appliedAgain = await importTeamEvaluationsFromSqlite({ sourcePath, apply: true, initialize: false })
     expect(applied.importedRows).toBe(1)
     expect(appliedAgain.importedRows).toBe(1)
+    expect(applied.skippedUnknownRows).toBe(1)
+    expect(await getDb().prepare('SELECT slug FROM evaluations WHERE slug = ?').get('legacy-ex-team-member')).toBeUndefined()
 
     const row = await getDb().prepare('SELECT ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary FROM evaluations WHERE slug = ?')
-      .get('imported-member') as {
+      .get('yolan-maldonado') as {
         ratings: string
         experience: string
         skipped_categories: string
@@ -111,10 +135,41 @@ describe('ops scripts', () => {
       JSON.stringify(['backend-integration']),
       '2026-01-01T00:00:00.000Z',
     )
-    await putAsset({ candidateId: 'replay-candidate', kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
+    await db.prepare(`
+      INSERT INTO roles (id, label, created_by)
+      VALUES (?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run('replay-role', 'Replay Role', 'ops-test')
+    await db.prepare(`
+      INSERT INTO postes (id, role_id, titre, pole)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run('replay-poste', 'replay-role', 'Replay Poste', 'java_modernisation')
+    await db.prepare(`
+      INSERT INTO candidate_field_overrides (candidate_id, field_name, value, source, locked_by)
+      VALUES (?, ?, ?::jsonb, ?, ?)
+      ON CONFLICT (candidate_id, field_name) DO UPDATE SET value = EXCLUDED.value
+    `).run('replay-candidate', 'role', JSON.stringify('Senior Developer'), 'recruiter', 'ops-test')
+    const rawAsset = await putAsset({ candidateId: 'replay-candidate', kind: 'raw_pdf', buffer: Buffer.from('fake-pdf'), mime: 'application/pdf' })
+    fs.rmSync(rawAsset.storagePath, { force: true })
+    await db.prepare(`
+      INSERT INTO candidatures (id, candidate_id, poste_id, statut, canal)
+      VALUES (?, ?, ?, 'postule', 'site')
+      ON CONFLICT (id) DO NOTHING
+    `).run('replay-candidature', 'replay-candidate', 'replay-poste')
+    const documentsDir = path.join(tmpDir, 'documents', 'replay-candidature')
+    fs.mkdirSync(documentsDir, { recursive: true })
+    const fallbackCvPath = path.join(documentsDir, 'fallback-cv.pdf')
+    fs.writeFileSync(fallbackCvPath, 'fallback-pdf')
+    await db.prepare(`
+      INSERT INTO candidature_documents (id, candidature_id, type, filename, path, uploaded_by)
+      VALUES (?, ?, 'cv', 'fallback-cv.pdf', ?, 'ops-test')
+      ON CONFLICT (id) DO NOTHING
+    `).run('replay-cv-document', 'replay-candidature', fallbackCvPath)
 
     const dryRun = await freshStartRecruitCvReplay({ apply: false, initialize: false })
     expect(dryRun.totalCandidatesWithRawPdf).toBeGreaterThanOrEqual(1)
+    expect(dryRun.preservedFieldOverrides).toBeGreaterThanOrEqual(1)
     const dryRunLedger = await db.prepare(`
       SELECT 1 AS ok FROM information_schema.tables
       WHERE table_schema = current_schema() AND table_name = 'ops_cv_replay_runs'
@@ -123,8 +178,9 @@ describe('ops scripts', () => {
     const processCv = vi.fn().mockResolvedValue({ candidateId: 'replay-candidate', status: 'succeeded', suggestionsCount: 0, failedCategories: [], failedCandidatures: [] })
     const applied = await freshStartRecruitCvReplay({ apply: true, concurrency: 1, initialize: false, processCv })
     expect(applied.replayedCandidates).toBeGreaterThanOrEqual(1)
+    expect(applied.preservedFieldOverrides).toBeGreaterThanOrEqual(1)
     expect(applied.skippedAlreadyReplayed).toBe(0)
-    expect(processCv).toHaveBeenCalledWith('replay-candidate', expect.any(Buffer), { source: 'reextract' })
+    expect(processCv).toHaveBeenCalledWith('replay-candidate', Buffer.from('fallback-pdf'), { source: 'reextract' })
 
     processCv.mockClear()
     const secondApply = await freshStartRecruitCvReplay({ apply: true, concurrency: 1, initialize: false, processCv })
@@ -145,5 +201,9 @@ describe('ops scripts', () => {
     expect(JSON.parse(row.skipped_categories)).toEqual([])
     expect(JSON.parse(row.declined_categories)).toEqual([])
     expect(row.submitted_at).toBeNull()
+    const override = await db.prepare('SELECT value FROM candidate_field_overrides WHERE candidate_id = ? AND field_name = ?')
+      .get('replay-candidate', 'role') as { value: string } | undefined
+    expect(override).toBeDefined()
+    expect(override?.value).toBe('Senior Developer')
   })
 })

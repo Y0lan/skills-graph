@@ -50,6 +50,7 @@ export interface RecalculateAllCandidatureScoresResult {
 }
 let scheduledAllScoresTimer: NodeJS.Timeout | null = null;
 const scheduledAllScoresReasons = new Set<string>();
+let scheduledAllScoresInFlight = false;
 
 export async function rescoreCandidature(candidatureId: string): Promise<RescoreResult> {
     const row = await getDb().prepare(`
@@ -143,17 +144,40 @@ export async function recalculateAllCandidatureScores(reason: string): Promise<R
     return { reason, total: rows.length, scored, failed };
 }
 
-export function scheduleAllCandidatureScoreRecalculation(reason: string, delayMs = 500): void {
-    scheduledAllScoresReasons.add(reason);
-    if (scheduledAllScoresTimer)
+function armScheduledAllScoresTimer(delayMs: number): void {
+    if (scheduledAllScoresTimer || scheduledAllScoresInFlight)
         return;
     scheduledAllScoresTimer = setTimeout(() => {
         scheduledAllScoresTimer = null;
-        const reasons = [...scheduledAllScoresReasons];
-        scheduledAllScoresReasons.clear();
-        recalculateAllCandidatureScores(`scheduled:${reasons.join(',')}`).catch((err) => {
-            console.error('[scoring] scheduled recalculateAllCandidatureScores failed:', err);
-        });
+        void flushScheduledAllScores();
     }, delayMs);
     scheduledAllScoresTimer.unref?.();
+}
+
+async function flushScheduledAllScores(): Promise<void> {
+    if (scheduledAllScoresInFlight || scheduledAllScoresReasons.size === 0)
+        return;
+    scheduledAllScoresInFlight = true;
+    const reasons = [...scheduledAllScoresReasons];
+    scheduledAllScoresReasons.clear();
+    try {
+        await recalculateAllCandidatureScores(`scheduled:${reasons.join(',')}`);
+    }
+    catch (err) {
+        for (const reason of reasons) {
+            scheduledAllScoresReasons.add(reason);
+        }
+        console.error('[scoring] scheduled recalculateAllCandidatureScores failed:', err);
+    }
+    finally {
+        scheduledAllScoresInFlight = false;
+        if (scheduledAllScoresReasons.size > 0) {
+            armScheduledAllScoresTimer(500);
+        }
+    }
+}
+
+export function scheduleAllCandidatureScoreRecalculation(reason: string, delayMs = 500): void {
+    scheduledAllScoresReasons.add(reason);
+    armScheduledAllScoresTimer(delayMs);
 }

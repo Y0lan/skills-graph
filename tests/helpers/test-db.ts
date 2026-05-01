@@ -20,6 +20,7 @@ export async function createTestDb() {
   const baseUrl = globals.__skillRadarBaseDatabaseUrl ?? process.env.DATABASE_URL
   if (!baseUrl)
     throw new Error('[test-db] DATABASE_URL is required')
+  globals.__skillRadarBaseDatabaseUrl = baseUrl
   const schemaName = `helper_${crypto.randomUUID().replace(/-/g, '')}`
   const pool = new pg.Pool({ connectionString: baseUrl, max: 1 })
   try {

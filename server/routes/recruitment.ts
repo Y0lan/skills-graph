@@ -2227,27 +2227,41 @@ protectedRouter.post('/postes/:posteId/outreach', heavyRateLimit, async (req, re
 // ═══════════════════════════════════════════════════════════════════════
 /**
  * Re-run the full CV extraction pipeline (baseline + profile + role-aware +
- * multipass) using the raw_pdf asset persisted at initial upload time.
+ * multipass) using the raw_pdf asset persisted at initial upload time, with
+ * a fallback to the stored CV document (GCS or legacy local path).
  * Returns 409 when another extraction is already running for this candidate,
- * or when no raw_pdf asset exists (recruiter must re-upload the CV).
+ * or when no readable CV exists (recruiter must re-upload the CV).
  */
 protectedRouter.post('/candidates/:id/reextract', heavyRateLimit, async (req, res) => {
     const candidateId = String(req.params.id);
     const asset = await getLatestAsset(candidateId, 'raw_pdf');
-    if (!asset) {
+    let buf: Buffer | null = null;
+    if (asset) {
+        try {
+            buf = await readAssetBuffer(asset.id);
+        }
+        catch (err) {
+            console.warn(`[reextract] candidate=${candidateId}: raw_pdf unreadable, trying document fallback`, err);
+        }
+    }
+    let fallbackBuf: Buffer | null = buf;
+    if (!fallbackBuf) {
+        try {
+            fallbackBuf = await readLatestCvDocumentBuffer(candidateId);
+        }
+        catch (err) {
+            console.warn(`[reextract] candidate=${candidateId}: CV document fallback unreadable`, err);
+        }
+    }
+    if (!fallbackBuf) {
         res.status(409).json({
-            error: 'Aucun CV original trouvé — re-téléchargez le CV pour lancer une ré-extraction',
-            code: 'no-raw-pdf',
+            error: 'Aucun CV original accessible — re-téléchargez le CV pour lancer une ré-extraction',
+            code: 'no-readable-cv',
         });
         return;
     }
-    const buf = await readAssetBuffer(asset.id);
-    if (!buf) {
-        res.status(409).json({ error: 'Fichier CV introuvable sur disque', code: 'asset-missing' });
-        return;
-    }
     try {
-        const result = await processCvForCandidate(candidateId, buf, { source: 'reextract' });
+        const result = await processCvForCandidate(candidateId, fallbackBuf, { source: 'reextract' });
         if (result.status === 'skipped') {
             res.status(409).json({ error: 'Extraction déjà en cours', code: 'in-flight' });
             return;
@@ -2260,6 +2274,34 @@ protectedRouter.post('/candidates/:id/reextract', heavyRateLimit, async (req, re
         res.status(500).json({ error: msg });
     }
 });
+
+async function readLatestCvDocumentBuffer(candidateId: string): Promise<Buffer | null> {
+    const row = await getDb().prepare(`
+    SELECT cd.id
+    FROM candidature_documents cd
+    JOIN candidatures c ON c.id = cd.candidature_id
+    WHERE c.candidate_id = ?
+      AND cd.type = 'cv'
+      AND cd.deleted_at IS NULL
+    ORDER BY cd.created_at DESC, cd.id DESC
+    LIMIT 1
+  `).get(candidateId) as { id: string } | undefined;
+    if (!row)
+        return null;
+    const fetched = await getDocumentForDownload(row.id);
+    if ('error' in fetched)
+        return null;
+    if (fetched.kind === 'gcs')
+        return fetched.buffer;
+    const fs = await import('fs');
+    try {
+        return fs.readFileSync(fetched.filePath);
+    }
+    catch {
+        return null;
+    }
+}
+
 /** List extraction runs for a candidate (metadata only, no payloads). */
 protectedRouter.get('/candidates/:id/extraction-runs', async (req, res) => {
     const limitRaw = Number(req.query.limit);

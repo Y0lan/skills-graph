@@ -47,7 +47,7 @@ function preSeed() {
     CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, category_id TEXT NOT NULL, label TEXT NOT NULL, sort_order INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT);
   `)
-  db.prepare("INSERT OR REPLACE INTO catalog_meta (key, value) VALUES ('version', '5.1.0')").run()
+  db.prepare("INSERT INTO catalog_meta (key, value) VALUES ('version', '5.1.0') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value").run()
   const cats = ['core-engineering','backend-integration','frontend-ui','platform-engineering','observability-reliability','security-compliance','architecture-governance','soft-skills-delivery','domain-knowledge','ai-engineering','qa-test-engineering','infrastructure-systems-network','analyse-fonctionnelle','project-management-pmo','change-management-training','design-ux','data-engineering-governance','management-leadership','legacy-ibmi-adelia','javaee-jboss']
   const ins = db.prepare('INSERT OR IGNORE INTO categories (id, label, emoji, sort_order) VALUES (?, ?, ?, ?)')
   cats.forEach((c, i) => ins.run(c, c, '*', i))
@@ -116,12 +116,12 @@ describe('Phase 8: re-extract + history + diff', () => {
   })
 
   describe('POST /candidates/:id/reextract', () => {
-    it('409 when no raw_pdf asset exists', async () => {
+    it('409 when no readable CV exists', async () => {
       const cid = seedCandidateWithPoste()
       const app = await buildApp()
       const res = await supertest(app).post(`/api/recruitment/candidates/${cid}/reextract`)
       expect(res.status).toBe(409)
-      expect(res.body.code).toBe('no-raw-pdf')
+      expect(res.body.code).toBe('no-readable-cv')
     })
 
     it('happy path: runs pipeline, returns status', async () => {

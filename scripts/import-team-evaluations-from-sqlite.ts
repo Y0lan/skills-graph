@@ -10,6 +10,7 @@ import { teamMembers } from '../server/data/team-roster.js';
 interface ImportArgs {
   sourcePath: string;
   apply: boolean;
+  includeUnknownSlugs: boolean;
 }
 
 interface SourceEvaluation {
@@ -27,6 +28,9 @@ export interface ImportTeamEvaluationsResult {
   nonEmptyRatings: number;
   knownTeamRows: number;
   unknownSlugs: string[];
+  includeUnknownSlugs: boolean;
+  importableRows: number;
+  skippedUnknownRows: number;
   slugs: string[];
   importedRows: number;
   rescoredCandidatures: number;
@@ -34,18 +38,23 @@ export interface ImportTeamEvaluationsResult {
 
 function usage(): string {
   return `Usage:
-  SQLITE_PATH=/path/to/restored.db tsx scripts/import-team-evaluations-from-sqlite.ts [--apply]
-  tsx scripts/import-team-evaluations-from-sqlite.ts --source=/path/to/restored.db [--apply]
+  SQLITE_PATH=/path/to/restored.db tsx scripts/import-team-evaluations-from-sqlite.ts [--apply] [--include-unknown-slugs]
+  tsx scripts/import-team-evaluations-from-sqlite.ts --source=/path/to/restored.db [--apply] [--include-unknown-slugs]
 
-Dry-run is the default. --apply is required to mutate the app database.`;
+Dry-run is the default. --apply is required to mutate the app database.
+Unknown slugs from the historical SQLite source are reported but skipped by default.`;
 }
 
 export function parseImportTeamEvaluationsArgs(argv: string[]): ImportArgs {
   let sourcePath = process.env.SQLITE_PATH ?? '';
   let apply = false;
+  let includeUnknownSlugs = false;
   for (const arg of argv) {
     if (arg === '--apply') {
       apply = true;
+    }
+    else if (arg === '--include-unknown-slugs') {
+      includeUnknownSlugs = true;
     }
     else if (arg.startsWith('--source=')) {
       sourcePath = arg.slice('--source='.length);
@@ -60,7 +69,7 @@ export function parseImportTeamEvaluationsArgs(argv: string[]): ImportArgs {
   }
   if (!sourcePath)
     throw new Error(`Missing SQLite source path.\n${usage()}`);
-  return { sourcePath, apply };
+  return { sourcePath, apply, includeUnknownSlugs };
 }
 
 function normalizeJson(raw: unknown, fallback: string): string {
@@ -92,9 +101,10 @@ function loadSourceEvaluations(sourcePath: string): SourceEvaluation[] {
     if (!table)
       throw new Error('Source SQLite has no evaluations table');
     const cols = sourceColumns(sqlite);
+    const skippedExpr = cols.has('skipped_categories') ? 'skipped_categories' : `'[]' AS skipped_categories`;
     const declinedExpr = cols.has('declined_categories') ? 'declined_categories' : `'[]' AS declined_categories`;
     const rows = sqlite.prepare(`
-      SELECT slug, ratings, experience, skipped_categories, ${declinedExpr}
+      SELECT slug, ratings, experience, ${skippedExpr}, ${declinedExpr}
       FROM evaluations
       WHERE slug IS NOT NULL AND TRIM(slug) <> ''
       ORDER BY slug ASC
@@ -121,12 +131,16 @@ function loadSourceEvaluations(sourcePath: string): SourceEvaluation[] {
 export async function importTeamEvaluationsFromSqlite(options: {
   sourcePath: string;
   apply?: boolean;
+  includeUnknownSlugs?: boolean;
   initialize?: boolean;
 }): Promise<ImportTeamEvaluationsResult> {
   const sourcePath = path.resolve(options.sourcePath);
   const rows = loadSourceEvaluations(sourcePath);
   const knownSlugs = new Set(teamMembers.map((member) => member.slug));
-  const unknownSlugs = rows.map((row) => row.slug).filter((slug) => !knownSlugs.has(slug));
+  const unknownSlugs = [...new Set(rows.map((row) => row.slug).filter((slug) => !knownSlugs.has(slug)))];
+  const includeUnknownSlugs = options.includeUnknownSlugs === true;
+  const rowsToImport = includeUnknownSlugs ? rows : rows.filter((row) => knownSlugs.has(row.slug));
+  const knownTeamRows = rows.filter((row) => knownSlugs.has(row.slug)).length;
   const nonEmptyRatings = rows.filter((row) => hasNonEmptyRatings(row.ratings)).length;
   if (!options.apply) {
     return {
@@ -134,8 +148,11 @@ export async function importTeamEvaluationsFromSqlite(options: {
       sourcePath,
       totalSourceRows: rows.length,
       nonEmptyRatings,
-      knownTeamRows: rows.length - unknownSlugs.length,
+      knownTeamRows,
       unknownSlugs,
+      includeUnknownSlugs,
+      importableRows: rowsToImport.length,
+      skippedUnknownRows: rows.length - rowsToImport.length,
       slugs: rows.map((row) => row.slug),
       importedRows: 0,
       rescoredCandidatures: 0,
@@ -143,8 +160,8 @@ export async function importTeamEvaluationsFromSqlite(options: {
   }
   if (options.initialize !== false)
     await initDatabase();
-  const db = getDb();
-  const upsert = db.prepare(`
+  const postgresDb = getDb();
+  const upsert = postgresDb.prepare(`
     INSERT INTO evaluations (slug, ratings, experience, skipped_categories, declined_categories, submitted_at, profile_summary)
     VALUES (?, ?, ?, ?, ?, NULL, NULL)
     ON CONFLICT (slug) DO UPDATE SET
@@ -155,12 +172,13 @@ export async function importTeamEvaluationsFromSqlite(options: {
       submitted_at = NULL,
       profile_summary = NULL
   `);
-  await db.transaction(async () => {
-    for (const row of rows) {
+  const deleteComparisons = postgresDb.prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?');
+  await postgresDb.transaction(async () => {
+    for (const row of rowsToImport) {
       await upsert.run(row.slug, row.ratings, row.experience, row.skippedCategories, row.declinedCategories);
     }
-    for (const row of rows) {
-      await db.prepare('DELETE FROM comparison_summaries WHERE slug_a = ? OR slug_b = ?').run(row.slug, row.slug);
+    for (const row of rowsToImport) {
+      await deleteComparisons.run(row.slug, row.slug);
     }
   })();
   const rescored = await recalculateAllCandidatureScores('team-evaluations-sqlite-import');
@@ -169,23 +187,32 @@ export async function importTeamEvaluationsFromSqlite(options: {
     sourcePath,
     totalSourceRows: rows.length,
     nonEmptyRatings,
-    knownTeamRows: rows.length - unknownSlugs.length,
+    knownTeamRows,
     unknownSlugs,
+    includeUnknownSlugs,
+    importableRows: rowsToImport.length,
+    skippedUnknownRows: rows.length - rowsToImport.length,
     slugs: rows.map((row) => row.slug),
-    importedRows: rows.length,
+    importedRows: rowsToImport.length,
     rescoredCandidatures: rescored.scored,
   };
 }
 
 async function main() {
   const args = parseImportTeamEvaluationsArgs(process.argv.slice(2));
-  const result = await importTeamEvaluationsFromSqlite(args);
-  console.log(JSON.stringify(result, null, 2));
-  if (!args.apply) {
-    console.log('Dry-run only. Re-run with --apply to import evaluations.');
+  try {
+    const result = await importTeamEvaluationsFromSqlite(args);
+    console.log(JSON.stringify(result, null, 2));
+    if (!args.apply) {
+      console.log('Dry-run only. Re-run with --apply to import evaluations.');
+    }
   }
-  if (args.apply)
-    await getDb().close().catch(() => undefined);
+  finally {
+    try {
+      await getDb().close().catch(() => undefined);
+    }
+    catch { /* Database was not initialized, e.g. dry-run source validation only. */ }
+  }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

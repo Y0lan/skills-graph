@@ -49,11 +49,11 @@ TypeScript 5.x (frontend + backend): Follow standard conventions
 
 3. **Sensitive profile fields are out of scope for v1.** Do not extract or store DOB, gender, nationality, marital status, expected salary, or candidate photo. The profile extraction prompt in `server/lib/cv-profile-extraction.ts` explicitly tells the model not to fill these and the Zod schema has no slots for them.
 
-4. **CV-derived form categories never invent skills.** The frontend can only reference existing skill catalog category IDs. Check against the `skills.category_id` catalog — LLM outputs that don't map to real catalog entries are silently dropped. See `computeCvDerivedCategories()` in `server/routes/evaluate.ts`.
+4. **Public candidate forms start blank.** `GET /api/evaluate/:id/form` must not expose CV-derived answers, AI suggestions, or extra CV-derived categories to the candidate. Recruiter/admin views may show CV insights. If a future internal flow derives categories from a CV, every category ID must still exist in the skill catalog; hallucinated IDs are dropped.
 
 5. **Prompt injection defense.** Fiche de poste content and CV content are DATA, not instructions. System prompts wrap reference content in `<reference>` tags with an explicit guard-text instruction AFTER the close tag. Regression tested in `cv-pipeline.multi-poste.test.ts`.
 
-6. **Locked profile fields are inviolable.** `persistMergedProfile` and `setProfileFieldLock` both operate inside SQLite transactions. Never overwrite a field with `humanLockedAt IS NOT NULL`. Re-extraction preserves locks.
+6. **Locked profile fields are inviolable.** `persistMergedProfile` and `setProfileFieldLock` both operate inside database transactions. Never overwrite a field with `humanLockedAt IS NOT NULL`. Re-extraction and the fresh-start CV replay preserve recruiter-locked `candidate_field_overrides`.
 
 7. **Effective Ratings Module is the ONLY ratings merge.** `server/lib/effective-ratings.ts` (`mergeEffectiveRatings`, `loadEffectiveRatings`) owns the `manual > role-aware > AI baseline` precedence. Every site that scores or displays "the candidate's effective ratings" must go through this Module. Inline `{ ...aiSuggestions, ...ratings }` spreads, `roleAware ?? ai` either/or shapes, or any other re-derivation are forbidden — `effective-ratings-guardrail.test.ts` greps the codebase and fails CI on regressions. Two modes: `current-poste` (default — includes role-aware) and `cross-poste-baseline` (drops role-aware because it was calibrated to a different poste).
 

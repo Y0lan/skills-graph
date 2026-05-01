@@ -30,6 +30,24 @@ describe.sequential('resolveAppPublicOrigin', () => {
     expect(resolveAppPublicOrigin()).toBe('https://cors.example.com')
   })
 
+  it('does not use wildcard or allowlist CORS values as public link origins', () => {
+    delete process.env.APP_PUBLIC_ORIGIN
+    delete process.env.BETTER_AUTH_URL
+    process.env.CORS_ORIGIN = 'https://app.example.com,https://admin.example.com'
+    expect(resolveAppPublicOrigin()).toBe('http://localhost:5173')
+
+    process.env.CORS_ORIGIN = '*'
+    expect(resolveAppPublicOrigin()).toBe('http://localhost:5173')
+  })
+
+  it('rejects URL paths in public origin env candidates', () => {
+    process.env.APP_PUBLIC_ORIGIN = 'https://competences.sinapse.nc/evaluate'
+    delete process.env.BETTER_AUTH_URL
+    process.env.CORS_ORIGIN = 'https://cors.example.com'
+
+    expect(resolveAppPublicOrigin()).toBe('https://cors.example.com')
+  })
+
   it('uses request host only for local development', () => {
     vi.stubEnv('APP_PUBLIC_ORIGIN', '')
     vi.stubEnv('BETTER_AUTH_URL', '')

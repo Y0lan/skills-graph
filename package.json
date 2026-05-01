@@ -11,8 +11,8 @@
     "seed:users": "tsx --env-file-if-exists=.env scripts/seed-users.ts",
     "backup": "tsx scripts/backup-db.ts",
     "ops:restore-r2": "bash scripts/restore-r2-litestream.sh",
-    "ops:import-team": "tsx scripts/import-team-evaluations-from-sqlite.ts",
-    "ops:fresh-start-recruit-cv-replay": "tsx scripts/fresh-start-recruit-cv-replay.ts",
+    "ops:import-team": "tsx --env-file-if-exists=.env scripts/import-team-evaluations-from-sqlite.ts",
+    "ops:fresh-start-recruit-cv-replay": "tsx --env-file-if-exists=.env scripts/fresh-start-recruit-cv-replay.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "preview": "vite preview"

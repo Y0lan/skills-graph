@@ -228,10 +228,10 @@ http {
     }
   }
 
-  # Skill Radar — competences.sinapse.nc + competences.sinapse.nc
+  # Skill Radar — competences.sinapse.nc
   server {
     listen 80;
-    server_name competences.sinapse.nc competences.sinapse.nc;
+    server_name competences.sinapse.nc;
 
     location = /edge-health { access_log off; return 200 "ok\n"; }
 
