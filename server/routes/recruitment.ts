@@ -172,6 +172,80 @@ recruitmentRouter.post('/intake', intakeRateLimit, async (req, res) => {
 // ─── Protected routes (require lead) ────────────────────────────────
 const protectedRouter = Router();
 protectedRouter.use(requireLead);
+const DEFAULT_CANDIDATE_EMAIL_CC = 'contact@sinapse.nc';
+const SIMPLE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeEmailList(value: unknown): { emails: string[]; error?: string } {
+    const raw = Array.isArray(value)
+        ? value.flatMap(item => String(item).split(/[,\n;]/g))
+        : typeof value === 'string'
+            ? value.split(/[,\n;]/g)
+            : [];
+    const emails: string[] = [];
+    const seen = new Set<string>();
+    for (const item of raw) {
+        const email = item.trim();
+        if (!email)
+            continue;
+        if (!SIMPLE_EMAIL_RE.test(email)) {
+            return { emails: [], error: `Adresse email invalide en copie: ${email}` };
+        }
+        const key = email.toLowerCase();
+        if (seen.has(key))
+            continue;
+        seen.add(key);
+        emails.push(email);
+    }
+    return { emails };
+}
+
+function resolveCandidateEmailCc(value: unknown): { cc: string[]; error?: string } {
+    if (value === undefined || value === null) {
+        return { cc: [DEFAULT_CANDIDATE_EMAIL_CC] };
+    }
+    const parsed = normalizeEmailList(value);
+    if (parsed.error)
+        return { cc: [], error: parsed.error };
+    return { cc: parsed.emails };
+}
+
+function parseSnapshotCc(value: unknown): string[] {
+    const parsed = normalizeEmailList(value);
+    return parsed.error ? [] : parsed.emails;
+}
+
+async function hasSentCandidateEmailForStatus(candidatureId: string, statut: string): Promise<boolean> {
+    const row = await getDb().prepare(`
+    SELECT 1
+    FROM candidature_events
+    WHERE candidature_id = ?
+      AND type = 'email_sent'
+      AND email_snapshot->>'statut' = ?
+      AND (
+        email_snapshot->>'recipient' = 'candidate'
+        OR email_snapshot->>'to' IS NOT NULL
+      )
+    LIMIT 1
+  `).get(candidatureId, statut);
+    return !!row;
+}
+
+type TransitionEmailInfo = {
+    name: string;
+    email: string | null;
+    candidate_id: string;
+    poste_titre: string;
+};
+
+async function getTransitionEmailInfo(candidatureId: string): Promise<TransitionEmailInfo | undefined> {
+    return await getDb().prepare(`
+    SELECT cand.name, cand.email, cand.id as candidate_id, p.titre AS poste_titre
+    FROM candidatures c
+    JOIN candidates cand ON cand.id = c.candidate_id
+    JOIN postes p ON p.id = c.poste_id
+    WHERE c.id = ?
+  `).get(candidatureId) as TransitionEmailInfo | undefined;
+}
 // List all postes with candidate counts
 protectedRouter.get('/postes', async (_req, res) => {
     const postes = await getDb().prepare(`
@@ -852,7 +926,7 @@ protectedRouter.get('/email-template/:statut', (req, res) => {
 });
 // Change candidature status (with state machine validation)
 protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req, res) => {
-    const { statut, currentStatut: clientStatut, notes, skipReason, sendEmail, includeReasonInEmail, customBody, skipEmailReason } = req.body;
+    const { statut, currentStatut: clientStatut, notes, skipReason, sendEmail, includeReasonInEmail, customBody, skipEmailReason, cc, emailCc } = req.body;
     if (!statut || typeof statut !== 'string') {
         res.status(400).json({ error: 'Statut requis' });
         return;
@@ -898,8 +972,15 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     // is mandatory and gets audit-logged. The check applies only to statuts
     // that have a candidate-facing email (i.e., not skill_radar_complete which
     // never emails the candidate, and not refuse which always sends).
+    const candidatureId = String(req.params.id);
     const isEmailableStatusForSkipCheck = statut !== 'skill_radar_complete' && statut !== 'refuse';
-    if (isEmailableStatusForSkipCheck && sendEmail === false) {
+    const isEmailableStatus = statut !== 'skill_radar_complete';
+    const shouldSendEmail = statut === 'refuse' || !!sendEmail;
+    const duplicateCandidateEmail = shouldSendEmail && isEmailableStatus
+        ? await hasSentCandidateEmailForStatus(candidatureId, statut)
+        : false;
+    const effectiveSendEmail = shouldSendEmail && isEmailableStatus && !duplicateCandidateEmail;
+    if (isEmailableStatusForSkipCheck && sendEmail === false && !duplicateCandidateEmail) {
         const reason = typeof skipEmailReason === 'string' ? skipEmailReason.trim() : '';
         if (reason.length < 10) {
             res.status(400).json({ error: 'Une raison d’au moins 10 caractères est requise pour avancer sans envoyer d’email.' });
@@ -907,6 +988,34 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
         }
     }
     const user = getUser(req);
+    const userSlug = user.slug || 'unknown';
+    const ccInput = cc ?? emailCc;
+    const candidateEmailCc = effectiveSendEmail ? resolveCandidateEmailCc(ccInput) : { cc: [] };
+    if (candidateEmailCc.error) {
+        res.status(400).json({ error: candidateEmailCc.error });
+        return;
+    }
+    const pendingEmails = await findPendingScheduledEmails(candidatureId, 0);
+    if (pendingEmails.length > 0) {
+        const emailInfo = await getTransitionEmailInfo(candidatureId);
+        if (!emailInfo) {
+            res.status(404).json({ error: 'Candidature introuvable' });
+            return;
+        }
+        const resolved = await resolvePendingScheduledEmailsForTransition({
+            candidatureId,
+            pendingEmails,
+            mode: sendEmail === false || statut === 'refuse' ? 'cancel' : 'send-now',
+            emailInfo,
+            baseUrl: resolveAppPublicOrigin(req),
+            targetStatut: statut,
+            userSlug,
+        });
+        if (!resolved.ok) {
+            res.status(502).json({ error: resolved.error });
+            return;
+        }
+    }
     // Captured inside the tx, surfaced in the response so the transition
     // dialog can stamp the same id on the follow-up file upload — that's
     // what lets the per-stage history card attach the document to its
@@ -922,7 +1031,10 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
                 ? `[Saut: ${getSkippedSteps(current.statut, statut).join(' → ')}] ${skipReason?.trim() ?? ''}\n${notes?.trim() ?? ''}`.trim()
                 : notes?.trim() || null;
             // Append skip-email reason to the audit trail if the recruiter opted out.
-            if (isEmailableStatusForSkipCheck && sendEmail === false && typeof skipEmailReason === 'string' && skipEmailReason.trim()) {
+            if (duplicateCandidateEmail) {
+                eventNotes = `${eventNotes ? eventNotes + '\n' : ''}[Email non envoyé — déjà envoyé pour cette étape]`;
+            }
+            else if (isEmailableStatusForSkipCheck && sendEmail === false && typeof skipEmailReason === 'string' && skipEmailReason.trim()) {
                 eventNotes = `${eventNotes ? eventNotes + '\n' : ''}[Email non envoyé — raison: ${skipEmailReason.trim()}]`;
             }
             // `stage` mirrors `statut_to` for status_change events so the
@@ -955,29 +1067,14 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
     }
     // Unified email dispatch for all transition types
     let emailSent = false;
-    const candidatureId = req.params.id;
-    const shouldSendEmail = statut === 'refuse' || sendEmail;
-    const isEmailableStatus = statut !== 'skill_radar_complete';
-    if (shouldSendEmail && isEmailableStatus) {
+    if (effectiveSendEmail) {
         // IMPORTANT: select the actual poste title for THIS candidature, not the
         // candidate.role string (which is set at candidate creation and goes stale
         // for second/subsequent applications since one candidate can apply to many
         // postes).
-        const candidateInfo = await getDb().prepare(`
-      SELECT cand.name, cand.email, cand.id as candidate_id, p.titre AS poste_titre
-      FROM candidatures c
-      JOIN candidates cand ON cand.id = c.candidate_id
-      JOIN postes p ON p.id = c.poste_id
-      WHERE c.id = ?
-    `).get(candidatureId) as {
-            name: string;
-            email: string | null;
-            candidate_id: string;
-            poste_titre: string;
-        } | undefined;
+        const candidateInfo = await getTransitionEmailInfo(candidatureId);
         if (candidateInfo?.email) {
             const baseUrl = resolveAppPublicOrigin(req);
-            const userSlug = user.slug || 'unknown';
             // Delay candidate-facing emails by REVERT_WINDOW_MS so the lead can
             // undo the transition (and cancel the scheduled send) or force-send
             // via POST /email/send-now. Resend holds the email on their side.
@@ -985,6 +1082,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
             try {
                 const emailResult = await sendTransitionEmail({
                     to: candidateInfo.email,
+                    cc: candidateEmailCc.cc,
                     candidateName: candidateInfo.name,
                     role: candidateInfo.poste_titre,
                     statut,
@@ -1018,7 +1116,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
                             await getDb().prepare(`
                 INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
                 VALUES (?, ?, ?, ?, ?)
-              `).run(candidatureId, cancelled ? 'email_cancelled' : 'email_failed', `Race revert détectée — programmation ${emailResult.messageId} ${cancelled ? 'annulée' : 'orpheline (cancel échoué)'}`, JSON.stringify({ messageId: emailResult.messageId, to: candidateInfo.email, statut, cancelledBy: 'race-guard' }), userSlug);
+              `).run(candidatureId, cancelled ? 'email_cancelled' : 'email_failed', `Race revert détectée — programmation ${emailResult.messageId} ${cancelled ? 'annulée' : 'orpheline (cancel échoué)'}`, JSON.stringify({ messageId: emailResult.messageId, to: candidateInfo.email, cc: candidateEmailCc.cc, statut, cancelledBy: 'race-guard' }), userSlug);
                             emailSent = false;
                         }
                     }
@@ -1043,6 +1141,7 @@ protectedRouter.patch('/candidatures/:id/status', mutationRateLimit, async (req,
                             messageId: emailResult.messageId,
                             recipient: 'candidate',
                             to: candidateInfo.email,
+                            cc: candidateEmailCc.cc,
                             statut,
                             scheduledAt: emailResult.scheduled ? scheduledAt : undefined,
                         }), userSlug);
@@ -2919,6 +3018,7 @@ type PendingScheduledEmail = {
     statut: string | null;
     subject: string | null;
     body: string | null;
+    cc: string[];
 };
 /** Return scheduled emails that were queued *after* a given candidature_event
  *  id and haven't been superseded by an email_sent / email_cancelled /
@@ -2948,6 +3048,7 @@ async function findPendingScheduledEmails(candidatureId: string, afterEventId: n
             statut?: string;
             subject?: string;
             body?: string;
+            cc?: string | string[];
         } : {};
         const messageId = snap.messageId ?? null;
         if (messageId) {
@@ -2972,9 +3073,91 @@ async function findPendingScheduledEmails(candidatureId: string, afterEventId: n
             statut: snap.statut ?? null,
             subject: snap.subject ?? null,
             body: snap.body ?? null,
+            cc: parseSnapshotCc(snap.cc),
         });
     }
     return out;
+}
+
+async function resolvePendingScheduledEmailsForTransition(opts: {
+    candidatureId: string;
+    pendingEmails: PendingScheduledEmail[];
+    mode: 'send-now' | 'cancel';
+    emailInfo: TransitionEmailInfo;
+    baseUrl: string;
+    targetStatut: string;
+    userSlug: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+    for (const pending of opts.pendingEmails) {
+        if (!pending.messageId)
+            continue;
+        const cancelled = await cancelScheduledEmail(pending.messageId);
+        if (!cancelled) {
+            return { ok: false, error: `Impossible d’annuler l’email programmé (${pending.messageId}). Réessayez dans un instant.` };
+        }
+        const statut = pending.statut ?? opts.targetStatut;
+        const to = pending.candidateEmail ?? opts.emailInfo.email;
+        const cc = pending.cc.length > 0 ? pending.cc : [DEFAULT_CANDIDATE_EMAIL_CC];
+        if (opts.mode === 'cancel') {
+            await getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+        VALUES (?, 'email_cancelled', ?, ?, ?)
+      `).run(opts.candidatureId, `Email programmé annulé (${statut} → ${to ?? ''}) avant passage à ${opts.targetStatut}`, JSON.stringify({
+                messageId: pending.messageId,
+                to,
+                cc,
+                statut,
+                subject: pending.subject,
+                body: pending.body,
+                cancelledBy: 'status-superseded',
+                supersededByStatut: opts.targetStatut,
+            }), opts.userSlug);
+            continue;
+        }
+        if (!to) {
+            return { ok: false, error: `Impossible d’envoyer l’email programmé (${pending.messageId}) : candidat sans adresse email.` };
+        }
+        const result = await sendTransitionEmail({
+            to,
+            cc,
+            candidateName: opts.emailInfo.name,
+            role: opts.emailInfo.poste_titre,
+            statut,
+            customBody: pending.body || undefined,
+            evaluationUrl: statut === 'skill_radar_envoye'
+                ? `${opts.baseUrl}/evaluate/${opts.emailInfo.candidate_id}`
+                : undefined,
+        });
+        if (!result.sent) {
+            await getDb().prepare(`
+        INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+        VALUES (?, 'email_failed', ?, ?, ?)
+      `).run(opts.candidatureId, `Échec envoi immédiat email ${statut} après annulation du schedule (${pending.messageId})`, JSON.stringify({
+                messageId: pending.messageId,
+                to,
+                cc,
+                statut,
+                subject: pending.subject,
+                body: pending.body,
+                phase: 'status-superseded-send-now',
+            }), opts.userSlug);
+            return { ok: false, error: `Email programmé annulé mais envoi immédiat échoué (${statut}). Statut non modifié ; réessayez.` };
+        }
+        await getDb().prepare(`
+      INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
+      VALUES (?, 'email_sent', ?, ?, ?)
+    `).run(opts.candidatureId, `Email transition ${statut} envoyé immédiatement à ${to} avant passage à ${opts.targetStatut}`, JSON.stringify({
+            subject: pending.subject,
+            body: pending.body,
+            messageId: result.messageId,
+            recipient: 'candidate',
+            to,
+            cc,
+            statut,
+            cancelledScheduleId: pending.messageId,
+        }), opts.userSlug);
+    }
+    return { ok: true };
 }
 protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async (req, res) => {
     // Tiebreak on id DESC because event timestamps can share the same
@@ -3099,6 +3282,7 @@ protectedRouter.post('/candidatures/:id/revert-status', mutationRateLimit, async
         `).run(req.params.id, `Email programmé annulé (${pending.statut ?? 'inconnu'} → ${pending.candidateEmail ?? ''})`, JSON.stringify({
                     messageId: pending.messageId,
                     to: pending.candidateEmail,
+                    cc: pending.cc,
                     statut: pending.statut,
                     subject: pending.subject,
                     body: pending.body,
@@ -3156,6 +3340,7 @@ protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, asyn
         body?: string;
         statut?: string;
         to?: string;
+        cc?: string | string[];
     } : {};
     // Look up candidate name + poste titre to rebuild the render.
     const info = await getDb().prepare(`
@@ -3183,8 +3368,10 @@ protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, asyn
     }
     const baseUrl = resolveAppPublicOrigin(req);
     const statut = snapshot.statut ?? info.statut;
+    const cc = parseSnapshotCc(snapshot.cc);
     const result = await sendTransitionEmail({
         to: info.email,
+        cc: cc.length > 0 ? cc : [DEFAULT_CANDIDATE_EMAIL_CC],
         candidateName: info.name,
         role: info.poste_titre,
         statut,
@@ -3211,12 +3398,13 @@ protectedRouter.post('/candidatures/:id/email/send-now', mutationRateLimit, asyn
     await getDb().prepare(`
     INSERT INTO candidature_events (candidature_id, type, notes, email_snapshot, created_by)
     VALUES (?, 'email_sent', ?, ?, ?)
-  `).run(candidatureId, `Email transition ${statut} envoyé immédiatement à ${info.email} (bypass du délai)`, JSON.stringify({
+    `).run(candidatureId, `Email transition ${statut} envoyé immédiatement à ${info.email} (bypass du délai)`, JSON.stringify({
         subject: snapshot.subject,
         body: snapshot.body,
         messageId: result.messageId,
         recipient: 'candidate',
         to: info.email,
+        cc: cc.length > 0 ? cc : [DEFAULT_CANDIDATE_EMAIL_CC],
         statut,
         cancelledScheduleId: target.messageId,
     }), userSlug);

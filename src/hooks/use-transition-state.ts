@@ -16,6 +16,7 @@ export interface TransitionDialog {
    *  Without this the template preview falls back to "(#)" — the recipient
    *  then receives a broken email link. */
   evaluationUrl?: string
+  emailAlreadySent?: boolean
 }
 
 export interface UseTransitionStateReturn {
@@ -29,6 +30,8 @@ export interface UseTransitionStateReturn {
   setTransitionFile: React.Dispatch<React.SetStateAction<File | null>>
   transitionSendEmail: boolean
   setTransitionSendEmail: React.Dispatch<React.SetStateAction<boolean>>
+  transitionEmailCc: string
+  setTransitionEmailCc: React.Dispatch<React.SetStateAction<string>>
   transitionSkipEmailReason: string
   setTransitionSkipEmailReason: React.Dispatch<React.SetStateAction<string>>
   transitionIncludeReason: boolean
@@ -46,7 +49,7 @@ export interface UseTransitionStateReturn {
   transitionHasEmailTemplate: boolean
   transitionEmailLoading: boolean
   transitionFileError: string | null
-  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string, currentStatut?: string, evaluationUrl?: string) => void
+  openTransitionDialog: (candidatureId: string, targetStatut: string, isSkip?: boolean, skipped?: string[], candidateName?: string, role?: string, currentStatut?: string, evaluationUrl?: string, emailAlreadySent?: boolean) => void
   closeTransitionDialog: () => void
   confirmTransition: () => Promise<void>
 }
@@ -64,6 +67,7 @@ export function useTransitionState(
   const [transitionSkipReason, setTransitionSkipReason] = useState('')
   const [transitionFile, setTransitionFile] = useState<File | null>(null)
   const [transitionSendEmail, setTransitionSendEmail] = useState(true)
+  const [transitionEmailCc, setTransitionEmailCc] = useState('contact@sinapse.nc')
   const [transitionSkipEmailReason, setTransitionSkipEmailReason] = useState('')
   const [transitionIncludeReason, setTransitionIncludeReason] = useState(false)
   const [transitionEmailSubject, setTransitionEmailSubject] = useState('')
@@ -130,13 +134,15 @@ export function useTransitionState(
     role = '',
     currentStatut = '',
     evaluationUrl?: string,
+    emailAlreadySent = false,
   ) => {
     const notesRequired = allowedTransitions?.notesRequired?.includes(targetStatut) ?? false
-    setTransitionDialog({ candidatureId, currentStatut, targetStatut, isSkip, skipped, notesRequired, candidateName, role, evaluationUrl })
+    setTransitionDialog({ candidatureId, currentStatut, targetStatut, isSkip, skipped, notesRequired, candidateName, role, evaluationUrl, emailAlreadySent })
     setTransitionNotes('')
     setTransitionSkipReason('')
     setTransitionFile(null)
-    setTransitionSendEmail(true)
+    setTransitionSendEmail(targetStatut === 'refuse' || !emailAlreadySent)
+    setTransitionEmailCc('contact@sinapse.nc')
     setTransitionSkipEmailReason('')
     setTransitionIncludeReason(false)
     setTransitionEmailSubject('')
@@ -197,8 +203,11 @@ export function useTransitionState(
             skipReason: isSkip ? transitionSkipReason.trim() : undefined,
             sendEmail: targetStatut !== 'skill_radar_complete' ? transitionSendEmail : undefined,
             skipEmailReason: targetStatut !== 'skill_radar_complete' && targetStatut !== 'refuse' && !transitionSendEmail
-              ? transitionSkipEmailReason.trim() || undefined
+              ? transitionDialog.emailAlreadySent
+                ? 'Email déjà envoyé pour cette étape.'
+                : transitionSkipEmailReason.trim() || undefined
               : undefined,
+            emailCc: targetStatut !== 'skill_radar_complete' && transitionSendEmail ? transitionEmailCc : undefined,
             includeReasonInEmail: targetStatut === 'refuse' ? transitionIncludeReason : undefined,
             customBody: transitionHasEmailTemplate && transitionEmailBody.trim() ? transitionEmailBody.trim() : undefined,
             aboroDate: targetStatut === 'aboro' && transitionAboroDate ? transitionAboroDate : undefined,
@@ -319,7 +328,7 @@ export function useTransitionState(
     } finally {
       setChangingStatus(false)
     }
-  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, transitionStatusApplied, appliedStatusEventId, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
+  }, [transitionDialog, transitionNotes, transitionSkipReason, transitionFile, transitionSendEmail, transitionEmailCc, transitionSkipEmailReason, transitionIncludeReason, transitionEmailBody, transitionHasEmailTemplate, transitionAboroDate, transitionStatusApplied, appliedStatusEventId, setCandidatures, setEvents, setAllowedTransitions, setCandidatureDataMap])
 
   return {
     changingStatus,
@@ -332,6 +341,8 @@ export function useTransitionState(
     setTransitionFile,
     transitionSendEmail,
     setTransitionSendEmail,
+    transitionEmailCc,
+    setTransitionEmailCc,
     transitionSkipEmailReason,
     setTransitionSkipEmailReason,
     transitionIncludeReason,

@@ -5,6 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ThemeProvider } from '@/providers/theme-provider'
 import { CatalogProvider } from '@/providers/catalog-provider'
 import { ProtectedRoute } from '@/components/auth/protected-route'
+import { RecruitmentLeadRoute } from '@/components/auth/recruitment-lead-route'
 import { useFullRoster } from '@/hooks/use-full-roster'
 import { Toaster } from '@/components/ui/sonner'
 import Footer from '@/components/footer'
@@ -80,13 +81,13 @@ function App() {
                 <Route path="/dashboard/:slug?" element={<ProtectedRoute checkOwnership={false}><DashboardPage /></ProtectedRoute>} />
                 {/* /recruit merged into /recruit/pipeline — old URL redirects. */}
                 <Route path="/recruit" element={<Navigate to="/recruit/pipeline" replace />} />
-                <Route path="/recruit/pipeline" element={<ProtectedRoute checkOwnership={false}><RecruitPipelinePage /></ProtectedRoute>} />
-                <Route path="/recruit/reports/campaign" element={<ProtectedRoute checkOwnership={false}><ReportCampaignPage /></ProtectedRoute>} />
-                <Route path="/recruit/reports/comparison/:posteId" element={<ProtectedRoute checkOwnership={false}><ReportComparisonPage /></ProtectedRoute>} />
-                <Route path="/recruit/postes/:posteId/shortlist" element={<ProtectedRoute checkOwnership={false}><PosteShortlistPage /></ProtectedRoute>} />
-                <Route path="/recruit/shortlist" element={<ProtectedRoute checkOwnership={false}><RecruitSavedCandidatesPage /></ProtectedRoute>} />
-                <Route path="/recruit/funnel" element={<ProtectedRoute checkOwnership={false}><RecruitFunnelPage /></ProtectedRoute>} />
-                <Route path="/recruit/:id" element={<ProtectedRoute checkOwnership={false}><CandidateDetailPage /></ProtectedRoute>} />
+                <Route path="/recruit/pipeline" element={<RecruitmentLeadRoute><RecruitPipelinePage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/reports/campaign" element={<RecruitmentLeadRoute><ReportCampaignPage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/reports/comparison/:posteId" element={<RecruitmentLeadRoute><ReportComparisonPage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/postes/:posteId/shortlist" element={<RecruitmentLeadRoute><PosteShortlistPage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/shortlist" element={<RecruitmentLeadRoute><RecruitSavedCandidatesPage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/funnel" element={<RecruitmentLeadRoute><RecruitFunnelPage /></RecruitmentLeadRoute>} />
+                <Route path="/recruit/:id" element={<RecruitmentLeadRoute><CandidateDetailPage /></RecruitmentLeadRoute>} />
                 <Route path="/evaluate/:id" element={<CandidateFormPage />} />
                 <Route path="/mentions-legales" element={<MentionsLegalesPage />} />
                 <Route path="/confidentialite" element={<ConfidentialitePage />} />

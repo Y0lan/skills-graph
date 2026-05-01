@@ -517,6 +517,7 @@ export async function renderTransitionEmail(opts: {
 }
 export async function sendTransitionEmail(opts: {
     to: string;
+    cc?: string | string[];
     candidateName: string;
     role: string;
     statut: string;
@@ -546,6 +547,7 @@ export async function sendTransitionEmail(opts: {
         const { data, error } = await resend.emails.send({
             from: FROM_EMAIL,
             to: opts.to,
+            ...(opts.cc && (Array.isArray(opts.cc) ? opts.cc.length > 0 : true) ? { cc: opts.cc } : {}),
             subject,
             html,
             attachments: maybeLogoAttachment(html),

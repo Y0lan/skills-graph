@@ -130,6 +130,7 @@ export default function CandidateDetailPage() {
     transitionSkipReason, setTransitionSkipReason,
     transitionFile, setTransitionFile,
     transitionSendEmail, setTransitionSendEmail,
+    transitionEmailCc, setTransitionEmailCc,
     transitionSkipEmailReason, setTransitionSkipEmailReason,
     transitionIncludeReason, setTransitionIncludeReason,
     transitionEmailSubject,
@@ -517,6 +518,16 @@ export default function CandidateDetailPage() {
     const evaluationUrl = targetStatut === 'skill_radar_envoye' && candidate?.id
       ? `${window.location.origin}/evaluate/${candidate.id}`
       : undefined
+    const sourceEvents = candidatureDataMap[candidatureId]?.events ?? (candidatures[0]?.id === candidatureId ? events : [])
+    const emailAlreadySent = sourceEvents.some(event => {
+      if (event.type !== 'email_sent' || !event.emailSnapshot) return false
+      try {
+        const snapshot = JSON.parse(event.emailSnapshot) as { recipient?: string; statut?: string; to?: string }
+        return snapshot.statut === targetStatut && (snapshot.recipient === 'candidate' || !!snapshot.to)
+      } catch {
+        return false
+      }
+    })
     openTransitionDialog(
       candidatureId,
       targetStatut,
@@ -526,8 +537,9 @@ export default function CandidateDetailPage() {
       candidate?.role ?? '',
       currentStatut,
       evaluationUrl,
+      emailAlreadySent,
     )
-  }, [openTransitionDialog, candidate])
+  }, [openTransitionDialog, candidate, candidatureDataMap, candidatures, events])
 
   // Fetch sibling candidates for prev/next navigation. Side effects in a
   // `useState` initializer are wrong in React — Strict Mode can call
@@ -1075,6 +1087,7 @@ export default function CandidateDetailPage() {
                             type="checkbox"
                             checked={transitionSendEmail}
                             onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                            disabled={transitionDialog.emailAlreadySent}
                             className="rounded border-input"
                           />
                           <Mail className="h-4 w-4 text-muted-foreground" />
@@ -1084,8 +1097,13 @@ export default function CandidateDetailPage() {
                           )}
                         </label>
                       )}
+                      {transitionDialog?.emailAlreadySent && (
+                        <div className="border-b bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                          Email déjà envoyé pour cette étape. Aucun nouvel email ne sera envoyé.
+                        </div>
+                      )}
                       {/* Skip-reason input when toggle off */}
-                      {transitionDialog?.targetStatut !== 'refuse' && !transitionSendEmail && (
+                      {transitionDialog?.targetStatut !== 'refuse' && !transitionSendEmail && !transitionDialog?.emailAlreadySent && (
                         <div className="p-3 space-y-1">
                           <label htmlFor="skip-email-reason-a" className="text-xs font-medium text-muted-foreground">
                             Raison de ne pas envoyer (10 caractères min, audit-loggée)
@@ -1124,6 +1142,16 @@ export default function CandidateDetailPage() {
                       {/* Expanded content (auto-open when sending) */}
                       {(transitionSendEmail || (transitionDialog?.targetStatut === 'refuse' && transitionEmailExpanded)) && (
                         <div className="px-3 py-3 space-y-2">
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground">Copie (Cc)</label>
+                            <Input
+                              value={transitionEmailCc}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTransitionEmailCc(e.target.value)}
+                              placeholder="contact@sinapse.nc"
+                              className="mt-1 h-8 text-sm"
+                            />
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">Séparez plusieurs adresses par une virgule.</p>
+                          </div>
                           <div>
                             <label className="text-xs font-medium text-muted-foreground">Corps du message</label>
                             <Textarea
@@ -1188,6 +1216,7 @@ export default function CandidateDetailPage() {
                         type="checkbox"
                         checked={transitionSendEmail}
                         onChange={(e) => setTransitionSendEmail(e.target.checked)}
+                        disabled={transitionDialog.emailAlreadySent}
                         className="rounded border-input"
                       />
                       <span className="text-sm">
@@ -1225,6 +1254,23 @@ export default function CandidateDetailPage() {
                       </div>
                     )}
                   </div>
+                  {transitionDialog.emailAlreadySent && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                      Email déjà envoyé pour cette étape. Aucun nouvel email ne sera envoyé.
+                    </div>
+                  )}
+                  {transitionSendEmail && (
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground">Copie (Cc)</label>
+                      <Input
+                        value={transitionEmailCc}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTransitionEmailCc(e.target.value)}
+                        placeholder="contact@sinapse.nc"
+                        className="mt-1 h-8 text-sm"
+                      />
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">Séparez plusieurs adresses par une virgule.</p>
+                    </div>
+                  )}
                   {transitionSendEmail && aiInstructionOpen && (
                     <AiInstructionBar
                       value={aiInstruction}
@@ -1234,7 +1280,7 @@ export default function CandidateDetailPage() {
                       loading={aiLoading}
                     />
                   )}
-                  {!transitionSendEmail && (
+                  {!transitionSendEmail && !transitionDialog.emailAlreadySent && (
                     <div>
                       <label htmlFor="skip-email-reason" className="text-xs font-medium text-muted-foreground">
                         Raison de ne pas envoyer (10 caractères min, audit-loggée)
