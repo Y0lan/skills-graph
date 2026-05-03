@@ -5,10 +5,11 @@ import { sendCandidateSubmitted } from '../lib/email.js';
 import { validateRatings } from '../lib/validation.js';
 import { getUser, type CandidateRow } from '../lib/types.js';
 import { rescoreCandidature } from '../lib/scoring-helpers.js';
-import { requireLead } from '../middleware/require-lead.js';
+import { isRecruitmentLead, requireLead } from '../middleware/require-lead.js';
 import { recruitmentBus } from '../lib/event-bus.js';
 import { resolveAppPublicOrigin } from '../lib/public-origin.js';
 export const evaluateRouter = Router();
+const DEFAULT_CANDIDATE_SUBMITTED_NOTIFICATION_EMAIL = 'contact@sinapse.nc';
 // Rate limit: 30 requests per minute per IP on all public endpoints
 const publicRateLimit = rateLimit({
     windowMs: 60 * 1000,
@@ -18,6 +19,12 @@ const publicRateLimit = rateLimit({
     message: { error: 'Trop de requêtes. Réessayez dans une minute.' },
 });
 evaluateRouter.use(publicRateLimit);
+function resolveCandidateSubmittedNotificationEmail(createdBy: string | null | undefined): string {
+    if (createdBy && isRecruitmentLead(createdBy)) {
+        return `${createdBy.replaceAll('-', '.')}@sinapse.nc`;
+    }
+    return DEFAULT_CANDIDATE_SUBMITTED_NOTIFICATION_EMAIL;
+}
 // Shared guard: check candidate exists, not expired, not submitted
 async function getCandidateGuard(id: string, res: import('express').Response, opts?: {
     allowSubmitted?: boolean;
@@ -171,16 +178,12 @@ evaluateRouter.post('/:id/submit', async (req, res) => {
     }
     // Notify the lead who created this candidate (non-blocking)
     const baseUrl = resolveAppPublicOrigin(req);
-    const leadSlug = row.created_by;
-    if (leadSlug) {
-        const leadEmail = leadSlug.replaceAll('-', '.') + '@sinapse.nc';
-        sendCandidateSubmitted({
-            to: leadEmail,
-            candidateName: row.name,
-            role: row.role,
-            detailUrl: `${baseUrl}/recruit/${req.params.id}`,
-        }).catch(() => { });
-    }
+    sendCandidateSubmitted({
+        to: resolveCandidateSubmittedNotificationEmail(row.created_by),
+        candidateName: row.name,
+        role: row.role,
+        detailUrl: `${baseUrl}/recruit/${req.params.id}`,
+    }).catch(() => { });
     res.json({ ok: true, submittedAt: now });
 });
 // Reopen a submitted evaluation (lead only)
