@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import { formatDateHuman } from '@/lib/constants'
 
 interface MemberAvatarProps {
   slug: string
@@ -81,7 +82,7 @@ export default function MemberAvatar({ slug, name, role, size = 20, className, h
         <p className="text-xs font-medium">{isSelf ? 'Moi' : name}</p>
         {(role || validatedAt) && (
           <p className="text-[10px] opacity-60">
-            {role}{role && validatedAt && ' · '}{validatedAt && `validé ${new Date(validatedAt).toLocaleDateString('fr-FR')}`}
+            {role}{role && validatedAt && ' · '}{validatedAt && `validé ${formatDateHuman(validatedAt)}`}
           </p>
         )}
       </TooltipContent>

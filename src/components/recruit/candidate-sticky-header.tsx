@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,43 +26,18 @@ export interface CandidateStickyHeaderProps {
   onOpenTransition: (candidatureId: string, targetStatut: string, currentStatut: string) => void
   /** Disable the CTA while a transition request is inflight. */
   changingStatus: boolean
-  /** Scroll-trigger offset — the sticky bar only renders once scrollY
-   *  exceeds this value. Defaults to ~220px which clears the identity
-   *  strip on a typical 1440px viewport. */
-  revealOffset?: number
 }
 
 export default function CandidateStickyHeader({
-  candidateName, candidature, allowedTransitions, onOpenTransition, changingStatus, revealOffset = 220,
+  candidateName, candidature, allowedTransitions, onOpenTransition, changingStatus,
 }: CandidateStickyHeaderProps) {
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    const onScroll = () => {
-      setVisible(window.scrollY > revealOffset)
-    }
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [revealOffset])
-
   if (!candidature) return null
   const forward = (allowedTransitions?.allowedTransitions ?? []).filter(s => s !== 'refuse')
   const primary = forward[0] ?? null
 
   return (
     <div
-      aria-hidden={!visible}
-      // `inert` keeps focus + screen-readers out of the bar while it's
-      // translated off-screen, so the CTA can't be tabbed into when
-      // hidden (an `aria-hidden` element with a focusable descendant is
-      // a documented a11y anti-pattern). The runtime cast is the safest
-      // way to set the boolean attribute without TS yelling on older
-      // React types.
-      {...({ inert: visible ? undefined : true } as Record<string, boolean | undefined>)}
-      className={`sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b transition-transform duration-200 motion-reduce:transition-none ${
-        visible ? 'translate-y-0 shadow-sm' : '-translate-y-full'
-      }`}
+      className="sticky top-12 z-40 bg-background/90 backdrop-blur-md border-b shadow-sm"
     >
       <div className="mx-auto max-w-5xl px-4 py-2 flex items-center gap-3">
         <InitialsBadge name={candidateName} size="sm" />
@@ -88,7 +62,6 @@ export default function CandidateStickyHeader({
               size="sm"
               onClick={() => onOpenTransition(candidature.id, primary, candidature.statut)}
               disabled={changingStatus}
-              tabIndex={visible ? 0 : -1}
               className="h-8 gap-1.5 text-xs"
             >
               <ChevronRight className="h-3.5 w-3.5" />

@@ -263,25 +263,17 @@ export function formatDateTimeHumanPrecise(dateStr: string | null | undefined): 
 }
 
 export function formatDateShort(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = parseAppDate(dateStr)
-  return d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : dateStr
+  return formatDateHumanShort(dateStr)
 }
 
 /** Full date format (includes year) */
 export function formatDate(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = parseAppDate(dateStr)
-  return d ? d.toLocaleDateString('fr-FR') : dateStr
+  return formatDateHuman(dateStr)
 }
 
-/** Date + time format: "13/04/2026 14:32" */
+/** Date + time format: "Aujourd'hui à 14:32" / "13 avril 2026 à 14:32" */
 export function formatDateTime(dateStr: string | null | undefined): string {
-  if (!dateStr) return '—'
-  const d = parseAppDate(dateStr)
-  if (!d) return dateStr
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  return formatDateTimeHuman(dateStr)
 }
 
 /** Parse a CV date: "2018", "2018-01", "2018-01-15" → Date (UTC noon to dodge

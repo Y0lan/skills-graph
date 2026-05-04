@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Badge } from '@/components/ui/badge'
-import { formatDateTimeHuman, STATUT_LABELS } from '@/lib/constants'
+import { formatDateTimeHuman, STATUT_LABELS, parseAppDate } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
@@ -154,7 +154,7 @@ function buildEmailEntries(events: CandidatureEvent[]): EmailEntry[] {
       } else if (statuses?.has('email_delivered') || statuses?.has('email_clicked')) {
         lifecycle = 'sent'
       } else {
-        const scheduledMs = snap.scheduledAt ? new Date(snap.scheduledAt).getTime() : 0
+        const scheduledMs = snap.scheduledAt ? (parseAppDate(snap.scheduledAt)?.getTime() ?? 0) : 0
         if (scheduledMs > 0 && Date.now() >= scheduledMs) lifecycle = 'sent'
       }
     }

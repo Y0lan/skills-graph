@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import type { TeamMemberAggregateResponse } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
+import { formatDateTimeHuman } from '@/lib/constants'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -22,18 +23,6 @@ interface ChatPanelProps {
   onMessagesChange: React.Dispatch<React.SetStateAction<ChatMessage[]>>
   initialInput?: string
   initialInputNonce?: number
-}
-
-function formatResetTime(resetsAt: string): string {
-  const reset = new Date(resetsAt)
-  const now = new Date()
-  const diffMs = reset.getTime() - now.getTime()
-  if (diffMs <= 0) return 'bientôt'
-  const totalSec = Math.ceil(diffMs / 1000)
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
 export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, onClose, messages, onMessagesChange, initialInput, initialInputNonce }: ChatPanelProps) {
@@ -222,7 +211,7 @@ export default function ChatPanel({ contextSlugs, onContextChange, teamMembers, 
     ? remaining > 0
       ? `${remaining} question${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''} sur ${limit} par jour`
       : resetsAt
-        ? `Limite atteinte (reset dans ${formatResetTime(resetsAt)})`
+        ? `Limite atteinte, réinitialisation ${formatDateTimeHuman(resetsAt)}`
         : 'Limite atteinte'
     : null
 

@@ -18,7 +18,7 @@ import VisxRadarChart from '@/components/visx-radar-chart'
 import type { RadarDataPoint, RadarSeries } from '@/components/visx-radar-chart'
 import { GapChip } from '@/components/gap-chip'
 import type { GapSeverity } from '@/components/gap-chip'
-import { STATUT_LABELS } from '@/lib/constants'
+import { STATUT_LABELS, formatDateHuman } from '@/lib/constants'
 
 const MAX_OVERLAY = 4
 const TARGET_RATING = 3
@@ -377,7 +377,7 @@ export default function ReportComparisonPage() {
           <h1 className="text-3xl font-bold tracking-tight">{posteTitre}</h1>
           <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
             {candidates.length} candidat{candidates.length !== 1 ? 's' : ''} en lice (hors refusés) · GIE SINAPSE
-            <span className="hidden print:inline"> · {new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+            <span className="hidden print:inline"> · {formatDateHuman(new Date().toISOString())}</span>
           </p>
         </div>
 
@@ -673,7 +673,7 @@ export default function ReportComparisonPage() {
             the title so a second footer would be noise. */}
         <div className="print-only border-t border-slate-300 pt-3 mt-8 text-center text-[11px] text-slate-500">
           <p>Généré par Skill Radar — GIE SINAPSE</p>
-          <p>Document confidentiel — {new Date().toLocaleDateString('fr-FR')}</p>
+          <p>Document confidentiel — {formatDateHuman(new Date().toISOString())}</p>
         </div>
       </div>
 

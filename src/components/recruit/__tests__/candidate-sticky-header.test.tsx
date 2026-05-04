@@ -34,7 +34,7 @@ const allowedTransitions = (forward: string[]): AllowedTransitions => ({
 /**
  * Sticky header is the recruiter's "always within reach" CTA. Tests lock
  * down the contracts codex flagged:
- *  - the off-screen CTA is not tabbable when the bar is hidden
+ *  - the candidate name + CTA are visible and tabbable immediately
  *  - the visible CTA derives from `allowedTransitions[0]` minus refuse,
  *    never from a static guidance map
  *  - terminal candidatures show "Aucune action disponible" instead of an
@@ -56,12 +56,7 @@ describe('CandidateStickyHeader', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('CTA is non-tabbable when hidden (scroll has not crossed reveal offset)', () => {
-    // jsdom defaults scrollY to 0 — under the default 220 reveal offset
-    // the bar starts hidden. With `aria-hidden`, the CTA falls out of
-    // the accessibility tree (good for screen readers). Verify it is
-    // also not in the tab order — `aria-hidden` alone wouldn't prevent
-    // pointer focus or sequential tab focus.
+  it('shows the candidate name and CTA immediately', () => {
     render(
       <CandidateStickyHeader
         candidateName="Tanguy"
@@ -71,23 +66,7 @@ describe('CandidateStickyHeader', () => {
         changingStatus={false}
       />,
     )
-    const cta = screen.getByRole('button', { name: /Présélectionné/, hidden: true })
-    expect(cta).toHaveAttribute('tabindex', '-1')
-  })
-
-  it('CTA becomes tabbable after the scroll threshold is crossed', () => {
-    render(
-      <CandidateStickyHeader
-        candidateName="Tanguy"
-        candidature={baseCandidature()}
-        allowedTransitions={allowedTransitions(['preselectionne'])}
-        onOpenTransition={() => {}}
-        changingStatus={false}
-      />,
-    )
-    // Simulate scroll past the default reveal offset.
-    Object.defineProperty(window, 'scrollY', { writable: true, value: 400 })
-    fireEvent.scroll(window)
+    expect(screen.getByText('Tanguy')).toBeInTheDocument()
     const cta = screen.getByRole('button', { name: /Présélectionné/ })
     expect(cta).toHaveAttribute('tabindex', '0')
   })

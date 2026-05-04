@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Clock, Mail, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { STATUT_LABELS } from '@/lib/constants'
+import { formatDateTimeHuman, parseAppDate, STATUT_LABELS } from '@/lib/constants'
 
 /**
  * Revert-window banner with an exact deadline. The previous copy ("{N}min
@@ -60,13 +60,13 @@ export default function RevertCountdown({
   }, [])
 
   const { pct, minutesLeft, deadline } = useMemo(() => {
-    const startMs = new Date(lastStatusChangeAt + (lastStatusChangeAt.includes('Z') ? '' : 'Z')).getTime()
+    const startMs = parseAppDate(lastStatusChangeAt)?.getTime() ?? nowMs
     const endMs = startMs + WINDOW_MS
     const remaining = Math.max(0, endMs - nowMs)
     return {
       pct: Math.max(0, Math.min(100, (remaining / WINDOW_MS) * 100)),
       minutesLeft: Math.max(1, Math.ceil(remaining / 60_000)),
-      deadline: new Date(endMs).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      deadline: formatDateTimeHuman(new Date(endMs).toISOString()),
     }
   }, [lastStatusChangeAt, nowMs])
 

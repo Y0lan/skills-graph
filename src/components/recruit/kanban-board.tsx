@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { STATUT_LABELS, STATUT_COLORS } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, parseAppDate } from '@/lib/constants'
 import { scoreColor } from '@/lib/score-utils'
 
 /** Pipeline column order (refuse excluded — filtered out) */
@@ -66,7 +66,7 @@ export interface KanbanBoardProps {
 
 function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: number; onDelete?: (candidatureId: string, candidateName: string, posteTitre: string) => void }) {
   const daysInStatus = item.lastStatusChange
-    ? Math.floor((now - new Date(item.lastStatusChange).getTime()) / 86_400_000)
+    ? Math.floor((now - (parseAppDate(item.lastStatusChange)?.getTime() ?? now)) / 86_400_000)
     : null
 
   return (
@@ -119,9 +119,9 @@ function KanbanCard({ item, now, onDelete }: { item: KanbanCandidature; now: num
 
 function KanbanColumn({ statut, items, now, onDelete }: { statut: string; items: KanbanCandidature[]; now: number; onDelete?: (candidatureId: string, candidateName: string, posteTitre: string) => void }) {
   return (
-    <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0`}>
+    <div className={`flex flex-col rounded-xl border ${COLUMN_BG[statut] ?? 'bg-muted/5'} min-w-[220px] w-[220px] shrink-0 h-full`}>
       {/* Column header */}
-      <div className="px-3 py-2.5 border-b">
+      <div className="sticky top-0 z-10 px-3 py-2.5 border-b rounded-t-xl bg-background/95 backdrop-blur">
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className={`text-[11px] px-1.5 py-0 ${STATUT_COLORS[statut] ?? ''}`}>
             {STATUT_LABELS[statut] ?? statut}
@@ -167,7 +167,7 @@ export default function KanbanBoard({ candidatures, onDelete }: KanbanBoardProps
   }
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-4">
+    <div className="flex h-[calc(100vh-14rem)] min-h-[420px] gap-3 overflow-x-auto pb-4">
       {COLUMN_ORDER.map(statut => (
         <KanbanColumn
           key={statut}

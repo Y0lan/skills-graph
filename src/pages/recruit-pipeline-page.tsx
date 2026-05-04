@@ -32,7 +32,7 @@ import RoleManagerPanel from '@/components/recruit/role-manager-panel'
 import KpiCell from '@/components/recruit/kpi-cell'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate, parseAppDate } from '@/lib/constants'
 import { classifyLocation, LOCATION_BUCKET_LABELS, type LocationBucket } from '@/lib/location'
 import KanbanBoard from '@/components/recruit/kanban-board'
 import StatusChip from '@/components/recruit/status-chip'
@@ -516,7 +516,7 @@ export default function RecruitPipelinePage() {
     if (chipStuck) {
       // Reuse the SLA helper — same source of truth as StatusChip's red ring.
       const enteredAt = c.enteredStatusAt ?? c.createdAt
-      const days = (Date.now() - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      const days = (Date.now() - (parseAppDate(enteredAt)?.getTime() ?? Date.now())) / 86_400_000
       if (days < 7) return false
       if (c.statut === 'embauche' || c.statut === 'refuse') return false
     }
@@ -524,7 +524,7 @@ export default function RecruitPipelinePage() {
     if (chipNeedsAction) {
       // "Needs action" = stuck + docs missing + has soft skill alerts (any)
       const enteredAt = c.enteredStatusAt ?? c.createdAt
-      const days = (Date.now() - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      const days = (Date.now() - (parseAppDate(enteredAt)?.getTime() ?? Date.now())) / 86_400_000
       const isStuck = days >= 7 && c.statut !== 'embauche' && c.statut !== 'refuse'
       const docsIncomplete = c.docsSlotCount < 2
       const hasAlerts = (c.softSkillAlerts?.length ?? 0) > 0
@@ -546,8 +546,8 @@ export default function RecruitPipelinePage() {
       const delta = dir === 'desc' ? bV - aV : aV - bV
       if (delta !== 0) return delta
     }
-    const aTs = new Date(a.createdAt + (a.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
-    const bTs = new Date(b.createdAt + (b.createdAt.endsWith('Z') ? '' : 'Z')).getTime()
+    const aTs = parseAppDate(a.createdAt)?.getTime() ?? 0
+    const bTs = parseAppDate(b.createdAt)?.getTime() ?? 0
     return dir === 'asc' && axisKey === 'date' ? aTs - bTs : bTs - aTs
   })
 
@@ -561,7 +561,7 @@ export default function RecruitPipelinePage() {
     const now = Date.now()
     for (const c of candidatures) {
       const enteredAt = c.enteredStatusAt ?? c.createdAt
-      const days = (now - new Date(enteredAt + (enteredAt.endsWith('Z') ? '' : 'Z')).getTime()) / 86_400_000
+      const days = (now - (parseAppDate(enteredAt)?.getTime() ?? now)) / 86_400_000
       const isStuck = days >= 7 && c.statut !== 'embauche' && c.statut !== 'refuse'
       const docsIncomplete = c.docsSlotCount < 2
       const hasAlerts = (c.softSkillAlerts?.length ?? 0) > 0
@@ -676,7 +676,7 @@ export default function RecruitPipelinePage() {
             scroll to the list. Colors only fire when count > 0 so a
             healthy pipeline stays calm, not noisy. */}
         {stats && (
-          <div className="mb-6 border-y">
+          <div className="sticky top-12 z-30 -mx-4 mb-6 border-y bg-background/95 px-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="grid grid-cols-3 sm:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-border">
               <KpiCell label="Total" sublabel="candidatures" count={stats.totalCandidatures} tone="neutral" />
               <KpiCell label="Actifs" sublabel="en cours" count={stats.totalActive} tone="neutral" />
@@ -985,7 +985,7 @@ export default function RecruitPipelinePage() {
             </button>
           )
           return (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="sticky top-[14rem] z-40 -mx-4 mb-4 flex flex-wrap items-center gap-2 border-y bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:top-[10.5rem]">
             {/* Search — the one primary control, wider than the chips. */}
             <div className="relative flex-1 min-w-[200px] max-w-[360px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -1286,7 +1286,7 @@ export default function RecruitPipelinePage() {
         })()}
 
         {/* Candidatures — list or kanban */}
-        <div ref={candidaturesRef} className="scroll-mt-16" />
+        <div ref={candidaturesRef} className="scroll-mt-56" />
         {/* Empty state only gates the candidature views — the 'candidates'
             view has its own empty state, since a candidate can exist
             without any candidature yet. */}
@@ -1434,7 +1434,7 @@ export default function RecruitPipelinePage() {
                               <Badge variant="default" className="bg-[#1B6179]">Analysé</Badge>
                             ) : c.submittedAt ? (
                               <Badge variant="default" className="bg-primary">Soumis</Badge>
-                            ) : new Date(c.expiresAt) < new Date() ? (
+                            ) : (parseAppDate(c.expiresAt)?.getTime() ?? 0) < Date.now() ? (
                               <Badge variant="destructive">Expiré</Badge>
                             ) : (
                               <Badge variant="secondary">En attente</Badge>

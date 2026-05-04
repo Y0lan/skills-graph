@@ -8,7 +8,7 @@ import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Down
 import QuickNoteComposer from './quick-note-composer'
 import { eventCategory, type EventCategory } from '@/lib/recruitment-events'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { STATUT_LABELS, STATUT_COLORS, formatDateHumanShort, formatDateTimeHuman, formatDateTimeHumanPrecise, isStatut } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, formatDateHumanShort, formatDateTimeHuman, formatDateTimeHumanPrecise, isStatut, parseAppDate } from '@/lib/constants'
 import { StageFiche } from './stage-fiches/stage-fiche'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent, CandidatureDocument } from '@/hooks/use-candidate-data'
@@ -150,7 +150,7 @@ function computeSummary(events: CandidatureEvent[], documents: CandidatureDocume
     ...documents.filter(d => !d.deleted_at).map(d => d.created_at),
   ]
   const newestDate = allDates.reduce((a, b) => a > b ? a : b)
-  const diff = Date.now() - new Date(newestDate).getTime()
+  const diff = Date.now() - (parseAppDate(newestDate)?.getTime() ?? Date.now())
   const days = Math.floor(diff / 86_400_000)
   const lastActivity = days === 0 ? 'aujourd\'hui' : days === 1 ? 'hier' : `il y a ${days} jours`
 
@@ -298,7 +298,7 @@ const ATTACHED_DOC_WINDOW_MS = 60_000
  *  interprets it as LOCAL time and comparisons against ISO timestamps
  *  drift by the local TZ offset, blowing past the 60s attach window. */
 function parseUtcMs(s: string): number {
-  return new Date(s.includes('T') ? s : s.replace(' ', 'T') + 'Z').getTime()
+  return parseAppDate(s)?.getTime() ?? 0
 }
 
 function attachDocsToTransitions(

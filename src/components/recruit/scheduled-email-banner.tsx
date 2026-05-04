@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Clock, Mail, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { formatDateTimeHuman, parseAppDate } from '@/lib/constants'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
 interface Props {
@@ -46,7 +47,7 @@ export default function ScheduledEmailBanner({ events, disabled, onSendNow, onCa
         return oSnap.messageId === snap.messageId || oSnap.cancelledScheduleId === snap.messageId
       })
       if (superseded) continue
-      const scheduledMs = new Date(snap.scheduledAt).getTime()
+      const scheduledMs = parseAppDate(snap.scheduledAt)?.getTime() ?? 0
       if (now >= scheduledMs) continue
       return { event: e, snap, scheduledMs }
     }
@@ -65,7 +66,7 @@ export default function ScheduledEmailBanner({ events, disabled, onSendNow, onCa
   const totalSec = Math.ceil(remainingMs / 1000)
   const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
   const ss = String(totalSec % 60).padStart(2, '0')
-  const fireTime = new Date(pending.scheduledMs).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  const fireTime = formatDateTimeHuman(new Date(pending.scheduledMs).toISOString())
 
   return (
     <div className="rounded-md border border-amber-300 bg-amber-50 dark:border-amber-700/50 dark:bg-amber-950/30 p-3 flex flex-wrap items-center gap-3">

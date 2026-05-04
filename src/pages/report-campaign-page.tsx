@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Printer } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS } from '@/lib/constants'
+import { STATUT_LABELS, CANAL_LABELS, POLE_LABELS, formatDateHuman } from '@/lib/constants'
 
 interface Poste {
   id: string
@@ -225,7 +225,7 @@ export default function ReportCampaignPage() {
         {/* Footer */}
         <div className="border-t-2 border-black pt-4 text-center text-xs text-gray-500">
           <p>Genere par Skill Radar — GIE SINAPSE</p>
-          <p>Document confidentiel — {new Date().toLocaleDateString('fr-FR')}</p>
+          <p>Document confidentiel — {formatDateHuman(new Date().toISOString())}</p>
         </div>
       </div>
     </div>

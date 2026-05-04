@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2, Sparkles, ChevronRight, X, RotateCcw, Clock, Copy } from 'lucide-react'
 import {
   STATUT_LABELS,
+  parseAppDate,
   transitionConsequence,
 } from '@/lib/constants'
 import { toast } from 'sonner'
@@ -187,14 +188,14 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
       && statusChanges.length === 1
     if (isInitialSentinel) return null
 
-    const ageMs = Date.now() - new Date(lastStatusChange.createdAt + 'Z').getTime()
+    const lastStatusTs = parseAppDate(lastStatusChange.createdAt)?.getTime() ?? 0
+    const ageMs = Date.now() - lastStatusTs
     if (ageMs > 10 * 60 * 1000) return null
 
-    const lastStatusTs = new Date(lastStatusChange.createdAt + 'Z').getTime()
     const postStatusEmailEvents = events
       .filter(e =>
         (e.type === 'email_scheduled' || e.type === 'email_sent' || e.type === 'email_cancelled' || e.type === 'email_failed') &&
-        new Date(e.createdAt + 'Z').getTime() >= lastStatusTs - 1000,
+        (parseAppDate(e.createdAt)?.getTime() ?? 0) >= lastStatusTs - 1000,
       )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     const latestEmailEvent = postStatusEmailEvents[0]
@@ -271,7 +272,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
   }
 
   const canCopyLink = !submitted
-    && new Date(candidate.expiresAt) >= new Date()
+    && (parseAppDate(candidate.expiresAt)?.getTime() ?? 0) >= Date.now()
     && (c.statut === 'postule' || c.statut === 'preselectionne' || c.statut === 'skill_radar_envoye')
 
   const handleJumpToDocuments = () => {
@@ -367,7 +368,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
       // candidatures and returns; if we only restore setEvents the
       // note disappears on next visit (coderabbit catch).
       const reinsert = (list: CandidatureEvent[]) => [snapshot, ...list].sort((a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        (parseAppDate(b.createdAt)?.getTime() ?? 0) - (parseAppDate(a.createdAt)?.getTime() ?? 0),
       )
       setEvents(prev => reinsert(prev))
       setCandidatureDataMap(prev => {

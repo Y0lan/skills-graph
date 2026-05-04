@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import InitialsBadge from '@/components/ui/initials-badge'
 import { Mail, Phone, MapPin, Globe, Github, ChevronDown, FileText } from 'lucide-react'
 import { formatPhone, cn } from '@/lib/utils'
+import { formatDateHuman, parseAppDate } from '@/lib/constants'
 import type { AiProfile } from './candidate-profile-card'
 
 interface CandidateLike {
@@ -41,13 +43,6 @@ export interface CandidateIdentityStripProps {
   profileExpanded?: boolean
 }
 
-function formatYearMonth(dateStr: string | null | undefined): string {
-  if (!dateStr) return ''
-  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
-  if (isNaN(d.getTime())) return ''
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
-}
-
 /** Editorial identity hero. Avatar + name + compact contact + top skills
  *  + metadata strip. Works with or without aiProfile: when the CV has
  *  been extracted, the subtitle pulls role-at-company + location from
@@ -64,6 +59,7 @@ export default function CandidateIdentityStrip({
   onToggleProfile,
   profileExpanded = false,
 }: CandidateIdentityStripProps) {
+  const [nowMs] = useState(() => Date.now())
   const profile = candidate.aiProfile as Partial<AiProfile> | null | undefined
   const profileRole = profile?.currentRole?.role?.value
   const profileCompany = profile?.currentRole?.company?.value
@@ -86,7 +82,7 @@ export default function CandidateIdentityStrip({
     return candidate.role
   })()
 
-  const expired = new Date(candidate.expiresAt) < new Date()
+  const expired = (parseAppDate(candidate.expiresAt)?.getTime() ?? 0) < nowMs
 
   return (
     <div className="border-b pb-5 mb-6">
@@ -210,11 +206,11 @@ export default function CandidateIdentityStrip({
           )}
 
           {/* Meta strip — canal · candidatures count · expire date. */}
-          <p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
+          <p className="mt-2 text-[11px] text-muted-foreground">
             {candidate.canal && <>Canal : {candidate.canal} · </>}
-            Créé {formatYearMonth(candidate.createdAt)} ·{' '}
+            Créé {formatDateHuman(candidate.createdAt)} ·{' '}
             <span className={expired ? 'text-rose-500' : ''}>
-              {expired ? 'Lien expiré' : `Expire ${formatYearMonth(candidate.expiresAt)}`}
+              {expired ? 'Lien expiré' : `Expire ${formatDateHuman(candidate.expiresAt)}`}
             </span>
           </p>
         </div>

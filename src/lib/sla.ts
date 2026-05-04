@@ -1,3 +1,5 @@
+import { parseAppDate } from './constants'
+
 // Per-status SLA: how long is "normal" before a candidature should move on.
 // Beyond this many days, the StatusChip shows a breach border so recruiters
 // can spot stuck candidates at a glance. Tune per-pole / per-stage as needed.
@@ -16,7 +18,7 @@ export const STATUT_SLA_DAYS: Record<string, number> = {
 
 export function daysSince(iso: string | null | undefined): number {
   if (!iso) return 0
-  const then = new Date(iso + (iso.endsWith('Z') ? '' : 'Z')).getTime()
+  const then = parseAppDate(iso)?.getTime() ?? Date.now()
   return Math.max(0, (Date.now() - then) / (1000 * 60 * 60 * 24))
 }
 

@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { formatDateTime } from '@/lib/constants'
+import { formatDateHuman, formatDateTime } from '@/lib/constants'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, ShieldAlert, ShieldCheck, ShieldQuestion, AlertTriangle } from 'lucide-react'
@@ -381,8 +381,8 @@ export default function ScanDetailDialog({ open, onClose, documentId, filename, 
             {/* Active override */}
             {data.override && (
               <div className="rounded-md border bg-muted/30 p-3 space-y-1 text-xs">
-                <p className="font-medium">Override actif jusqu’au {new Date(data.override.expires_at).toLocaleDateString('fr-FR')}</p>
-                <p className="text-muted-foreground">Par {data.override.created_by} le {new Date(data.override.created_at).toLocaleDateString('fr-FR')}</p>
+                <p className="font-medium">Override actif jusqu’au {formatDateHuman(data.override.expires_at)}</p>
+                <p className="text-muted-foreground">Par {data.override.created_by} le {formatDateTime(data.override.created_at)}</p>
                 <p className="italic">« {data.override.reason} »</p>
               </div>
             )}
