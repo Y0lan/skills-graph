@@ -750,9 +750,10 @@ export default function CandidateDetailPage() {
           )}
         </div>
 
-        {/* Sticky permanent header: keep the candidate identity, current
-            candidature, and transition CTA visible while reviewing details. */}
-        <div className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-4 border-b bg-background/95 px-4 pt-4 pb-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        {/* Sticky permanent header: keep the current candidature and next
+            transition CTA visible without turning the candidate profile into
+            a second app header. */}
+        <div className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-4 border-b bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
           {/* ══════════ ABOVE THE FOLD ══════════ */}
 
           {/* v5.x — candidature posture header at the very top: Yolan
@@ -777,50 +778,22 @@ export default function CandidateDetailPage() {
             />
           )}
 
-          {/* Identity hero — compact avatar + name + contact. */}
-          <CandidateIdentityStrip
-            candidate={candidate}
-            candidatures={candidatures}
-            topSkills={topSkills}
-            compact
-          />
         </div>
         {/* /sticky permanent header */}
 
-        <div className="mb-6 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {candidate.aiProfile && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setProfileExpanded(v => !v)}
-                aria-expanded={profileExpanded}
-                aria-controls="candidate-profile-disclosure"
-                className="h-8 gap-1.5 text-xs"
-              >
-                <FileText className="h-3.5 w-3.5" />
-                {profileExpanded ? 'Masquer message + profil' : 'Voir message + profil détaillé'}
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${profileExpanded ? 'rotate-180' : ''}`} />
-              </Button>
-            )}
-            {candidate.id && <CandidateTagsBar candidateId={candidate.id} />}
-          </div>
+        <CandidateIdentityStrip
+          candidate={candidate}
+          candidatures={candidatures}
+          topSkills={topSkills}
+          onToggleProfile={candidate.aiProfile ? () => setProfileExpanded(v => !v) : undefined}
+          profileExpanded={profileExpanded}
+        />
 
-          {topSkills.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {topSkills.map(s => (
-                <Badge
-                  key={s.skillId}
-                  variant="secondary"
-                  className="text-[10px] font-normal border bg-muted/40"
-                >
-                  {s.skillLabel} <span className="ml-1 text-foreground font-semibold">L{s.rating}</span>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
+        {candidate.id && (
+          <div className="mb-6">
+            <CandidateTagsBar candidateId={candidate.id} />
+          </div>
+        )}
 
         {/* Fallback for candidates with NO extracted profile yet —
             the message still needs to surface above the operational

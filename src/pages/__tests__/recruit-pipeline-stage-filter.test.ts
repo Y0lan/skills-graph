@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { statutMatchesStageFilter } from '@/lib/pipeline-stage-filter'
+import { countPipelineStages, statutMatchesStageFilter } from '@/lib/pipeline-stage-filter'
 
 describe('statutMatchesStageFilter', () => {
   it("returns true for every statut when stage is 'all'", () => {
@@ -49,5 +49,42 @@ describe('statutMatchesStageFilter', () => {
     expect(statutMatchesStageFilter(null, 'nouveaux')).toBe(false)
     expect(statutMatchesStageFilter(undefined, 'decision')).toBe(false)
     expect(statutMatchesStageFilter(null, 'refuses')).toBe(false)
+  })
+})
+
+describe('countPipelineStages', () => {
+  it('counts stages from the rows it receives, so UI shortcuts can be scoped by active filters', () => {
+    const counts = countPipelineStages([
+      { statut: 'postule', pole: 'legacy' },
+      { statut: 'preselectionne', pole: 'legacy' },
+      { statut: 'skill_radar_envoye', pole: 'java' },
+      { statut: 'skill_radar_complete', pole: 'java' },
+      { statut: 'aboro', pole: 'java' },
+      { statut: 'entretien_1', pole: 'fonctionnel' },
+      { statut: 'entretien_2', pole: 'fonctionnel' },
+      { statut: 'proposition', pole: 'fonctionnel' },
+      { statut: 'embauche', pole: 'fonctionnel' },
+      { statut: 'refuse', pole: 'legacy' },
+      { statut: null, pole: 'legacy' },
+    ])
+
+    expect(counts.stages).toEqual({
+      nouveaux: 2,
+      evaluation: 3,
+      entretiens: 2,
+      decision: 2,
+    })
+    expect(counts.activeTotal).toBe(9)
+    expect(counts.refuses).toBe(1)
+  })
+
+  it('keeps zero-count stages explicit', () => {
+    const counts = countPipelineStages([{ statut: 'skill_radar_complete' }])
+
+    expect(counts.stages.nouveaux).toBe(0)
+    expect(counts.stages.evaluation).toBe(1)
+    expect(counts.stages.entretiens).toBe(0)
+    expect(counts.stages.decision).toBe(0)
+    expect(counts.refuses).toBe(0)
   })
 })

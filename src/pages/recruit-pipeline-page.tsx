@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  type PipelineStage, STAGE_STATUSES, STAGE_LABELS, STAGE_ORDER, statutMatchesStageFilter,
+  type PipelineStage, STAGE_LABELS, STAGE_ORDER, countPipelineStages, statutMatchesStageFilter,
 } from '@/lib/pipeline-stage-filter'
 import AppHeader from '@/components/app-header'
 import { Badge } from '@/components/ui/badge'
@@ -473,11 +473,10 @@ export default function RecruitPipelinePage() {
 
   // Filter candidatures
   const searchNeedle = filterSearch.trim().toLowerCase()
-  const filtered = candidatures.filter(c => {
+  const matchesNonStageFilters = (c: Candidature) => {
     if (filterPole !== 'all' && c.postePole !== filterPole) return false
     if (filterPoste !== 'all' && c.posteId !== filterPoste) return false
     if (filterStatut !== 'all' && c.statut !== filterStatut) return false
-    if (!statutMatchesStageFilter(c.statut, filterStage)) return false
     if (filterCanal !== 'all' && c.canal !== filterCanal) return false
     if (filterLocation !== 'all') {
       const bucket = classifyLocation(
@@ -534,7 +533,10 @@ export default function RecruitPipelinePage() {
       if (!isStuck && !docsIncomplete && !hasAlerts) return false
     }
     return true
-  })
+  }
+  const stageScope = candidatures.filter(matchesNonStageFilters)
+  const stageCounts = countPipelineStages(stageScope)
+  const filtered = stageScope.filter(c => statutMatchesStageFilter(c.statut, filterStage))
 
   // Sort after filtering. Ties on score break on created_at DESC so newer
   // applications still bubble up inside equal-score groups (matches the
@@ -721,13 +723,7 @@ export default function RecruitPipelinePage() {
             <div className="border-t px-4 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 {(() => {
-                  const breakdown = stats.statusBreakdown ?? {}
-                  const totalActive = STAGE_ORDER.reduce(
-                    (sum, st) => sum + STAGE_STATUSES[st].reduce((s, k) => s + (breakdown[k] ?? 0), 0),
-                    0,
-                  ) || 1
-                  const stageCount = (st: PipelineStage) =>
-                    STAGE_STATUSES[st].reduce((s, k) => s + (breakdown[k] ?? 0), 0)
+                  const totalActive = stageCounts.activeTotal || 1
                   const stageIcon: Record<PipelineStage, typeof Users> = {
                     nouveaux: Users,
                     evaluation: ClipboardCheck,
@@ -735,25 +731,35 @@ export default function RecruitPipelinePage() {
                     decision: Check,
                   }
                   return STAGE_ORDER.map(st => {
-                    const n = stageCount(st)
+                    const n = stageCounts.stages[st]
                     const pct = Math.round((n / totalActive) * 100)
                     const active = filterStage === st
+                    const disabled = n === 0 && !active
                     const Icon = stageIcon[st]
                     return (
                       <button
                         key={st}
                         type="button"
+                        disabled={disabled}
                         onClick={() => {
+                          if (disabled) return
                           setFilterStage(prev => prev === st ? 'all' : st)
                           setScrollTrigger(x => x + 1)
                         }}
                         className={`group relative flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs tabular-nums transition-all ${
-                          active
+                          disabled
+                            ? 'cursor-not-allowed border-border/60 text-muted-foreground/45 opacity-60'
+                            : active
                             ? 'border-primary bg-primary/10 text-foreground'
                             : 'border-border hover:border-primary/60 hover:bg-muted'
                         }`}
                         aria-pressed={active}
-                        aria-label={`Filtrer sur l'étape ${STAGE_LABELS[st]} (${n} candidat(s))`}
+                        aria-disabled={disabled}
+                        aria-label={
+                          disabled
+                            ? `Aucun candidat dans l'étape ${STAGE_LABELS[st]} pour les filtres actifs`
+                            : `Filtrer sur l'étape ${STAGE_LABELS[st]} (${n} candidat(s))`
+                        }
                       >
                         <Icon className="h-3.5 w-3.5 opacity-70" />
                         <span className={active ? 'font-medium' : ''}>{STAGE_LABELS[st]}</span>
@@ -763,26 +769,30 @@ export default function RecruitPipelinePage() {
                     )
                   })
                 })()}
-                {(stats.statusBreakdown?.refuse ?? 0) > 0 ? (
+                {stageCounts.refuses > 0 || filterStage === 'refuses' ? (
                   <>
                     <span className="text-muted-foreground/40 mx-1" aria-hidden>·</span>
                     <button
                       type="button"
+                      disabled={stageCounts.refuses === 0 && filterStage !== 'refuses'}
                       onClick={() => {
                         setFilterStage(prev => prev === 'refuses' ? 'all' : 'refuses')
                         setScrollTrigger(x => x + 1)
                       }}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs tabular-nums transition-all ${
-                        filterStage === 'refuses'
+                        stageCounts.refuses === 0 && filterStage !== 'refuses'
+                          ? 'cursor-not-allowed border-border/60 text-muted-foreground/45 opacity-60'
+                          : filterStage === 'refuses'
                           ? 'border-red-400 bg-red-500/10 text-red-700 dark:text-red-300'
                           : 'border-border text-muted-foreground hover:border-red-400/60 hover:text-foreground'
                       }`}
                       aria-pressed={filterStage === 'refuses'}
-                      aria-label={`Filtrer sur les candidats refusés (${stats.statusBreakdown?.refuse} candidat(s))`}
+                      aria-disabled={stageCounts.refuses === 0 && filterStage !== 'refuses'}
+                      aria-label={`Filtrer sur les candidats refusés (${stageCounts.refuses} candidat(s))`}
                     >
                       <XCircle className="h-3.5 w-3.5 opacity-70" />
                       Refusés
-                      <span className="font-semibold">{stats.statusBreakdown?.refuse}</span>
+                      <span className="font-semibold">{stageCounts.refuses}</span>
                     </button>
                   </>
                 ) : null}
