@@ -716,11 +716,8 @@ export default function CandidateDetailPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
-        {/* Sticky permanent header: keep the candidate identity, current
-            candidature, and transition CTA visible while reviewing details. */}
-        <div className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-4 border-b bg-background/95 px-4 pt-4 pb-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
         {/* ── BACK + NAVIGATION ── */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex items-center justify-between">
           <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" /> Retour
           </Link>
@@ -753,37 +750,40 @@ export default function CandidateDetailPage() {
           )}
         </div>
 
-        {/* ══════════ ABOVE THE FOLD ══════════ */}
+        {/* Sticky permanent header: keep the candidate identity, current
+            candidature, and transition CTA visible while reviewing details. */}
+        <div className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-4 border-b bg-background/95 px-4 pt-4 pb-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          {/* ══════════ ABOVE THE FOLD ══════════ */}
 
-        {/* v5.x — candidature posture header at the very top: Yolan
+          {/* v5.x — candidature posture header at the very top: Yolan
             wants to know "what poste, what statut, what canal, when"
             from the first glance, before the identity card. Was
             previously sandwiched between the application message and
             the profile disclosure; recruiter feedback was that it
             disappeared on long pages. Now it's the page-level banner. */}
-        {selectedCandidature && (
-          <CandidaturePosteHeader
-            candidature={selectedCandidature}
-            isPending={!candidate.submittedAt}
-            submitted={!!candidate.submittedAt}
-            analysed={!!candidate.submittedAt && !!candidate.aiReport}
-            events={selectedEvents}
-            stageDataRefetchSignal={stageDataRefetchSignal}
-            allowedTransitions={selectedTransitions}
-            changingStatus={changingStatus}
-            onOpenTransition={(candidatureId, targetStatut, currentStatut) =>
-              handleOpenTransition(candidatureId, targetStatut, false, [], currentStatut)
-            }
-          />
-        )}
+          {selectedCandidature && (
+            <CandidaturePosteHeader
+              candidature={selectedCandidature}
+              isPending={!candidate.submittedAt}
+              submitted={!!candidate.submittedAt}
+              analysed={!!candidate.submittedAt && !!candidate.aiReport}
+              events={selectedEvents}
+              stageDataRefetchSignal={stageDataRefetchSignal}
+              allowedTransitions={selectedTransitions}
+              changingStatus={changingStatus}
+              onOpenTransition={(candidatureId, targetStatut, currentStatut) =>
+                handleOpenTransition(candidatureId, targetStatut, false, [], currentStatut)
+              }
+            />
+          )}
 
-        {/* Identity hero — avatar + name + contact + top skills + meta. */}
-        <CandidateIdentityStrip
-          candidate={candidate}
-          candidatures={candidatures}
-          topSkills={topSkills}
-          compact
-        />
+          {/* Identity hero — compact avatar + name + contact. */}
+          <CandidateIdentityStrip
+            candidate={candidate}
+            candidatures={candidatures}
+            topSkills={topSkills}
+            compact
+          />
         </div>
         {/* /sticky permanent header */}
 
