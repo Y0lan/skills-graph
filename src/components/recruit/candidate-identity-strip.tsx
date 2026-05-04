@@ -41,6 +41,9 @@ export interface CandidateIdentityStripProps {
    *  toggle copy ("Voir" → "Masquer") and the `aria-expanded` state so
    *  screen readers know whether the disclosed region is open. */
   profileExpanded?: boolean
+  /** Sticky detail headers need identity only; the full hero keeps skills,
+   *  expiry metadata, and the profile disclosure action. */
+  compact?: boolean
 }
 
 /** Editorial identity hero. Avatar + name + compact contact + top skills
@@ -58,6 +61,7 @@ export default function CandidateIdentityStrip({
   topSkills,
   onToggleProfile,
   profileExpanded = false,
+  compact = false,
 }: CandidateIdentityStripProps) {
   const [nowMs] = useState(() => Date.now())
   const profile = candidate.aiProfile as Partial<AiProfile> | null | undefined
@@ -85,15 +89,15 @@ export default function CandidateIdentityStrip({
   const expired = (parseAppDate(candidate.expiresAt)?.getTime() ?? 0) < nowMs
 
   return (
-    <div className="border-b pb-5 mb-6">
-      <div className="flex items-start gap-4">
-        <InitialsBadge name={candidate.name} size="lg" />
+    <div className={compact ? '' : 'border-b pb-5 mb-6'}>
+      <div className={compact ? 'flex items-center gap-3' : 'flex items-start gap-4'}>
+        <InitialsBadge name={candidate.name} size={compact ? 'md' : 'lg'} />
 
         <div className="flex-1 min-w-0">
           {/* Name + multi-candidatures chip + profile disclosure trigger */}
           <div className="flex items-baseline gap-2 flex-wrap">
             <h1
-              className="text-2xl font-bold tracking-tight"
+              className={compact ? 'text-xl font-bold tracking-tight' : 'text-2xl font-bold tracking-tight'}
               style={{ fontFamily: "'Raleway Variable', sans-serif" }}
             >
               {candidate.name}
@@ -107,7 +111,7 @@ export default function CandidateIdentityStrip({
                 {candidatures.length} candidatures
               </Badge>
             )}
-            {onToggleProfile && (
+            {onToggleProfile && !compact && (
               <button
                 type="button"
                 onClick={onToggleProfile}
@@ -191,7 +195,7 @@ export default function CandidateIdentityStrip({
           {/* Top skills — only when the candidate has ratings or AI suggestions.
               Keep the chip visual identity from the kanban pipeline row (tight,
               bordered, no pastel). */}
-          {topSkills.length > 0 && (
+          {!compact && topSkills.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {topSkills.map(s => (
                 <Badge
@@ -206,13 +210,15 @@ export default function CandidateIdentityStrip({
           )}
 
           {/* Meta strip — canal · candidatures count · expire date. */}
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            {candidate.canal && <>Canal : {candidate.canal} · </>}
-            Créé {formatDateHuman(candidate.createdAt)} ·{' '}
-            <span className={expired ? 'text-rose-500' : ''}>
-              {expired ? 'Lien expiré' : `Expire ${formatDateHuman(candidate.expiresAt)}`}
-            </span>
-          </p>
+          {!compact && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {candidate.canal && <>Canal : {candidate.canal} · </>}
+              Créé {formatDateHuman(candidate.createdAt)} ·{' '}
+              <span className={expired ? 'text-rose-500' : ''}>
+                {expired ? 'Lien expiré' : `Expire ${formatDateHuman(candidate.expiresAt)}`}
+              </span>
+            </p>
+          )}
         </div>
       </div>
     </div>

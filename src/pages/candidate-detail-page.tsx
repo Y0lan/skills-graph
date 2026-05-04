@@ -782,20 +782,45 @@ export default function CandidateDetailPage() {
           candidate={candidate}
           candidatures={candidatures}
           topSkills={topSkills}
-          onToggleProfile={candidate.aiProfile ? () => setProfileExpanded(v => !v) : undefined}
-          profileExpanded={profileExpanded}
+          compact
         />
-
-        {/* v5.3 tags bar — lives at the candidate level so labels survive
-            multi-poste applications. Used for "rappeler-2027",
-            "ex-CIO", "talent-pool", etc. */}
-        {candidate.id && (
-          <div className="mb-1">
-            <CandidateTagsBar candidateId={candidate.id} />
-          </div>
-        )}
         </div>
         {/* /sticky permanent header */}
+
+        <div className="mb-6 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {candidate.aiProfile && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setProfileExpanded(v => !v)}
+                aria-expanded={profileExpanded}
+                aria-controls="candidate-profile-disclosure"
+                className="h-8 gap-1.5 text-xs"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {profileExpanded ? 'Masquer message + profil' : 'Voir message + profil détaillé'}
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${profileExpanded ? 'rotate-180' : ''}`} />
+              </Button>
+            )}
+            {candidate.id && <CandidateTagsBar candidateId={candidate.id} />}
+          </div>
+
+          {topSkills.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {topSkills.map(s => (
+                <Badge
+                  key={s.skillId}
+                  variant="secondary"
+                  className="text-[10px] font-normal border bg-muted/40"
+                >
+                  {s.skillLabel} <span className="ml-1 text-foreground font-semibold">L{s.rating}</span>
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Fallback for candidates with NO extracted profile yet —
             the message still needs to surface above the operational
