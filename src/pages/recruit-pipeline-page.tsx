@@ -260,7 +260,7 @@ export default function RecruitPipelinePage() {
   const [candSortDir, setCandSortDir] = useState<'asc' | 'desc'>('desc')
   const [newCandidateOpen, setNewCandidateOpen] = useState(false)
   const kpiShellRef = useRef<HTMLDivElement | null>(null)
-  useElementHeight(kpiShellRef, '--pipeline-top-shell-h', Boolean(stats))
+  useElementHeight(kpiShellRef, '--pipeline-top-shell-h')
   const [showRoleManager, setShowRoleManager] = useState(false)
   const [customRoleCount, setCustomRoleCount] = useState(0)
   const [postesOpen, setPostesOpen] = useState(() => localStorage.getItem('pipeline-postes-open') === 'true')
