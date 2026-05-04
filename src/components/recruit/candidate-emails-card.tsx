@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Mail } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Badge } from '@/components/ui/badge'
-import { formatDateTime, STATUT_LABELS } from '@/lib/constants'
+import { formatDateTimeHuman, STATUT_LABELS } from '@/lib/constants'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
@@ -278,8 +278,8 @@ export default function CandidateEmailsCard({ events }: { events: CandidatureEve
                 {isOpen
                   ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                <span className="text-xs text-muted-foreground shrink-0 w-24">
-                  {formatDateTime(entry.event.createdAt)}
+                <span className="text-xs text-muted-foreground shrink-0 min-w-[9.5rem]">
+                  {formatDateTimeHuman(entry.event.createdAt)}
                 </span>
                 <span className="text-xs font-medium shrink-0">{statusLabel}</span>
                 <Badge

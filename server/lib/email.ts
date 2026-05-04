@@ -12,6 +12,7 @@ import { CustomBodyLayout } from '../emails/custom-body-layout.js';
 import { BRAND_LOGO_BUFFER, LOGO_CID } from './brand.js';
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM_EMAIL = 'Radar SINAPSE <radar@sinapse.nc>';
+const INTERVIEW_BOOKING_URL = 'https://calendly.com/guillaume-benoit-sinapse/30min';
 // Inline-image attachment, returned only when the rendered HTML actually
 // references the SINAPSE logo via `cid:sinapse-logo`. Templates that do not
 // use the branded layout (e.g. CandidateInvite) get no attachment, so emails
@@ -32,6 +33,20 @@ const SANITIZE_OPTIONS = {
     allowedTags: ['p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3'],
     allowedAttributes: { a: ['href'] },
 };
+function interviewBookingMarkdown(role: string): string {
+    return [
+        `Nous souhaitons vous rencontrer pour le poste de **${role}**.`,
+        ``,
+        `Merci de choisir directement un créneau via ce lien :`,
+        ``,
+        `[Sélectionner un créneau d'entretien](${INTERVIEW_BOOKING_URL})`,
+        ``,
+        `Pour faciliter le décalage horaire, si vous êtes en Nouvelle-Calédonie, privilégiez un créneau autour de midi. Si vous êtes en France métropolitaine, privilégiez un créneau en soirée.`,
+    ].join('\n');
+}
+function interviewBookingHtml(role: string): string {
+    return `Nous souhaitons vous rencontrer pour le poste de <strong>${escapeHtml(role)}</strong>.<br><br>Merci de choisir directement un créneau via ce lien : <a href="${INTERVIEW_BOOKING_URL}">sélectionner un créneau d'entretien</a>.<br><br>Pour faciliter le décalage horaire, si vous êtes en Nouvelle-Calédonie, privilégiez un créneau autour de midi. Si vous êtes en France métropolitaine, privilégiez un créneau en soirée.`;
+}
 export async function sendCandidateInvite(opts: {
     to: string;
     candidateName: string;
@@ -285,7 +300,7 @@ export async function sendTransitionNotification(opts: {
         case 'entretien_1':
         case 'entretien_2':
             subject = `Convocation entretien — ${opts.role}`;
-            bodyHtml = `Nous souhaitons vous rencontrer pour le poste de <strong>${escapeHtml(opts.role)}</strong>. Un membre de notre équipe vous contactera pour fixer un créneau.`;
+            bodyHtml = interviewBookingHtml(opts.role);
             break;
         case 'proposition':
             subject = `Proposition — ${opts.role} chez SINAPSE`;
@@ -355,7 +370,7 @@ export function getEmailTemplate(statut: string, context: {
         case 'entretien_2':
             return {
                 subject: `Convocation entretien — ${role}`,
-                body: `Bonjour ${candidateName},\n\nNous souhaitons vous rencontrer pour le poste de **${role}**. Un membre de notre équipe vous contactera pour fixer un créneau.\n\nCordialement,\nL'équipe SINAPSE`,
+                body: `Bonjour ${candidateName},\n\n${interviewBookingMarkdown(role)}\n\nCordialement,\nL'équipe SINAPSE`,
             };
         case 'proposition':
             return {
@@ -414,7 +429,7 @@ async function buildDefaultHtml(statut: string, context: {
         case 'entretien_1':
         case 'entretien_2':
             subject = `Convocation entretien — ${role}`;
-            bodyHtml = `Nous souhaitons vous rencontrer pour le poste de <strong>${escapeHtml(role)}</strong>. Un membre de notre équipe vous contactera pour fixer un créneau.`;
+            bodyHtml = interviewBookingHtml(role);
             break;
         case 'proposition':
             subject = `Proposition — ${role} chez SINAPSE`;

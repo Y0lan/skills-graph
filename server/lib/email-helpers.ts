@@ -51,7 +51,7 @@ export function getEmailPrompt(statut: string, candidateName: string, role: stri
             return `Rédige un email informant ${candidateName} que sa candidature au poste de ${role} a été présélectionnée. Bonne nouvelle, prochaines étapes à venir.${contextBlock}`;
         case 'entretien_1':
         case 'entretien_2':
-            return `Rédige un email de convocation à un entretien pour ${candidateName}, candidat(e) au poste de ${role}. Invite à proposer des créneaux.${contextBlock}`;
+            return `Rédige un email de convocation à un entretien pour ${candidateName}, candidat(e) au poste de ${role}. Invite à choisir un créneau sur https://calendly.com/guillaume-benoit-sinapse/30min. Précise que les personnes en Nouvelle-Calédonie doivent privilégier un créneau autour de midi, et les personnes en France métropolitaine un créneau en soirée.${contextBlock}`;
         default:
             return `Rédige un email de mise à jour de statut pour ${candidateName}, candidat(e) au poste de ${role}. Le statut passe à "${statut}".${contextBlock}`;
     }

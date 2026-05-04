@@ -25,9 +25,9 @@ function loadSystemPrompt(): string {
 const STATUT_CONTEXT: Record<string, string> = {
     preselectionne: 'Vous (le recruteur) souhaitez confirmer la présélection du candidat.',
     skill_radar_envoye: 'Vous invitez le candidat à compléter son auto-évaluation Skill Radar.',
-    entretien_1: 'Vous proposez un premier entretien (BENOIT + SAVALLE).',
+    entretien_1: 'Vous proposez un premier entretien (BENOIT + SAVALLE) avec prise de rendez-vous via https://calendly.com/guillaume-benoit-sinapse/30min. Nouvelle-Calédonie: créneau autour de midi; France métropolitaine: créneau en soirée.',
     aboro: 'Vous proposez le test de personnalité Âboro (payant, optionnel).',
-    entretien_2: 'Vous proposez un deuxième entretien.',
+    entretien_2: 'Vous proposez un deuxième entretien avec prise de rendez-vous via https://calendly.com/guillaume-benoit-sinapse/30min. Nouvelle-Calédonie: créneau autour de midi; France métropolitaine: créneau en soirée.',
     proposition: 'Vous annoncez qu’une proposition contractuelle va arriver.',
     embauche: 'Vous félicitez le candidat pour son recrutement.',
     refuse: 'Vous déclinez la candidature avec gratitude.',

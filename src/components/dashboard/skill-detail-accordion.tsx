@@ -4,7 +4,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { useCatalog } from '@/hooks/use-catalog'
 import { useSkillHistory } from '@/hooks/use-skill-history'
 import { shortLabel, cn, strengthColor } from '@/lib/utils'
-import { getCategoryPoles, POLE_HEX, POLE_LABELS } from '@/lib/constants'
+import { formatDateHuman, getCategoryPoles, POLE_HEX, POLE_LABELS } from '@/lib/constants'
 import type { CategoryAggregateResponse, TeamMemberAggregateResponse, TeamCategoryAggregateResponse, SkillChange } from '@/lib/types'
 import MemberAvatar from '@/components/member-avatar'
 import LevelUpDialog from '@/components/dashboard/level-up-dialog'
@@ -31,13 +31,6 @@ const POLE_DESCRIPTIONS: Record<string, string> = {
   java_modernisation: 'Stack moderne : Java, Spring, Angular, Kubernetes, CI/CD, Cloud',
   fonctionnel: 'Analyse métier, gestion de projet, conduite du changement, UX',
   legacy: 'Systèmes IBMi, Adélia/RPG, AS/400, batch et interfaces legacy',
-}
-
-function formatHistoryDate(raw: string): string {
-  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z')
-  return Number.isNaN(d.getTime())
-    ? raw
-    : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 export default function SkillDetailAccordion({
@@ -388,8 +381,8 @@ function SkillRowHeader({
   const lastChange = skillChanges.length > 1 ? skillChanges[skillChanges.length - 1] : null
   const dateTooltip = firstChange
     ? lastChange
-      ? `Validé le ${formatHistoryDate(firstChange.changedAt)}\nDernière mise à jour le ${formatHistoryDate(lastChange.changedAt)}`
-      : `Validé le ${formatHistoryDate(firstChange.changedAt)}`
+      ? `Validé le ${formatDateHuman(firstChange.changedAt)}\nDernière mise à jour le ${formatDateHuman(lastChange.changedAt)}`
+      : `Validé le ${formatDateHuman(firstChange.changedAt)}`
     : 'Non évalué'
 
   return (

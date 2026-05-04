@@ -8,7 +8,7 @@ import { ArrowRightLeft, Upload, FileText, Mail, MessageSquare, Clock, Eye, Down
 import QuickNoteComposer from './quick-note-composer'
 import { eventCategory, type EventCategory } from '@/lib/recruitment-events'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
-import { STATUT_LABELS, STATUT_COLORS, formatDateTime, formatDateShort, isStatut } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, formatDateHumanShort, formatDateTimeHuman, formatDateTimeHumanPrecise, isStatut } from '@/lib/constants'
 import { StageFiche } from './stage-fiches/stage-fiche'
 import { BADGE_STYLES, BADGE_SIZES } from '@/lib/badge-styles'
 import type { CandidatureEvent, CandidatureDocument } from '@/hooks/use-candidate-data'
@@ -386,23 +386,16 @@ function EventRow({
     if (isUploadNote) return null
   }
 
-  const absoluteTimestamp = event.createdAt
-    ? new Date(event.createdAt.includes('T') ? event.createdAt : event.createdAt.replace(' ', 'T') + 'Z').toLocaleString('fr-FR', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-      })
-    : ''
-
   return (
     <div className="py-2 px-1">
       <div className="flex items-start gap-2.5 text-xs flex-wrap">
         <span className="mt-0.5 text-muted-foreground shrink-0">{eventIcon(event)}</span>
         <Tooltip>
-          <TooltipTrigger render={<span className="text-muted-foreground shrink-0 w-24 tabular-nums cursor-default" />}>
-            {formatDateTime(event.createdAt)}
+          <TooltipTrigger render={<span className="text-muted-foreground shrink-0 min-w-[9.5rem] cursor-default" />}>
+            {formatDateTimeHuman(event.createdAt)}
           </TooltipTrigger>
           <TooltipContent side="top" className="text-[10px]">
-            {absoluteTimestamp}
+            {formatDateTimeHumanPrecise(event.createdAt)}
           </TooltipContent>
         </Tooltip>
         {event.createdBy && (
@@ -502,7 +495,7 @@ function DocumentCard({ doc, onPreview, onReassign }: { doc: CandidatureDocument
         <p className="text-[10px] text-muted-foreground">
           {typeLabel}
           <span className="mx-1">·</span>
-          {formatDateTime(doc.created_at)}
+          {formatDateTimeHuman(doc.created_at)}
         </p>
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
@@ -746,7 +739,7 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                   )}
                   {group.latestDate && (
                     <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-                      {formatDateShort(group.latestDate)}
+                      {formatDateHumanShort(group.latestDate)}
                     </span>
                   )}
                 </div>
@@ -828,9 +821,9 @@ export default function CandidateHistoryByStage({ events, documents = [], curren
                       {[...noteEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(e => (
                         <div key={e.id} className="rounded-md border bg-muted/20 p-2.5">
                           <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1">
-                            <span>{formatDateTime(e.createdAt)}</span>
+                            <span>{formatDateTimeHuman(e.createdAt)}</span>
                             {e.createdBy && <span>· {e.createdBy}</span>}
-                            {e.updatedAt && <span className="italic">· modifiée le {formatDateTime(e.updatedAt)}</span>}
+                            {e.updatedAt && <span className="italic">· modifiée le {formatDateTimeHuman(e.updatedAt)}</span>}
                             {onEditNote && (
                               <Button
                                 size="sm"

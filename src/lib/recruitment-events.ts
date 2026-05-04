@@ -9,7 +9,7 @@
  * future change to event taxonomy ships consistently across surfaces.
  */
 
-import { STATUT_LABELS } from './constants'
+import { formatDateHuman, formatDateTimeHuman, parseAppDate, STATUT_LABELS } from './constants'
 import type { CandidatureEvent } from '@/hooks/use-candidate-data'
 
 /** Coarse grouping used by the timeline filter chips and the
@@ -123,15 +123,14 @@ export function formatActor(slug: string | null | undefined): string {
   return `${cap(parts[0])} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`
 }
 
-/** Dual timestamp helper used across the new surfaces: absolute ("15 avr.
- *  2026 · 14:12") + relative ("il y a 2h") — absolute is primary per the
+/** Dual timestamp helper used across the new surfaces: absolute ("15 avril
+ *  2026 à 14:12") + relative ("il y a 2 h") — absolute is primary per the
  *  Recruitee lesson (recruiters check across weeks and need precise dates). */
 export function formatEventTimestamp(dateStr: string | null | undefined): { absolute: string; relative: string } {
   if (!dateStr) return { absolute: '—', relative: '' }
-  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
-  if (isNaN(d.getTime())) return { absolute: dateStr, relative: '' }
-  const absolute = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
-    + ' · ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  const d = parseAppDate(dateStr)
+  if (!d) return { absolute: dateStr, relative: '' }
+  const absolute = formatDateTimeHuman(dateStr)
   const diffMs = Date.now() - d.getTime()
   const diffMin = Math.floor(diffMs / 60000)
   let relative: string
@@ -139,7 +138,7 @@ export function formatEventTimestamp(dateStr: string | null | undefined): { abso
   else if (diffMin < 60) relative = `il y a ${diffMin} min`
   else if (diffMin < 60 * 24) relative = `il y a ${Math.floor(diffMin / 60)} h`
   else if (diffMin < 60 * 24 * 30) relative = `il y a ${Math.floor(diffMin / (60 * 24))} j`
-  else relative = d.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
+  else relative = formatDateHuman(dateStr)
   return { absolute, relative }
 }
 

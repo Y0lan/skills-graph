@@ -17,6 +17,7 @@ import { PropositionFiche, type PropositionFicheValues } from './proposition-fic
 import { EmbaucheFiche, type EmbaucheFicheValues } from './embauche-fiche'
 import { SkillRadarCompleteFiche, type SkillRadarCompleteFicheValues } from './skill-radar-complete-fiche'
 import { RefuseFiche, type RefuseFicheValues } from './refuse-fiche'
+import { formatDateTimeHuman } from '@/lib/constants'
 
 /**
  * Dispatcher: takes a (candidatureId, stage) and renders the matching
@@ -84,7 +85,7 @@ export function StageFiche({ candidatureId, stage, refetchSignal }: StageFichePr
 
   const metaLine = useMemo(() => {
     if (!updatedAt || !updatedBy) return null
-    return `Modifié par ${updatedBy} · ${new Date(updatedAt + 'Z').toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`
+    return `Modifié par ${updatedBy} · ${formatDateTimeHuman(updatedAt)}`
   }, [updatedAt, updatedBy])
 
   if (!supported) return null

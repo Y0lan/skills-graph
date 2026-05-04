@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { formatCvDateRange, formatDateTime } from '../constants'
+import { formatCvDateRange, formatDateHuman, formatDateTime, formatDateTimeHuman } from '../constants'
 
 describe('formatCvDateRange', () => {
   beforeEach(() => {
@@ -54,5 +54,11 @@ describe('formatDateTime (regression)', () => {
     // where it stays "07:04". Either way, never "07:04" interpreted as
     // local producing e.g. "20:04" UTC.
     expect(out).toMatch(/^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}$/)
+  })
+
+  it('parses Postgres timestamptz strings instead of leaking raw ISO-ish text', () => {
+    expect(formatDateHuman('2026-05-01 10:16:39.366975+00')).toBe('1 mai 2026')
+    expect(formatDateTimeHuman('2026-05-01 10:16:39.366975+00')).toMatch(/^1 mai 2026 à \d{2}:\d{2}$/)
+    expect(formatDateTime('2026-05-01 10:16:39.366975+00')).toMatch(/^01\/05\/2026\s\d{2}:\d{2}$/)
   })
 })

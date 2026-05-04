@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, PenLine } from 'lucide-react'
 import AboroManualForm from '@/components/recruit/aboro-manual-form'
 import type { AboroProfile } from '@/hooks/use-candidate-data'
-import { formatDateTime } from '@/lib/constants'
+import { formatDateTimeHuman } from '@/lib/constants'
 
 export interface AboroProfileSectionProps {
   candidateId: string
@@ -89,7 +89,7 @@ export default function AboroProfileSection({
             <p className="text-xs text-muted-foreground">
               Score Soft calculé depuis les traits Âboro : collaboration 40 %, adaptabilité 30 %, leadership 30 %.
               {' '}Source : {sourceLabel}
-              {aboroProfile._meta?.createdAt ? ` · ${formatDateTime(aboroProfile._meta.createdAt)}` : ''}
+              {aboroProfile._meta?.createdAt ? ` · ${formatDateTimeHuman(aboroProfile._meta.createdAt)}` : ''}
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={() => setShowAboroForm(prev => !prev)}>

@@ -1,6 +1,6 @@
 import { Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { STATUT_COLORS, STATUT_LABELS, formatDateTime, isStatut } from '@/lib/constants'
+import { STATUT_COLORS, STATUT_LABELS, formatDateTimeHuman, isStatut } from '@/lib/constants'
 import CandidateLastEditIndicator from './candidate-last-edit-indicator'
 import { NextCriticalFactPill } from './stage-fiches/next-critical-fact-pill'
 import CanalToggle from './canal-toggle'
@@ -76,7 +76,7 @@ export default function CandidaturePosteHeader({
       />
 
       <span className="text-xs text-muted-foreground">
-        {formatDateTime(c.createdAt)}
+        {formatDateTimeHuman(c.createdAt)}
       </span>
 
       <CandidateLastEditIndicator events={events} />

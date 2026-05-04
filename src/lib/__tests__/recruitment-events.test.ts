@@ -120,7 +120,7 @@ describe('formatEventTimestamp', () => {
   it('returns both absolute and relative strings', () => {
     const iso = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
     const { absolute, relative } = formatEventTimestamp(iso)
-    expect(absolute).toMatch(/·/)
+    expect(absolute).toMatch(/Aujourd'hui à|Hier à|\d{1,2} \p{L}+ \d{4} à/u)
     expect(relative).toMatch(/il y a 3 h|il y a 2 h/)
   })
   it('handles "just now"', () => {

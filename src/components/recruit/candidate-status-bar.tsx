@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { GitBranch, ChevronRight, ChevronDown, Upload, Info, FileText, Mail } from 'lucide-react'
-import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTime } from '@/lib/constants'
+import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, formatDateTimeHuman } from '@/lib/constants'
 import type { CandidatureInfo, CandidatureEvent, CandidatureData } from '@/hooks/use-candidate-data'
 
 export interface CandidateStatusBarProps {
@@ -97,7 +97,7 @@ export default function CandidateStatusBar({
                     <p className="text-sm font-medium">{c.posteTitre}</p>
                     <p className="text-xs text-muted-foreground">
                       {CANAL_LABELS[c.canal] ?? c.canal}
-                      {' · '}Candidature du {formatDateTime(c.createdAt)}
+                      {' · '}Candidature du {formatDateTimeHuman(c.createdAt)}
                     </p>
                   </div>
                 </div>
@@ -224,7 +224,7 @@ export default function CandidateStatusBar({
                                   : <ChevronRight className="h-3 w-3 text-muted-foreground" />
                               )}
                             </span>
-                            <span className="text-muted-foreground shrink-0 w-28 tabular-nums">{formatDateTime(e.createdAt)}</span>
+                            <span className="text-muted-foreground shrink-0 min-w-[9.5rem]">{formatDateTimeHuman(e.createdAt)}</span>
                             {e.statutTo && (
                               <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${STATUT_COLORS[e.statutTo] ?? ''}`}>
                                 {STATUT_LABELS[e.statutTo] ?? e.statutTo}

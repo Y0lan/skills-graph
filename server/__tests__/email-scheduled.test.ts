@@ -33,7 +33,7 @@ beforeEach(() => {
   process.env.RESEND_API_KEY = 're_test_dummy'
 })
 
-const { sendTransitionEmail, cancelScheduledEmail, getEmailTemplate } = await import('../lib/email.js')
+const { sendTransitionEmail, cancelScheduledEmail, getEmailTemplate, renderTransitionEmail } = await import('../lib/email.js')
 
 describe('sendTransitionEmail — scheduledAt', () => {
   it('passes scheduledAt through to Resend and flags scheduled=true', async () => {
@@ -81,6 +81,25 @@ describe('sendTransitionEmail — scheduledAt', () => {
 
     expect(template?.body).toContain("ces réponses servent de base à l'entretien technique")
     expect(template?.body).toContain('challengées avec vous')
+  })
+
+  it('includes the Calendly booking link and timezone guidance in interview emails', async () => {
+    const template = getEmailTemplate('entretien_1', {
+      candidateName: 'Camille',
+      role: 'Dev',
+    })
+    expect(template?.body).toContain('https://calendly.com/guillaume-benoit-sinapse/30min')
+    expect(template?.body).toContain('Nouvelle-Calédonie')
+    expect(template?.body).toContain('France métropolitaine')
+
+    const rendered = await renderTransitionEmail({
+      candidateName: 'Camille',
+      role: 'Dev',
+      statut: 'entretien_2',
+    })
+    expect(rendered?.html).toContain('https://calendly.com/guillaume-benoit-sinapse/30min')
+    expect(rendered?.html).toContain('Nouvelle-Calédonie')
+    expect(rendered?.html).toContain('France métropolitaine')
   })
 })
 

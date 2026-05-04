@@ -189,24 +189,97 @@ export function getCategoryPoles(categoryId: string): string[] {
   return poles
 }
 
+export function parseAppDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null
+  const raw = String(dateStr).trim()
+  if (!raw) return null
+
+  const dateOnly = raw.match(/^\d{4}-\d{2}-\d{2}$/)
+  if (dateOnly) {
+    const d = new Date(`${raw}T00:00:00Z`)
+    return isNaN(d.getTime()) ? null : d
+  }
+
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(raw)
+  const normalized = raw
+    .replace(' ', 'T')
+    .replace(/([+-]\d{2})(\d{2})$/, '$1:$2')
+    .replace(/([+-]\d{2})$/, '$1:00')
+  const d = new Date(hasExplicitTimezone ? normalized : `${normalized}Z`)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function formatHumanDateFromDate(d: Date): string {
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function formatHumanTimeFromDate(d: Date, includeSeconds = false): string {
+  return d.toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(includeSeconds ? { second: '2-digit' as const } : {}),
+  })
+}
+
+function localDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function humanRelativeDay(d: Date): string | null {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  if (localDateKey(d) === localDateKey(today)) return "Aujourd'hui"
+  if (localDateKey(d) === localDateKey(yesterday)) return 'Hier'
+  return null
+}
+
+export function formatDateHuman(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = parseAppDate(dateStr)
+  return d ? formatHumanDateFromDate(d) : dateStr
+}
+
+export function formatDateHumanShort(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = parseAppDate(dateStr)
+  if (!d) return dateStr
+  return humanRelativeDay(d) ?? formatHumanDateFromDate(d)
+}
+
+export function formatDateTimeHuman(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = parseAppDate(dateStr)
+  if (!d) return dateStr
+  const day = humanRelativeDay(d) ?? formatHumanDateFromDate(d)
+  return `${day} à ${formatHumanTimeFromDate(d)}`
+}
+
+export function formatDateTimeHumanPrecise(dateStr: string | null | undefined): string {
+  if (!dateStr) return '—'
+  const d = parseAppDate(dateStr)
+  if (!d) return dateStr
+  return `${formatHumanDateFromDate(d)} à ${formatHumanTimeFromDate(d, true)}`
+}
+
 export function formatDateShort(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+  const d = parseAppDate(dateStr)
+  return d ? d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : dateStr
 }
 
 /** Full date format (includes year) */
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
-  return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('fr-FR')
+  const d = parseAppDate(dateStr)
+  return d ? d.toLocaleDateString('fr-FR') : dateStr
 }
 
 /** Date + time format: "13/04/2026 14:32" */
 export function formatDateTime(dateStr: string | null | undefined): string {
   if (!dateStr) return '—'
-  const d = new Date(dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z')
-  if (isNaN(d.getTime())) return dateStr
+  const d = parseAppDate(dateStr)
+  if (!d) return dateStr
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 }

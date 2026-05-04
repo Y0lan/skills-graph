@@ -88,6 +88,23 @@ describe('groupEventsByStage (via CandidateHistoryByStage render)', () => {
 })
 
 describe('Reverse stage iteration + controlled accordion (issues 7+11 / A.2)', () => {
+  it('renders Postgres timestamptz values as readable French dates, not raw DB strings', () => {
+    const events: CandidatureEvent[] = [
+      ev({
+        id: 1,
+        type: 'status_change',
+        statutFrom: 'skill_radar_envoye',
+        statutTo: 'skill_radar_complete',
+        stage: 'skill_radar_complete',
+        createdAt: '2026-04-15 10:16:39.366975+00',
+      }),
+    ]
+    render(<CandidateHistoryByStage events={events} documents={[]} currentStatut="skill_radar_complete" />)
+
+    expect(screen.queryByText(/2026-04-15 10:16:39\.366975\+00/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(/15 avril 2026/).length).toBeGreaterThan(0)
+  })
+
   it('renders the current stage above earlier stages (newest-first order)', () => {
     const events: CandidatureEvent[] = [
       // intake seed (status_change → postule, stage='postule')

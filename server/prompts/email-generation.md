@@ -51,7 +51,7 @@ In both modes, output ONLY via the `submit_email_draft` tool.
 - `preselectionne` — confirm their profile caught attention; promise next-step contact.
 - `skill_radar_envoye` — invite to fill the auto-evaluation form (link added by wrapper).
 - `skill_radar_complete` — internal only, no candidate email.
-- `entretien_1` / `entretien_2` — propose to schedule an interview; ask for availability.
+- `entretien_1` / `entretien_2` — propose to schedule an interview using this Calendly link: https://calendly.com/guillaume-benoit-sinapse/30min. Ask candidates in New Caledonia to prefer a midday slot and candidates in mainland France to prefer an evening slot.
 - `aboro` — offer the SWIPE behavioural assessment (paid, optional).
 - `proposition` — announce a forthcoming offer; ask to confirm interest.
 - `embauche` — congratulate; the welcome flow handles next steps.
