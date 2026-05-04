@@ -207,7 +207,7 @@ export default function CandidateFormPage() {
               <ul className="mt-2 space-y-1 text-muted-foreground">
                 <li>• Durée estimée : environ 15 minutes</li>
                 <li>• Évaluez vos compétences sur une échelle de 0 (inconnu) à 5 (expert)</li>
-                <li>• Soyez honnête — il n'y a pas de mauvaise réponse</li>
+                <li>• Soyez honnête — les compétences déclarées pourront être approfondies en entretien technique</li>
                 <li>• Vous pouvez passer les catégories qui ne correspondent pas à votre profil</li>
                 {nonPoleGroups && nonPoleGroups.length > 0 && (
                   <li>• À la fin, vous pourrez ajouter des compétences hors poste si vous en avez (optionnel)</li>

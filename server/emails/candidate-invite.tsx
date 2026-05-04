@@ -41,6 +41,14 @@ export function CandidateInvite({
         r&eacute;ponse. Vos r&eacute;ponses sont sauvegard&eacute;es
         automatiquement.
       </p>
+      <p style={{ color: '#555', fontSize: '14px', lineHeight: '1.6' }}>
+        R&eacute;pondez avec sinc&eacute;rit&eacute; : ces r&eacute;ponses servent
+        de base &agrave; l&apos;entretien technique. Les comp&eacute;tences
+        indiqu&eacute;es comme ma&icirc;tris&eacute;es pourront &ecirc;tre
+        approfondies et challeng&eacute;es avec vous. L&apos;objectif n&apos;est
+        pas d&apos;obtenir un score parfait, mais de pr&eacute;parer un
+        &eacute;change utile et juste.
+      </p>
       <div style={{ margin: '32px 0' }}>
         <a
           href={evaluationUrl}

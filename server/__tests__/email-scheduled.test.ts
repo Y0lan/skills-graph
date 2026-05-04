@@ -33,7 +33,7 @@ beforeEach(() => {
   process.env.RESEND_API_KEY = 're_test_dummy'
 })
 
-const { sendTransitionEmail, cancelScheduledEmail } = await import('../lib/email.js')
+const { sendTransitionEmail, cancelScheduledEmail, getEmailTemplate } = await import('../lib/email.js')
 
 describe('sendTransitionEmail — scheduledAt', () => {
   it('passes scheduledAt through to Resend and flags scheduled=true', async () => {
@@ -66,8 +66,21 @@ describe('sendTransitionEmail — scheduledAt', () => {
 
     const payload = sendMock.mock.calls[0][0]
     expect(payload.scheduledAt).toBeUndefined()
+    expect(payload.html).toContain('entretien technique')
+    expect(payload.html).toContain('challeng')
     expect(result.scheduled).toBeUndefined()
     expect(result.sent).toBe(true)
+  })
+
+  it('includes the honesty warning in the editable skill radar template body', async () => {
+    const template = getEmailTemplate('skill_radar_envoye', {
+      candidateName: 'Camille',
+      role: 'Dev',
+      evaluationUrl: 'https://radar.test/evaluate/candidate-123',
+    })
+
+    expect(template?.body).toContain("ces réponses servent de base à l'entretien technique")
+    expect(template?.body).toContain('challengées avec vous')
   })
 })
 

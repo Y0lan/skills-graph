@@ -339,7 +339,7 @@ export function getEmailTemplate(statut: string, context: {
         case 'skill_radar_envoye':
             return {
                 subject: `Évaluation de compétences — ${role} chez SINAPSE`,
-                body: `Bonjour ${candidateName} 👋\n\nVous êtes invité(e) à évaluer vos compétences pour le poste de **${role}** chez SINAPSE.\n\nCe questionnaire vous permet d'auto-évaluer vos compétences sur une échelle de 0 (inconnu) à 5 (expert). Soyez honnête — il n'y a pas de mauvaise réponse. Vos réponses sont sauvegardées automatiquement.\n\n[Commencer l'évaluation](${evaluationUrl ? encodeURI(evaluationUrl) : '#'})\n\nCe lien est personnel et expire dans 30 jours. Ne le partagez pas.\nSi vous avez des questions, contactez l'équipe SINAPSE.`,
+                body: `Bonjour ${candidateName} 👋\n\nVous êtes invité(e) à évaluer vos compétences pour le poste de **${role}** chez SINAPSE.\n\nCe questionnaire vous permet d'auto-évaluer vos compétences sur une échelle de 0 (inconnu) à 5 (expert). Soyez honnête — il n'y a pas de mauvaise réponse. Vos réponses sont sauvegardées automatiquement.\n\nRépondez avec sincérité : ces réponses servent de base à l'entretien technique. Les compétences indiquées comme maîtrisées pourront être approfondies et challengées avec vous. L'objectif n'est pas d'obtenir un score parfait, mais de préparer un échange utile et juste.\n\n[Commencer l'évaluation](${evaluationUrl ? encodeURI(evaluationUrl) : '#'})\n\nCe lien est personnel et expire dans 30 jours. Ne le partagez pas.\nSi vous avez des questions, contactez l'équipe SINAPSE.`,
             };
         case 'refuse':
             return {
