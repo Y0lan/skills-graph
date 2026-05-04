@@ -16,6 +16,7 @@ import { useEffect, type RefObject } from 'react'
 export function useElementHeight(
   ref: RefObject<HTMLElement | null>,
   cssVarName: `--${string}`,
+  observeKey?: unknown,
 ): void {
   useEffect(() => {
     const el = ref.current
@@ -41,5 +42,5 @@ export function useElementHeight(
       obs.disconnect()
       root.style.setProperty(cssVarName, '0px')
     }
-  }, [ref, cssVarName])
+  }, [ref, cssVarName, observeKey])
 }
