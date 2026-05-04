@@ -1,4 +1,4 @@
-import { ChevronRight, Clock } from 'lucide-react'
+import { ChevronRight, Clock, MapPin } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { STATUT_COLORS, STATUT_LABELS, formatDateTimeHuman, isStatut } from '@/lib/constants'
@@ -22,6 +22,8 @@ import type { AllowedTransitions, CandidatureInfo, CandidatureEvent } from '@/ho
 
 export interface CandidaturePosteHeaderProps {
   candidature: CandidatureInfo
+  candidateName?: string
+  candidateLocation?: string | null
   isPending: boolean
   submitted: boolean
   analysed: boolean
@@ -40,6 +42,8 @@ export interface CandidaturePosteHeaderProps {
 
 export default function CandidaturePosteHeader({
   candidature: c,
+  candidateName,
+  candidateLocation,
   isPending,
   submitted,
   analysed,
@@ -55,12 +59,26 @@ export default function CandidaturePosteHeader({
 
   return (
     <div className="flex items-center gap-3 flex-wrap mb-3">
-      <h2
-        className="text-xl font-bold tracking-tight"
-        style={{ fontFamily: "'Raleway Variable', sans-serif" }}
-      >
-        {c.posteTitre}
-      </h2>
+      <div className="min-w-0">
+        <h2
+          className="text-xl font-bold tracking-tight"
+          style={{ fontFamily: "'Raleway Variable', sans-serif" }}
+        >
+          {c.posteTitre}
+        </h2>
+        {candidateName && (
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="truncate font-medium text-foreground/90">{candidateName}</span>
+            {candidateLocation && (
+              <>
+                <span className="text-muted-foreground/50" aria-hidden>·</span>
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate">{candidateLocation}</span>
+              </>
+            )}
+          </p>
+        )}
+      </div>
 
       {awaitingRadar ? (
         <Badge

@@ -142,4 +142,24 @@ describe('CandidaturePosteHeader — transition CTA contract', () => {
     )
     expect(screen.getByRole('button', { name: /Présélectionné/ })).toBeDisabled()
   })
+
+  it('renders compact candidate identity when provided', () => {
+    render(
+      <CandidaturePosteHeader
+        candidature={baseCandidature()}
+        candidateName="Mickael Bourgeoisat MICKAEL"
+        candidateLocation="Biscarrosse, France"
+        isPending={false}
+        submitted={false}
+        analysed={false}
+        events={[]}
+        allowedTransitions={null}
+        onOpenTransition={() => {}}
+        changingStatus={false}
+      />,
+    )
+
+    expect(screen.getByText('Mickael Bourgeoisat MICKAEL')).toBeInTheDocument()
+    expect(screen.getByText('Biscarrosse, France')).toBeInTheDocument()
+  })
 })

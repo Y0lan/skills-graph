@@ -711,6 +711,19 @@ export default function CandidateDetailPage() {
   const selectedDocuments = selectedCData?.documents ?? (isSelectedFirst ? documents : [])
   const selectedTransitions = selectedCData?.allowedTransitions ?? (isSelectedFirst ? allowedTransitions : null)
   const selectedIsHydrating = !!selectedCandidature && !selectedCData && !isSelectedFirst
+  const profileLocation = (candidate.aiProfile as {
+    location?: {
+      city?: { value?: unknown }
+      country?: { value?: unknown }
+    }
+  } | null | undefined)?.location
+  const profileCity = typeof profileLocation?.city?.value === 'string'
+    ? profileLocation.city.value.trim()
+    : ''
+  const profileCountry = typeof profileLocation?.country?.value === 'string'
+    ? profileLocation.country.value.trim()
+    : ''
+  const candidateStickyLocation = [profileCity, profileCountry].filter(Boolean).join(', ') || candidate.pays || null
 
   return (
     <div className="min-h-screen bg-background">
@@ -765,6 +778,8 @@ export default function CandidateDetailPage() {
           {selectedCandidature && (
             <CandidaturePosteHeader
               candidature={selectedCandidature}
+              candidateName={candidate.name}
+              candidateLocation={candidateStickyLocation}
               isPending={!candidate.submittedAt}
               submitted={!!candidate.submittedAt}
               analysed={!!candidate.submittedAt && !!candidate.aiReport}
