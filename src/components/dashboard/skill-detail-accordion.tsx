@@ -33,6 +33,13 @@ const POLE_DESCRIPTIONS: Record<string, string> = {
   legacy: 'Systèmes IBMi, Adélia/RPG, AS/400, batch et interfaces legacy',
 }
 
+function formatHistoryDate(raw: string): string {
+  const d = new Date(raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z')
+  return Number.isNaN(d.getTime())
+    ? raw
+    : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
 export default function SkillDetailAccordion({
   memberId, categories, teamMembers, teamCategories,
   comparedMember, isOwnProfile, onOpenChat,
@@ -381,8 +388,8 @@ function SkillRowHeader({
   const lastChange = skillChanges.length > 1 ? skillChanges[skillChanges.length - 1] : null
   const dateTooltip = firstChange
     ? lastChange
-      ? `Validé le ${firstChange.changedAt.split('T')[0]}\nDernière mise à jour le ${lastChange.changedAt.split('T')[0]}`
-      : `Validé le ${firstChange.changedAt.split('T')[0]}`
+      ? `Validé le ${formatHistoryDate(firstChange.changedAt)}\nDernière mise à jour le ${formatHistoryDate(lastChange.changedAt)}`
+      : `Validé le ${formatHistoryDate(firstChange.changedAt)}`
     : 'Non évalué'
 
   return (

@@ -40,7 +40,7 @@ import {
 import { ArrowLeft, ChevronLeft, ChevronRight, ChevronDown, Loader2, Sparkles, AlertTriangle, Mail, AlertCircle, Upload, X, Calendar, FileText, Wand2, Eye } from 'lucide-react'
 import { STATUT_LABELS } from '@/lib/constants'
 import { mergeCandidateRatings } from '@/lib/effective-ratings-client'
-import { useCandidateData } from '@/hooks/use-candidate-data'
+import { useCandidateData, type CandidatureInfo } from '@/hooks/use-candidate-data'
 import { useCandidatureEventStream } from '@/hooks/use-candidature-event-stream'
 import { useTransitionState } from '@/hooks/use-transition-state'
 import { useNavigate } from 'react-router-dom'
@@ -640,6 +640,10 @@ export default function CandidateDetailPage() {
       .slice(0, 5)
   }, [candidate, categories])
 
+  const handleCandidatureUpdated = useCallback((next: CandidatureInfo) => {
+    setCandidatures(prev => prev.map(c => c.id === next.id ? { ...c, ...next } : c))
+  }, [setCandidatures])
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -913,6 +917,7 @@ export default function CandidateDetailPage() {
             documents={selectedDocuments}
             setDocuments={setDocuments}
             setCandidatureDataMap={setCandidatureDataMap}
+            onCandidatureUpdated={handleCandidatureUpdated}
             notes={notes}
             setNotes={setNotes}
             aboroProfile={aboroProfile}

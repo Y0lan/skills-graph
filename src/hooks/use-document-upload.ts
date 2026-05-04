@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import type { CandidatureDocument, CandidatureEvent, CandidatureData } from '@/hooks/use-candidate-data'
+import type { AboroProfile, CandidatureDocument, CandidatureEvent, CandidatureData, CandidatureInfo } from '@/hooks/use-candidate-data'
 
 export interface UseDocumentUploadReturn {
   uploading: boolean
@@ -16,6 +16,8 @@ export function useDocumentUpload(
   setDocuments: React.Dispatch<React.SetStateAction<CandidatureDocument[]>>,
   setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>,
   setCandidatureDataMap?: React.Dispatch<React.SetStateAction<Record<string, CandidatureData>>>,
+  onCandidatureUpdated?: (candidature: CandidatureInfo) => void,
+  onAboroProfileUpdated?: (profile: AboroProfile) => void,
 ): UseDocumentUploadReturn {
   const [uploading, setUploading] = useState(false)
   const [uploadType, setUploadType] = useState('other')
@@ -37,6 +39,18 @@ export function useDocumentUpload(
         throw new Error(body.error || `HTTP ${res.status}`)
       }
 
+      const uploaded = await res.json().catch(() => null) as { aboroProfile?: AboroProfile | null } | null
+      if (uploaded?.aboroProfile && onAboroProfileUpdated) {
+        onAboroProfileUpdated({
+          ...uploaded.aboroProfile,
+          _meta: {
+            ...uploaded.aboroProfile._meta,
+            source: 'pdf',
+            sourceDocumentName: file.name,
+          },
+        })
+      }
+
       // Refetch the authoritative doc list so the UI gets server-assigned
       // display_filename / scan_status / uploaded_by and any soft-delete of
       // a replaced slot doc. Avoids the ghost-row issue Codex flagged where
@@ -56,8 +70,9 @@ export function useDocumentUpload(
         }
       }
       if (detailRes.ok) {
-        const detail = await detailRes.json() as { events?: CandidatureEvent[] }
+        const detail = await detailRes.json() as { events?: CandidatureEvent[]; candidature?: CandidatureInfo }
         if (detail?.events) setEvents(detail.events)
+        if (detail?.candidature && onCandidatureUpdated) onCandidatureUpdated(detail.candidature)
       }
 
       if (!typeOverride) setUploadType('other')
@@ -67,7 +82,7 @@ export function useDocumentUpload(
     } finally {
       setUploading(false)
     }
-  }, [candidatureId, uploadType, setDocuments, setEvents, setCandidatureDataMap])
+  }, [candidatureId, uploadType, setDocuments, setEvents, setCandidatureDataMap, onCandidatureUpdated, onAboroProfileUpdated])
 
   return {
     uploading,

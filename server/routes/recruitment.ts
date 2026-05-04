@@ -819,6 +819,7 @@ protectedRouter.get('/candidatures/:id', async (req, res) => {
     res.json({
         candidature: {
             id: row.candidature_id,
+            candidateId: row.candidate_id,
             posteId: row.poste_id,
             posteTitre: row.poste_titre,
             postePole: row.poste_pole,
@@ -2576,8 +2577,8 @@ protectedRouter.get('/candidatures/:id/documents/slots', async (req, res) => {
     });
 });
 // Get Aboro profile for a candidate
-protectedRouter.get('/candidates/:candidateId/aboro', (req, res) => {
-    res.json(getAboroProfile(req.params.candidateId));
+protectedRouter.get('/candidates/:candidateId/aboro', async (req, res) => {
+    res.json(await getAboroProfile(req.params.candidateId));
 });
 // List documents for a candidature
 protectedRouter.get('/candidatures/:id/documents', async (req, res) => {
@@ -3799,7 +3800,7 @@ protectedRouter.post('/candidates/:candidateId/aboro/manual', async (req, res) =
             });
             return;
         }
-        const result = saveManualAboroProfile({
+        const result = await saveManualAboroProfile({
             candidateId: req.params.candidateId,
             traits,
             talent_cloud,

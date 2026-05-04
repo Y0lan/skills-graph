@@ -105,6 +105,15 @@ export interface AboroProfile {
   talents: string[]
   axes_developpement: string[]
   matrices?: { dimension: string; naturel: string; mobilisable: string }[]
+  _meta?: {
+    createdAt?: string
+    createdBy?: string
+    sourceDocumentId?: string | null
+    sourceDocumentName?: string | null
+    source?: 'pdf' | 'manual' | null
+    softSkillScore?: number
+    softSkillAlerts?: { trait: string; value: number; threshold: number; message: string }[]
+  }
 }
 
 export interface AllowedTransitions {
@@ -189,7 +198,22 @@ export function useCandidateData(candidateId: string | undefined): UseCandidateD
     // Fetch Aboro profile
     fetch(`/api/recruitment/candidates/${candidateId}/aboro`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.profile) setAboroProfile(data.profile) })
+      .then(data => {
+        if (data?.profile) {
+          setAboroProfile({
+            ...data.profile,
+            _meta: {
+              createdAt: data.createdAt,
+              createdBy: data.createdBy,
+              sourceDocumentId: data.sourceDocumentId,
+              sourceDocumentName: data.sourceDocumentName,
+              source: data.source,
+              softSkillScore: data.softSkillScore,
+              softSkillAlerts: data.softSkillAlerts,
+            },
+          })
+        }
+      })
       .catch((err) => {
         console.error('[Fetch] Error:', err)
         toast.error('Erreur de chargement')

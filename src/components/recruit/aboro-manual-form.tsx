@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader2 } from 'lucide-react'
+import type { AboroProfile } from '@/hooks/use-candidate-data'
 
 const AXES = [
   { key: 'leadership', label: 'Leadership / Influence', traits: [
@@ -28,18 +29,8 @@ const AXES = [
 
 interface AboroManualFormProps {
   candidateId: string
-  initialProfile?: {
-    traits: Record<string, Record<string, number>>
-    talent_cloud?: Record<string, string>
-    talents?: string[]
-    axes_developpement?: string[]
-  } | null
-  onSaved: (profile: {
-    traits: Record<string, Record<string, number>>
-    talent_cloud: Record<string, string>
-    talents: string[]
-    axes_developpement: string[]
-  }) => void
+  initialProfile?: AboroProfile | null
+  onSaved: (profile: AboroProfile) => void
 }
 
 export default function AboroManualForm({ candidateId, initialProfile, onSaved }: AboroManualFormProps) {
@@ -69,7 +60,14 @@ export default function AboroManualForm({ candidateId, initialProfile, onSaved }
       })
       if (!res.ok) throw new Error('Erreur')
       const data = await res.json()
-      onSaved(data.profile)
+      onSaved({
+        ...data.profile,
+        _meta: {
+          source: 'manual',
+          softSkillScore: data.softSkillScore,
+          softSkillAlerts: data.alerts,
+        },
+      })
     } catch {
       // silent — toast would be better but keep it simple
     } finally {

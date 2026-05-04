@@ -48,6 +48,7 @@ export interface CandidatureWorkspaceProps {
   documents: CandidatureDocument[]
   setDocuments: React.Dispatch<React.SetStateAction<CandidatureDocument[]>>
   setCandidatureDataMap: React.Dispatch<React.SetStateAction<Record<string, import('@/hooks/use-candidate-data').CandidatureData>>>
+  onCandidatureUpdated?: (candidature: CandidatureInfo) => void
   notes: string
   setNotes: React.Dispatch<React.SetStateAction<string>>
   aboroProfile: AboroProfileType | null
@@ -110,6 +111,7 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
     documents,
     setDocuments,
     setCandidatureDataMap,
+    onCandidatureUpdated,
     setNotes,
     aboroProfile,
     setAboroProfile,
@@ -709,6 +711,8 @@ export default function CandidatureWorkspace(props: CandidatureWorkspaceProps) {
           setDocuments={setDocuments}
           setEvents={setEvents}
           setCandidatureDataMap={setCandidatureDataMap}
+          onCandidatureUpdated={onCandidatureUpdated}
+          onAboroProfileUpdated={setAboroProfile}
           currentStatut={c.statut}
         />
       </div>

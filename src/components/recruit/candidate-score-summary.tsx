@@ -16,10 +16,9 @@ import CompatBreakdownDialog, { type CompatMetric } from './compat-breakdown-dia
  * doubles as the escape hatch that tells the recruiter what to do next
  * (typically: send the Skill Radar).
  *
- * `Poste` and `Équipe` open the CV/team breakdown dialog when a
+ * `Poste`, `Équipe`, and `Soft` open the breakdown dialog when a
  * candidatureId is known. `Global` is a composite with no dedicated
- * breakdown route, and `Soft` depends on a test that may not have run
- * yet — both stay non-clickable to avoid dead buttons.
+ * breakdown route.
  */
 export interface CandidateScoreSummaryProps {
   tauxGlobal: number | null
@@ -38,14 +37,14 @@ const TILE_TOOLTIPS: Record<string, string> = {
   Global: 'Score synthèse: combinaison pondérée Poste + Équipe + Soft. Résume "fit global" en un chiffre.',
   Poste: 'Compatibilité technique avec les exigences du poste. Cliquez pour voir le détail par compétence.',
   Équipe: 'Complémentarité avec l\'équipe actuelle — mesure les gaps que le candidat comblerait. Cliquez pour voir le détail.',
-  Soft: 'Score comportemental issu de l\'évaluation Aboro. Disponible une fois le test passé.',
+  Soft: 'Score comportemental issu de l\'évaluation Aboro. Cliquez pour voir la formule et les traits utilisés.',
 }
 
 const MISSING_HINT: Record<string, string> = {
   Global: 'Dépend du Skill Radar',
   Poste: 'En attente du scoring CV',
   Équipe: 'En attente du scoring CV',
-  Soft: 'Skill Radar non soumis',
+  Soft: 'Rapport Âboro manquant',
 }
 
 /** v4.6: per-tile sub-line shown UNDER the percentage when filled.
@@ -81,7 +80,7 @@ export default function CandidateScoreSummary({
     { label: 'Global', value: tauxGlobal, clickable: false },
     { label: 'Poste', value: tauxPoste, clickable: !!candidatureId },
     { label: 'Équipe', value: tauxEquipe, clickable: !!candidatureId },
-    { label: 'Soft', value: tauxSoft, clickable: false },
+    { label: 'Soft', value: tauxSoft, clickable: !!candidatureId },
   ]
 
   const verdict = verdictFromScores(tauxPoste, tauxEquipe)

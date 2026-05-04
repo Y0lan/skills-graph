@@ -101,6 +101,12 @@ const FORMULA_TEXT: Record<string, string> = {
     'Moyenne pondérée des 3 dimensions Âboro : collaboration 40 %, adaptabilité 30 %, leadership 30 %, ramenée sur 100.',
 }
 
+const SOFT_GROUP_LABELS: Record<string, string> = {
+  collaboration: 'Collaboration',
+  adaptability: 'Adaptabilité',
+  leadership: 'Leadership',
+}
+
 export default function CompatBreakdownDialog({ open, onClose, candidatureId, metric }: CompatBreakdownDialogProps) {
   const [data, setData] = useState<Breakdown | null>(null)
   const [loading, setLoading] = useState(false)
@@ -459,7 +465,7 @@ function SoftBreakdownView({ data }: { data: SoftBreakdown }) {
         {data.groups.map(g => (
           <div key={g.name} className="rounded-md border p-2.5 space-y-1.5 min-w-0">
             <div className="flex items-center justify-between gap-2 text-sm min-w-0">
-              <span className="font-medium capitalize truncate min-w-0">{g.name}</span>
+              <span className="font-medium truncate min-w-0">{SOFT_GROUP_LABELS[g.name] ?? g.name}</span>
               <span className="text-xs tabular-nums text-muted-foreground shrink-0">poids {g.weight} · {g.avg}/10</span>
             </div>
             <div className="flex flex-wrap gap-1">

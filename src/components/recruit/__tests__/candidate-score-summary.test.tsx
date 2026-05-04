@@ -41,7 +41,7 @@ describe('CandidateScoreSummary', () => {
     const dashes = screen.getAllByText('—')
     expect(dashes.length).toBeGreaterThanOrEqual(3)
     // Hints derive from the MISSING_HINT map; verify each null tile's hint.
-    expect(screen.getByText('Skill Radar non soumis')).toBeInTheDocument()  // Soft
+    expect(screen.getByText('Rapport Âboro manquant')).toBeInTheDocument()   // Soft
     expect(screen.getByText('Dépend du Skill Radar')).toBeInTheDocument()    // Global
     expect(screen.getByText('En attente du scoring CV')).toBeInTheDocument() // Équipe
   })
@@ -50,7 +50,7 @@ describe('CandidateScoreSummary', () => {
   // component and hoisted into the workspace command bar. The score
   // summary is now pure presentation; covered tests deleted.
 
-  it('only Poste and Équipe tiles are clickable when candidatureId is provided', () => {
+  it('Poste, Équipe and Soft tiles are clickable when candidatureId is provided', () => {
     render(
       <CandidateScoreSummary
         tauxGlobal={82}
@@ -60,12 +60,12 @@ describe('CandidateScoreSummary', () => {
         candidatureId="cand-1"
       />,
     )
-    // Poste + Équipe should each render an aria-labelled button; Global +
-    // Soft don't (no breakdown route exposed yet).
+    // Poste + Équipe + Soft should each render an aria-labelled button;
+    // Global stays a composite with no dedicated breakdown route.
     expect(screen.getByRole('button', { name: /détail du score Poste/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /détail du score Équipe/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /détail du score Soft/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /détail du score Global/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /détail du score Soft/ })).not.toBeInTheDocument()
   })
 
   it('verdict badge appears when at least one of poste/equipe is present', () => {

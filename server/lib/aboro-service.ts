@@ -9,18 +9,43 @@ import type { SoftSkillResult } from './soft-skill-scoring.js';
 interface GetAboroProfileResult {
     profile: AboroProfile | null;
     createdAt?: string;
+    createdBy?: string;
+    sourceDocumentId?: string | null;
+    sourceDocumentName?: string | null;
+    source: 'pdf' | 'manual' | null;
+    softSkillScore?: number;
+    softSkillAlerts?: SoftSkillResult['alerts'];
 }
 export async function getAboroProfile(candidateId: string): Promise<GetAboroProfileResult> {
-    const row = await getDb().prepare('SELECT profile_json, created_at FROM aboro_profiles WHERE candidate_id = ? ORDER BY created_at DESC LIMIT 1').get(candidateId) as {
+    const row = await getDb().prepare(`
+    SELECT ap.profile_json, ap.created_at, ap.created_by, ap.source_document_id,
+           cd.filename AS source_filename, cd.display_filename AS source_display_filename
+    FROM aboro_profiles ap
+    LEFT JOIN candidature_documents cd ON cd.id = ap.source_document_id
+    WHERE ap.candidate_id = ?
+    ORDER BY ap.created_at DESC LIMIT 1
+  `).get(candidateId) as {
         profile_json: string;
         created_at: string;
+        created_by: string;
+        source_document_id: string | null;
+        source_filename: string | null;
+        source_display_filename: string | null;
     } | undefined;
     if (!row) {
-        return { profile: null };
+        return { profile: null, source: null };
     }
+    const profile = safeJsonParse<AboroProfile | null>(row.profile_json, null, 'aboro_profiles.profile_json');
+    const soft = profile ? calculateSoftSkillScore(profile) : null;
     return {
-        profile: safeJsonParse<AboroProfile | null>(row.profile_json, null, 'aboro_profiles.profile_json'),
+        profile,
         createdAt: row.created_at,
+        createdBy: row.created_by,
+        sourceDocumentId: row.source_document_id,
+        sourceDocumentName: row.source_display_filename ?? row.source_filename,
+        source: row.source_document_id ? 'pdf' : 'manual',
+        softSkillScore: soft?.score,
+        softSkillAlerts: soft?.alerts,
     };
 }
 // ─── Manual Aboro entry ──────────────────────────────────────────────

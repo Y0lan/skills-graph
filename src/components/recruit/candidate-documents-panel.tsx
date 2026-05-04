@@ -11,7 +11,7 @@ import { Loader2, Upload, FileText, FileType2, BrainCircuit, Download, Eye, Penc
 import ScanBadge from './scan-badge'
 import { formatDateTime } from '@/lib/constants'
 import { useDocumentUpload } from '@/hooks/use-document-upload'
-import type { CandidatureData, CandidatureDocument, CandidatureEvent } from '@/hooks/use-candidate-data'
+import type { AboroProfile, CandidatureData, CandidatureDocument, CandidatureEvent, CandidatureInfo } from '@/hooks/use-candidate-data'
 
 function isPdf(filename: string): boolean {
   return filename.toLowerCase().endsWith('.pdf')
@@ -71,6 +71,8 @@ export interface CandidateDocumentsPanelProps {
   setDocuments: React.Dispatch<React.SetStateAction<CandidatureDocument[]>>
   setEvents: React.Dispatch<React.SetStateAction<CandidatureEvent[]>>
   setCandidatureDataMap?: React.Dispatch<React.SetStateAction<Record<string, CandidatureData>>>
+  onCandidatureUpdated?: (candidature: CandidatureInfo) => void
+  onAboroProfileUpdated?: (profile: AboroProfile) => void
   currentStatut?: string
 }
 
@@ -80,9 +82,18 @@ export default function CandidateDocumentsPanel({
   setDocuments,
   setEvents,
   setCandidatureDataMap,
+  onCandidatureUpdated,
+  onAboroProfileUpdated,
   currentStatut,
 }: CandidateDocumentsPanelProps) {
-  const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(candidatureId, setDocuments, setEvents, setCandidatureDataMap)
+  const { uploading, uploadType, setUploadType, uploadDocument } = useDocumentUpload(
+    candidatureId,
+    setDocuments,
+    setEvents,
+    setCandidatureDataMap,
+    onCandidatureUpdated,
+    onAboroProfileUpdated,
+  )
 
   // Shared dialog state
   const [previewDoc, setPreviewDoc] = useState<CandidatureDocument | null>(null)
