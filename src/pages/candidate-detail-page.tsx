@@ -13,7 +13,6 @@ import CandidateApplicationMessage from '@/components/recruit/candidate-applicat
 import CandidateTagsBar from '@/components/recruit/candidate-tags-bar'
 import CandidaturePosteHeader from '@/components/recruit/candidature-poste-header'
 import CandidatureWorkspace from '@/components/recruit/candidature-workspace'
-import CandidateStickyHeader from '@/components/recruit/candidate-sticky-header'
 import ConfirmDialog from '@/components/recruit/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -716,22 +715,12 @@ export default function CandidateDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      {/* Sticky compact header that slides in once the identity strip has
-          scrolled off. Primary CTA is derived from allowedTransitions so a
-          terminal candidate or one awaiting the candidate never shows a
-          dead button. Respects prefers-reduced-motion via the component. */}
-      <CandidateStickyHeader
-        candidateName={candidate.name}
-        candidature={selectedCandidature}
-        allowedTransitions={selectedTransitions}
-        changingStatus={changingStatus}
-        onOpenTransition={(candidatureId, targetStatut, currentStatut) =>
-          handleOpenTransition(candidatureId, targetStatut, false, [], currentStatut)
-        }
-      />
       <div className="mx-auto max-w-5xl px-4 pt-16 pb-8">
+        {/* Sticky permanent header: keep the candidate identity, current
+            candidature, and transition CTA visible while reviewing details. */}
+        <div className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-4 border-b bg-background/95 px-4 pt-4 pb-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
         {/* ── BACK + NAVIGATION ── */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <Link to="/recruit" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" /> Retour
           </Link>
@@ -780,6 +769,11 @@ export default function CandidateDetailPage() {
             analysed={!!candidate.submittedAt && !!candidate.aiReport}
             events={selectedEvents}
             stageDataRefetchSignal={stageDataRefetchSignal}
+            allowedTransitions={selectedTransitions}
+            changingStatus={changingStatus}
+            onOpenTransition={(candidatureId, targetStatut, currentStatut) =>
+              handleOpenTransition(candidatureId, targetStatut, false, [], currentStatut)
+            }
           />
         )}
 
@@ -796,10 +790,12 @@ export default function CandidateDetailPage() {
             multi-poste applications. Used for "rappeler-2027",
             "ex-CIO", "talent-pool", etc. */}
         {candidate.id && (
-          <div className="mb-3">
+          <div className="mb-1">
             <CandidateTagsBar candidateId={candidate.id} />
           </div>
         )}
+        </div>
+        {/* /sticky permanent header */}
 
         {/* Fallback for candidates with NO extracted profile yet —
             the message still needs to surface above the operational

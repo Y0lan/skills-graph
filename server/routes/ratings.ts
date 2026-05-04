@@ -6,6 +6,7 @@ import { requireAuth, requireOwnership } from '../middleware/require-auth.js';
 import { getSkillById } from '../lib/catalog.js';
 import { scheduleAllCandidatureScoreRecalculation } from '../lib/scoring-helpers.js';
 import { computeEvaluationProgress } from '../lib/evaluation-progress.js';
+import { resolveMemberFormScope, resolveMemberFormScopes } from '../lib/member-form-scope.js';
 const VALID_SLUGS = new Set(teamMembers.map(m => m.slug));
 export const ratingsRouter = Router();
 
@@ -16,9 +17,11 @@ function scheduleRecruitScoresAfterTeamChange(reason: string): void {
 // Returns { slug: 'submitted' | 'draft' | 'none' } only, no scores or summaries
 ratingsRouter.get('/status', async (_req, res) => {
     const all = await getAllEvaluations();
+    const scopes = await resolveMemberFormScopes(teamMembers);
     const result: Record<string, string> = {};
     for (const member of teamMembers) {
-        const progress = computeEvaluationProgress(all[member.slug] ?? null);
+        const scope = scopes.get(member.slug)!;
+        const progress = computeEvaluationProgress(all[member.slug] ?? null, scope.requiredCategories);
         result[member.slug] = progress.status;
     }
     res.json(result);
@@ -119,15 +122,21 @@ ratingsRouter.post('/:slug/submit', requireAuth, requireOwnership, async (req, r
         res.status(404).json({ error: 'Membre introuvable' });
         return;
     }
+    const member = teamMembers.find((m) => m.slug === slug);
+    if (!member) {
+        res.status(404).json({ error: 'Membre introuvable' });
+        return;
+    }
     const memberData = await getEvaluation(slug);
     if (!memberData || Object.keys(memberData.ratings).length === 0) {
         res.status(400).json({ error: 'Aucune évaluation à soumettre' });
         return;
     }
-    const progress = computeEvaluationProgress(memberData);
+    const scope = await resolveMemberFormScope(member);
+    const progress = computeEvaluationProgress(memberData, scope.requiredCategories);
     if (progress.status !== 'submitted') {
         res.status(400).json({
-            error: `Évaluation incomplète : ${progress.coveredCount}/${progress.totalCount} questions couvertes`,
+            error: `Évaluation incomplète : ${progress.coveredCount}/${progress.totalCount} questions obligatoires couvertes`,
         });
         return;
     }

@@ -8,6 +8,7 @@ import SkillRatingRow from './skill-rating-row'
 interface SkillDef {
   id: string
   label: string
+  categoryId: string
   descriptors: Array<{ level: number; label: string; description: string }>
 }
 
@@ -106,6 +107,18 @@ export default function DiscoveryStep({
     })
   }, [])
 
+  const selectCategorySkills = useCallback((category: CategoryDef) => {
+    onUndecline(category.id)
+    setExpandedCategories((prev) => new Set([...prev, category.id]))
+    setCheckedSkills((prev) => {
+      const next = new Set(prev)
+      for (const skill of category.skills) {
+        next.add(skill.id)
+      }
+      return next
+    })
+  }, [onUndecline])
+
   const getRatedCountForCategory = useCallback(
     (category: CategoryDef): number => {
       return category.skills.filter(
@@ -147,48 +160,62 @@ export default function DiscoveryStep({
                   )}
                 >
                   <CardContent>
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-3 text-left"
-                      onClick={() => toggleExpand(category.id)}
-                    >
-                      <span className="mt-0.5 shrink-0 text-muted-foreground">
-                        {isExpanded ? (
-                          <ChevronDown className="size-4" />
-                        ) : (
-                          <ChevronRight className="size-4" />
-                        )}
-                      </span>
+                    <div className="flex w-full items-start gap-3">
+                      <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                        onClick={() => toggleExpand(category.id)}
+                      >
+                        <span className="mt-0.5 shrink-0 text-muted-foreground">
+                          {isExpanded ? (
+                            <ChevronDown className="size-4" />
+                          ) : (
+                            <ChevronRight className="size-4" />
+                          )}
+                        </span>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">
-                            {category.label}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {category.label}
+                            </span>
+                            {ratedCount > 0 && (
+                              <span className="inline-flex h-5 items-center rounded-full bg-primary/10 px-2 text-xs font-medium text-primary">
+                                {ratedCount}
+                              </span>
+                            )}
                           </span>
-                          {ratedCount > 0 && (
-                            <span className="inline-flex h-5 items-center rounded-full bg-primary/10 px-2 text-xs font-medium text-primary">
-                              {ratedCount}
+                          {!isExpanded && (
+                            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                              {previewSkills}
                             </span>
                           )}
-                        </div>
-                        {!isExpanded && (
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            {previewSkills}
-                          </p>
-                        )}
-                      </div>
-
-                      {!isDeclined && (
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="shrink-0 text-muted-foreground"
-                          onClick={(e) => handleDecline(e, category.id)}
+                          className="text-muted-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            selectCategorySkills(category)
+                          }}
                         >
-                          Passer
+                          Tout noter
                         </Button>
-                      )}
-                    </button>
+                        {!isDeclined && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground"
+                            onClick={(e) => handleDecline(e, category.id)}
+                          >
+                            Passer
+                          </Button>
+                        )}
+                      </div>
+                    </div>
 
                     {isExpanded && (
                       <div className="mt-3 border-t pt-3">
@@ -198,7 +225,7 @@ export default function DiscoveryStep({
                             const skillObj = {
                               id: skill.id,
                               label: skill.label,
-                              categoryId: category.id,
+                              categoryId: skill.categoryId,
                               descriptors: skill.descriptors,
                             }
 

@@ -94,6 +94,12 @@
   --sidebar-accent-foreground: #153243;
   --sidebar-border: #D6ECF2;
   --sidebar-ring: #52B6CF;
+  /* Sticky stack offsets. --pipeline-top-shell-h is updated at runtime by
+     useElementHeight on the recruit-pipeline KPI shell so the filter shell's
+     `top-[var(--sticky-top-2)]` always tracks the real layout. */
+  --app-header-h: 3rem;
+  --pipeline-top-shell-h: 0px;
+  --sticky-top-2: calc(var(--app-header-h) + var(--pipeline-top-shell-h));
 }
 
 @theme inline {

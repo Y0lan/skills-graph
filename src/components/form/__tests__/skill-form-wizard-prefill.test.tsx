@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { CatalogContext, type CatalogContextValue } from '@/lib/catalog-context'
 import type { SkillCategory } from '@/data/skill-catalog'
 import type { RatingLevel } from '@/data/rating-scale'
@@ -131,5 +132,36 @@ describe('SkillFormWizard pre-fill behaviour', () => {
     // Both category short labels appear in the progress bar
     expect(screen.getByText('Socle')).toBeInTheDocument()
     expect(screen.getByText('Backend')).toBeInTheDocument()
+  })
+
+  it('keeps non-required categories optional but easy to open from review', async () => {
+    const user = userEvent.setup()
+    renderWizard({
+      roleCategories: ['core-engineering'],
+      nonPoleGroups: [
+        {
+          pole: 'transverse',
+          label: 'Compétences transverses',
+          categories: [testCategories[1]],
+        },
+      ],
+      showCoverageSummary: true,
+      initialData: {
+        ratings: { java: 3, typescript: 3 },
+        experience: {},
+        skippedCategories: [],
+        declinedCategories: [],
+      },
+    })
+
+    expect(screen.getByText('Obligatoire')).toBeInTheDocument()
+    expect(screen.getByText('Radar complet')).toBeInTheDocument()
+    expect(screen.getByText('2/2 compétences')).toBeInTheDocument()
+    expect(screen.getByText('2/3 compétences')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /compétences transverses/i }))
+
+    expect(screen.getByText('Backend & Services')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /tout noter/i })).toBeInTheDocument()
   })
 })

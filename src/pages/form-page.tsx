@@ -4,6 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { findMember } from '@/data/team-roster'
 import { useRatings } from '@/hooks/use-ratings'
+import { useCatalog } from '@/hooks/use-catalog'
 import SkillFormWizard from '@/components/form/skill-form-wizard'
 import type { WizardNavigation } from '@/components/form/skill-form-wizard'
 import AppHeader from '@/components/app-header'
@@ -22,11 +23,36 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ChevronLeft, LayoutDashboard, Loader2, RotateCcw, Send } from 'lucide-react'
 
+interface MemberFormConfig {
+  member: { slug: string }
+  requiredCategoryIds: string[]
+  optionalGroups: {
+    pole: string
+    label: string
+    categories: {
+      id: string
+      label: string
+      emoji: string
+      skills: {
+        id: string
+        label: string
+        categoryId: string
+        descriptors: { level: number; label: string; description: string }[]
+      }[]
+    }[]
+  }[]
+  requiredQuestionCount: number
+  optionalQuestionCount: number
+  catalogQuestionCount: number
+}
+
 export default function FormPage() {
   const { slug } = useParams<{ slug: string }>()
   const member = slug ? findMember(slug) : undefined
+  const memberSlug = member?.slug
   const navigate = useNavigate()
   const { data, loading, error, fetchRatings, submitRatings, resetRatings } = useRatings()
+  const { loading: catalogLoading } = useCatalog()
   const [analyzing, setAnalyzing] = useState(false)
   const [ready, setReady] = useState(false)
   const [resetKey, setResetKey] = useState(0)
@@ -34,34 +60,39 @@ export default function FormPage() {
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [wizardNav, setWizardNav] = useState<WizardNavigation | null>(null)
-  const [poleCategories, setPoleCategories] = useState<string[] | null>(null)
-  const [nonPoleGroups, setNonPoleGroups] = useState<{ pole: string; label: string; categories: { id: string; label: string; emoji: string; skills: { id: string; label: string; descriptors: { level: number; label: string; description: string }[] }[] }[] }[] | null>(null)
+  const [formConfig, setFormConfig] = useState<MemberFormConfig | null>(null)
+  const [configError, setConfigError] = useState<string | null>(null)
 
   const handleNavigationChange = useCallback((nav: WizardNavigation) => {
     setWizardNav(nav)
   }, [])
 
   useEffect(() => {
-    if (slug && member) {
-      fetchRatings(slug).then(() => setReady(true))
-    }
-  }, [slug, member, fetchRatings])
+    if (!slug || !memberSlug) return
+    let cancelled = false
 
-  useEffect(() => {
-    if (!member?.pole) return
-    fetch(`/api/catalog/pole-categories/${member.pole}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(cats => { if (cats) setPoleCategories(cats) })
-      .catch(() => {})
-  }, [member?.pole])
+    Promise.all([
+      fetchRatings(slug),
+      fetch(`/api/members/${slug}/form-config`).then(async (res) => {
+        if (!res.ok) throw new Error('Impossible de charger le périmètre du formulaire')
+        return res.json() as Promise<MemberFormConfig>
+      }),
+    ])
+      .then(([, config]) => {
+        if (cancelled) return
+        setFormConfig(config)
+        setConfigError(null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setConfigError(err instanceof Error ? err.message : 'Impossible de charger le périmètre du formulaire')
+      })
+      .finally(() => {
+        if (!cancelled) setReady(true)
+      })
 
-  useEffect(() => {
-    if (!member?.pole) return
-    fetch(`/api/catalog/non-pole-categories/${member.pole}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.groups) setNonPoleGroups(data.groups) })
-      .catch(() => {})
-  }, [member?.pole])
+    return () => { cancelled = true }
+  }, [slug, memberSlug, fetchRatings])
 
   if (!member) {
     return (
@@ -81,7 +112,9 @@ export default function FormPage() {
     )
   }
 
-  if (loading && !ready) {
+  const formConfigMatchesSlug = formConfig?.member?.slug === slug
+
+  if (!ready || catalogLoading || (!formConfigMatchesSlug && !configError)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <p className="text-muted-foreground">Chargement de vos évaluations...</p>
@@ -89,13 +122,13 @@ export default function FormPage() {
     )
   }
 
-  if (error && !ready) {
+  if (error || configError || !formConfig || formConfig.member.slug !== slug) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Card className="max-w-md">
           <CardContent className="p-8 text-center">
             <h1 className="text-xl font-bold text-destructive">Erreur</h1>
-            <p className="mt-2 text-muted-foreground">{error}</p>
+            <p className="mt-2 text-muted-foreground">{error ?? configError ?? 'Périmètre du formulaire introuvable'}</p>
           </CardContent>
         </Card>
       </div>
@@ -248,8 +281,9 @@ export default function FormPage() {
         <SkillFormWizard
           key={resetKey}
           slug={slug!}
-          roleCategories={poleCategories ?? undefined}
-          nonPoleGroups={nonPoleGroups ?? undefined}
+          roleCategories={formConfig.requiredCategoryIds}
+          nonPoleGroups={formConfig.optionalGroups}
+          showCoverageSummary
           initialData={{
             ratings: data?.ratings ?? {},
             experience: data?.experience ?? {},

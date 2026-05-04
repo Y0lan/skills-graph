@@ -35,23 +35,23 @@ export default function KpiCell({
     : 'text-foreground'
 
   const body = (
-    <div className={`relative flex flex-col gap-1 px-4 py-3 text-left ${active ? 'bg-muted/50' : ''}`}>
-      {active && <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-primary" />}
+    <div className={`relative flex flex-col gap-0.5 px-4 py-2 text-left ${active ? 'bg-muted/50' : ''}`}>
+      {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-primary" />}
       <div className="flex items-baseline gap-1.5">
         {icon && <span className="text-muted-foreground/70">{icon}</span>}
         <span
-          className={`text-3xl leading-none font-bold tabular-nums ${numColor}`}
+          className={`text-2xl leading-none font-bold tabular-nums ${numColor}`}
           style={{ fontFamily: "'Raleway Variable', sans-serif" }}
         >
           {count}
         </span>
       </div>
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground leading-tight">{label}</p>
-        {sublabel && <p className="text-[10px] text-muted-foreground/70 leading-tight mt-0.5">{sublabel}</p>}
+      <div className="leading-tight">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        {sublabel && <p className="text-[10px] text-muted-foreground/70">{sublabel}</p>}
       </div>
       {interactive && (
-        <ChevronRight className="absolute top-3 right-3 h-3.5 w-3.5 text-muted-foreground/40 transition-opacity opacity-0 group-hover:opacity-100" />
+        <ChevronRight className="absolute top-2 right-3 h-3.5 w-3.5 text-muted-foreground/40 transition-opacity opacity-0 group-hover:opacity-100" />
       )}
     </div>
   )

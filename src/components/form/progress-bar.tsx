@@ -32,16 +32,19 @@ export default function ProgressBar({
   onStepClick,
   lockedFromStep,
 }: ProgressBarProps) {
-  const completedSteps = steps.filter(
+  const measurableSteps = steps.filter((s) => s.totalCount > 0)
+  const completedSteps = measurableSteps.filter(
     (s) => s.isSkipped || s.ratedCount === s.totalCount,
   ).length
-  const percent = Math.round((completedSteps / steps.length) * 100)
+  const percent = measurableSteps.length > 0
+    ? Math.round((completedSteps / measurableSteps.length) * 100)
+    : 0
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
         <span className="font-semibold">
-          Progression : {completedSteps}/{steps.length} catégories complétées
+          Progression : {completedSteps}/{measurableSteps.length} catégories complétées
         </span>
         <span className="font-medium text-primary">{percent}%</span>
       </div>

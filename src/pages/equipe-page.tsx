@@ -19,6 +19,8 @@ interface MemberRow {
   avgScore: number | null
   ratedCount: number
   totalCount: number
+  catalogRatedCount: number
+  catalogTotalCount: number
   submittedAt: string | null
   status: 'none' | 'draft' | 'submitted'
   lastActivityAt: string | null
@@ -44,6 +46,9 @@ interface AggregatesMember {
   answeredCount: number
   coveredCount: number
   totalCount: number
+  catalogAnsweredCount: number
+  catalogCoveredCount: number
+  catalogTotalCount: number
   categoryAverages: Record<string, number>
   lastActivityAt: string | null
 }
@@ -100,8 +105,6 @@ export default function EquipePage() {
     ])
       .then(([membersData, aggregatesData]: [TeamMemberApi[], AggregatesResponse]) => {
         const aggMap = new Map(aggregatesData.members.map(m => [m.slug, m]))
-        const catCount = aggregatesData.categories?.length ?? 0
-
         const rows: MemberRow[] = membersData.map(m => {
           const agg = aggMap.get(m.slug)
           if (!agg) {
@@ -113,7 +116,9 @@ export default function EquipePage() {
               pole: m.pole,
               avgScore: null,
               ratedCount: 0,
-              totalCount: catCount,
+              totalCount: 0,
+              catalogRatedCount: 0,
+              catalogTotalCount: 0,
               submittedAt: null,
               status: 'none',
               lastActivityAt: null,
@@ -134,6 +139,8 @@ export default function EquipePage() {
             avgScore,
             ratedCount: agg.coveredCount,
             totalCount: agg.totalCount,
+            catalogRatedCount: agg.catalogCoveredCount,
+            catalogTotalCount: agg.catalogTotalCount,
             submittedAt: agg.submittedAt,
             status: agg.status,
             lastActivityAt: agg.lastActivityAt,
@@ -333,6 +340,11 @@ export default function EquipePage() {
                         </span>
                         {m.status === 'draft' && <Badge variant="outline" className="text-[10px]">Brouillon</Badge>}
                       </div>
+                      {m.catalogTotalCount > 0 && (
+                        <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
+                          Radar complet {m.catalogRatedCount}/{m.catalogTotalCount}
+                        </p>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground tabular-nums">
                       {formatDate(m.lastActivityAt)}

@@ -9,6 +9,7 @@ interface ReviewStepProps {
   ratings: Record<string, number>
   experience: Record<string, number>
   skippedCategories: string[]
+  declinedCategories?: string[]
   categories: SkillCategory[]
   ratingScale: RatingLevel[]
   onGoToStep: (step: number) => void
@@ -22,6 +23,7 @@ function getRatingLabelFromScale(value: number, ratingScale: RatingLevel[]): str
 export default function ReviewStep({
   ratings,
   skippedCategories,
+  declinedCategories = [],
   categories,
   ratingScale,
   onGoToStep,
@@ -36,7 +38,7 @@ export default function ReviewStep({
       </div>
 
       {categories.map((cat, catIndex) => {
-        const isSkipped = skippedCategories.includes(cat.id)
+        const isSkipped = skippedCategories.includes(cat.id) || declinedCategories.includes(cat.id)
         const categoryRatings = cat.skills
           .map((skill) => ({
             skill,

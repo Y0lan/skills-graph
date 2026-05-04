@@ -40,7 +40,7 @@ export default function CandidateFormPage() {
     const groups: Array<{
       pole: string
       label: string
-      categories: Array<{ id: string; label: string; emoji: string; skills: Array<{ id: string; label: string; descriptors: Array<{ level: number; label: string; description: string }> }> }>
+      categories: Array<{ id: string; label: string; emoji: string; skills: Array<{ id: string; label: string; categoryId: string; descriptors: Array<{ level: number; label: string; description: string }> }> }>
     }> = []
 
     // Phase 6: CV-derived group appears FIRST in the Discovery step.

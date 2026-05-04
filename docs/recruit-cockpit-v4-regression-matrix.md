@@ -125,7 +125,7 @@ Numbering matches the inventory in the original asks
 
 | New action | Component | Backend | Tests |
 |------------|-----------|---------|-------|
-| Sticky compact header (avatar + statut + primary CTA) appears on scroll past identity strip | `candidate-sticky-header.tsx` | n/a (CTA derives from `allowedTransitions`) | manual smoke |
+| Sticky candidate detail header (poste + identity + primary CTA) remains visible while reviewing details | `candidature-poste-header.tsx` inside `candidate-detail-page.tsx` | n/a (CTA derives from `allowedTransitions`) | `candidature-poste-header.test.tsx` |
 | Journal récent (5 most recent events under the stepper) | `recent-journal.tsx` | reads existing `events` prop | manual smoke; view-model logic covered by `__tests__/recruitment-events.test.ts` |
 | Quick note composer (markdown + Ctrl+Enter publish) | `quick-note-composer.tsx` | `POST /api/recruitment/candidatures/:id/events/note` | 7 backend tests in `__tests__/candidature-notes-timeline.test.ts` |
 | ConfirmDialog (replaces 3× `window.confirm`) | `confirm-dialog.tsx` | n/a | manual smoke (planned a11y test follow-up) |

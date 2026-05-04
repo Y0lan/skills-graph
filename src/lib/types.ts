@@ -44,6 +44,9 @@ export interface MemberAggregateResponse {
   answeredCount: number
   coveredCount: number
   totalCount: number
+  catalogAnsweredCount: number
+  catalogCoveredCount: number
+  catalogTotalCount: number
   categories: CategoryAggregateResponse[]
   topGaps: GapResponse[]
   topStrengths: { categoryId: string; categoryLabel: string; avgRank: number }[]
@@ -97,6 +100,9 @@ export interface TeamMemberAggregateResponse {
   answeredCount: number
   coveredCount: number
   totalCount: number
+  catalogAnsweredCount: number
+  catalogCoveredCount: number
+  catalogTotalCount: number
   categoryAverages: Record<string, number>
   skillRatings: Record<string, number>
   topGaps: { categoryId: string; gap: number }[]

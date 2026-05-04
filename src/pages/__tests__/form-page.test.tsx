@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -59,6 +59,10 @@ vi.mock('sonner', () => ({
   toast: { success: mockToastSuccess },
 }))
 
+beforeAll(() => {
+  window.scrollTo = vi.fn()
+})
+
 // Minimal catalog with 2 categories (1 skill each) for fast tests
 const testCategories: SkillCategory[] = [
   {
@@ -113,16 +117,34 @@ function findHeaderSubmitButton() {
   return screen.getByTestId('header-submit-btn')
 }
 
-describe('FormPage — submit button & dialog', () => {
-  afterEach(() => {
-    cleanup()
-  })
+let mockFormConfig: unknown
 
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockFetchRatings.mockResolvedValue({
-      ratings: {},
-      experience: {},
+describe('FormPage — submit button & dialog', () => {
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockFormConfig = {
+    member: { slug: 'test-user' },
+    requiredCategoryIds: ['cat-1'],
+    optionalGroups: [],
+    requiredQuestionCount: 1,
+    optionalQuestionCount: 0,
+    catalogQuestionCount: 2,
+  }
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes('/api/members/test-user/form-config')) {
+      return Promise.resolve(new Response(JSON.stringify(mockFormConfig), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    }
+    return Promise.resolve(new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } }))
+  }))
+  mockFetchRatings.mockResolvedValue({
+    ratings: {},
+    experience: {},
       skippedCategories: [],
       submittedAt: null,
     })
@@ -222,5 +244,33 @@ describe('FormPage — submit button & dialog', () => {
       expect(findHeaderSubmitButton()).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /réinitialiser/i })).toBeInTheDocument()
     })
+  })
+
+  it('uses server form config for required scope and full-radar coverage', async () => {
+    mockFormConfig = {
+      member: { slug: 'test-user' },
+      requiredCategoryIds: ['cat-1'],
+      optionalGroups: [
+        {
+          pole: 'transverse',
+          label: 'Compétences transverses',
+          categories: [testCategories[1]],
+        },
+      ],
+      requiredQuestionCount: 1,
+      optionalQuestionCount: 1,
+      catalogQuestionCount: 2,
+    }
+    renderFormPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Category 1')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Category 2')).not.toBeInTheDocument()
+    expect(screen.getByText('Obligatoire')).toBeInTheDocument()
+    expect(screen.getByText('Radar complet')).toBeInTheDocument()
+    expect(screen.getAllByText('0/1 compétences')).toHaveLength(1)
+    expect(screen.getByText('0/2 compétences')).toBeInTheDocument()
   })
 })

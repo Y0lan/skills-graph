@@ -1,10 +1,11 @@
-import { Clock } from 'lucide-react'
+import { ChevronRight, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { STATUT_COLORS, STATUT_LABELS, formatDateTimeHuman, isStatut } from '@/lib/constants'
 import CandidateLastEditIndicator from './candidate-last-edit-indicator'
 import { NextCriticalFactPill } from './stage-fiches/next-critical-fact-pill'
 import CanalToggle from './canal-toggle'
-import type { CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
+import type { AllowedTransitions, CandidatureInfo, CandidatureEvent } from '@/hooks/use-candidate-data'
 
 /**
  * Top-of-page candidature header: poste title (the BIG identifier the
@@ -28,6 +29,13 @@ export interface CandidaturePosteHeaderProps {
   /** v5.1 SSE signal that bumps when stage_data_changed fires for this
    *  candidature — forwarded to NextCriticalFactPill. */
   stageDataRefetchSignal?: number
+  /** Optional one-click forward action for the sticky detail header. */
+  allowedTransitions?: AllowedTransitions | null
+  /** Required when `allowedTransitions` is provided. Called with the
+   *  primary forward statut (refuse filtered out). */
+  onOpenTransition?: (candidatureId: string, targetStatut: string, currentStatut: string) => void
+  /** Disables the CTA while a transition request is inflight. */
+  changingStatus?: boolean
 }
 
 export default function CandidaturePosteHeader({
@@ -37,11 +45,16 @@ export default function CandidaturePosteHeader({
   analysed,
   events,
   stageDataRefetchSignal,
+  allowedTransitions,
+  onOpenTransition,
+  changingStatus,
 }: CandidaturePosteHeaderProps) {
   const awaitingRadar = isPending && c.statut === 'skill_radar_envoye'
+  // The backend state machine is authoritative. Refuse is not a forward CTA.
+  const primaryForward = (allowedTransitions?.allowedTransitions ?? []).find(s => s !== 'refuse') ?? null
 
   return (
-    <div className="flex items-center gap-3 flex-wrap mb-4">
+    <div className="flex items-center gap-3 flex-wrap mb-3">
       <h2
         className="text-xl font-bold tracking-tight"
         style={{ fontFamily: "'Raleway Variable', sans-serif" }}
@@ -87,6 +100,18 @@ export default function CandidaturePosteHeader({
           statut={c.statut}
           refetchSignal={stageDataRefetchSignal}
         />
+      )}
+
+      {primaryForward && onOpenTransition && (
+        <Button
+          size="sm"
+          onClick={() => onOpenTransition(c.id, primaryForward, c.statut)}
+          disabled={changingStatus}
+          className="ml-auto h-8 gap-1.5 text-xs"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+          {STATUT_LABELS[primaryForward] ?? primaryForward}
+        </Button>
       )}
     </div>
   )

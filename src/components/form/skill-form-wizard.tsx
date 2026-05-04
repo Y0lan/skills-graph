@@ -33,7 +33,7 @@ interface CategoryGroup {
     id: string
     label: string
     emoji: string
-    skills: Array<{ id: string; label: string; descriptors: Array<{ level: number; label: string; description: string }> }>
+    skills: Array<{ id: string; label: string; categoryId: string; descriptors: Array<{ level: number; label: string; description: string }> }>
   }>
 }
 
@@ -47,6 +47,7 @@ interface SkillFormWizardProps {
   aiSuggestions?: Record<string, number>
   roleCategories?: string[]
   nonPoleGroups?: CategoryGroup[]
+  showCoverageSummary?: boolean
 }
 
 export default function SkillFormWizard({
@@ -59,6 +60,7 @@ export default function SkillFormWizard({
   aiSuggestions,
   roleCategories,
   nonPoleGroups,
+  showCoverageSummary = false,
 }: SkillFormWizardProps) {
   const { categories: skillCategories, ratingScale, calibrationPrompts } = useCatalog()
 
@@ -84,6 +86,30 @@ export default function SkillFormWizard({
     }
     return map
   }, [nonPoleGroups])
+
+  const optionalCategories = useMemo(() => {
+    const seen = new Set<string>()
+    const cats: CategoryGroup['categories'] = []
+    for (const group of nonPoleGroups ?? []) {
+      for (const category of group.categories) {
+        if (seen.has(category.id)) continue
+        seen.add(category.id)
+        cats.push(category)
+      }
+    }
+    return cats
+  }, [nonPoleGroups])
+
+  const allFormCategories = useMemo(() => {
+    const seen = new Set<string>()
+    const cats: CategoryGroup['categories'] = []
+    for (const category of [...orderedCategories, ...optionalCategories]) {
+      if (seen.has(category.id)) continue
+      seen.add(category.id)
+      cats.push(category)
+    }
+    return cats
+  }, [orderedCategories, optionalCategories])
 
   const TOTAL_CATEGORY_STEPS = orderedCategories.length
   const hasDiscovery = nonPoleGroups && nonPoleGroups.length > 0
@@ -179,6 +205,37 @@ export default function SkillFormWizard({
     },
   ]
 
+  const requiredQuestionCount = useMemo(
+    () => orderedCategories.reduce((sum, cat) => sum + cat.skills.length, 0),
+    [orderedCategories],
+  )
+  const requiredAnsweredCount = useMemo(
+    () => orderedCategories.reduce(
+      (sum, cat) => sum + cat.skills.filter((skill) => ratings[skill.id] !== undefined).length,
+      0,
+    ),
+    [orderedCategories, ratings],
+  )
+  const catalogQuestionCount = useMemo(
+    () => allFormCategories.reduce((sum, cat) => sum + cat.skills.length, 0),
+    [allFormCategories],
+  )
+  const catalogAnsweredCount = useMemo(
+    () => allFormCategories.reduce(
+      (sum, cat) => sum + cat.skills.filter((skill) => ratings[skill.id] !== undefined).length,
+      0,
+    ),
+    [allFormCategories, ratings],
+  )
+
+  const reviewCategories = useMemo(() => [
+    ...orderedCategories,
+    ...optionalCategories.filter((cat) =>
+      declinedCategories.includes(cat.id) ||
+      cat.skills.some((skill) => ratings[skill.id] !== undefined),
+    ),
+  ], [orderedCategories, optionalCategories, declinedCategories, ratings])
+
   // Validate current step before advancing
   const validateCurrentStep = useCallback((): boolean => {
     if (isReviewStep || isDiscoveryStep) return true
@@ -269,12 +326,25 @@ export default function SkillFormWizard({
         lockedFromStep={editingFromReview ? undefined : highestReachableStep + 1}
       />
 
+      {showCoverageSummary && (
+        <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Obligatoire</p>
+            <p className="mt-1 font-semibold tabular-nums">{requiredAnsweredCount}/{requiredQuestionCount} compétences</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Radar complet</p>
+            <p className="mt-1 font-semibold tabular-nums">{catalogAnsweredCount}/{catalogQuestionCount} compétences</p>
+          </div>
+        </div>
+      )}
+
       <RatingLegend ratingScale={ratingScale} />
 
       {isReviewStep && hasDiscovery && (
         <div className="rounded-lg border border-dashed border-muted-foreground/30 p-4 text-center">
           <p className="mb-2 text-sm text-muted-foreground">
-            Vous avez des compétences en dehors de votre pôle ?
+            Vous avez des compétences en dehors de votre périmètre obligatoire ?
           </p>
           <Button
             variant="outline"
@@ -293,9 +363,19 @@ export default function SkillFormWizard({
           ratings={ratings}
           experience={form.getValues('experience')}
           skippedCategories={form.getValues('skippedCategories')}
-          categories={orderedCategories}
+          declinedCategories={form.getValues('declinedCategories')}
+          categories={reviewCategories}
           ratingScale={ratingScale}
-          onGoToStep={handleGoToStep}
+          onGoToStep={(reviewIndex) => {
+            const reviewCategory = reviewCategories[reviewIndex]
+            if (!reviewCategory) return
+            const requiredIndex = orderedCategories.findIndex((cat) => cat.id === reviewCategory.id)
+            if (requiredIndex >= 0) {
+              handleGoToStep(requiredIndex)
+            } else if (hasDiscovery) {
+              setStep(DISCOVERY_STEP)
+            }
+          }}
         />
       ) : isDiscoveryStep && nonPoleGroups ? (
         <DiscoveryStep

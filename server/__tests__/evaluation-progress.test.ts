@@ -61,4 +61,26 @@ describe('evaluation progress', () => {
       totalCount: 3,
     })
   })
+
+  it('can mark a role-scoped evaluation complete while catalog-wide coverage stays partial', () => {
+    const requiredCategories = categories.filter((category) => category.id === 'backend')
+    const evaluation = {
+      ratings: { java: 4, postgres: 3 },
+      skippedCategories: [],
+      declinedCategories: [],
+    }
+
+    expect(computeEvaluationProgress(evaluation, requiredCategories)).toMatchObject({
+      status: 'submitted',
+      answeredCount: 2,
+      coveredCount: 2,
+      totalCount: 2,
+    })
+    expect(computeEvaluationProgress(evaluation, categories)).toMatchObject({
+      status: 'draft',
+      answeredCount: 2,
+      coveredCount: 2,
+      totalCount: 3,
+    })
+  })
 })

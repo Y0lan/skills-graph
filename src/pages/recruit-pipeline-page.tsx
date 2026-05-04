@@ -30,6 +30,7 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import NewCandidateDialog from '@/components/recruit/new-candidate-dialog'
 import RoleManagerPanel from '@/components/recruit/role-manager-panel'
 import KpiCell from '@/components/recruit/kpi-cell'
+import { useElementHeight } from '@/hooks/use-element-height'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { STATUT_LABELS, STATUT_COLORS, CANAL_LABELS, POLE_LABELS, POLE_COLORS, formatDate, parseAppDate } from '@/lib/constants'
@@ -258,6 +259,8 @@ export default function RecruitPipelinePage() {
   const [candSortKey, setCandSortKey] = useState<'name' | 'role' | 'status' | 'createdAt'>('createdAt')
   const [candSortDir, setCandSortDir] = useState<'asc' | 'desc'>('desc')
   const [newCandidateOpen, setNewCandidateOpen] = useState(false)
+  const kpiShellRef = useRef<HTMLDivElement | null>(null)
+  useElementHeight(kpiShellRef, '--pipeline-top-shell-h')
   const [showRoleManager, setShowRoleManager] = useState(false)
   const [customRoleCount, setCustomRoleCount] = useState(0)
   const [postesOpen, setPostesOpen] = useState(() => localStorage.getItem('pipeline-postes-open') === 'true')
@@ -676,7 +679,7 @@ export default function RecruitPipelinePage() {
             scroll to the list. Colors only fire when count > 0 so a
             healthy pipeline stays calm, not noisy. */}
         {stats && (
-          <div className="sticky top-12 z-30 -mx-4 mb-6 border-y bg-background/95 px-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div ref={kpiShellRef} className="sticky top-[var(--app-header-h)] z-30 -mx-4 mb-6 border-y bg-background/95 px-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="grid grid-cols-3 sm:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-border">
               <KpiCell label="Total" sublabel="candidatures" count={stats.totalCandidatures} tone="neutral" />
               <KpiCell label="Actifs" sublabel="en cours" count={stats.totalActive} tone="neutral" />
@@ -715,7 +718,7 @@ export default function RecruitPipelinePage() {
                 Combines with the exact-statut dropdown AND-wise; does not
                 replace it. Refusés is terminal so it lives beside the
                 funnel to keep stage ratios honest. */}
-            <div className="border-t px-4 py-3">
+            <div className="border-t px-4 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 {(() => {
                   const breakdown = stats.statusBreakdown ?? {}
@@ -985,7 +988,7 @@ export default function RecruitPipelinePage() {
             </button>
           )
           return (
-          <div className="sticky top-[14rem] z-40 -mx-4 mb-4 flex flex-wrap items-center gap-2 border-y bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:top-[10.5rem]">
+          <div className="sticky top-[var(--sticky-top-2)] z-30 -mx-4 mb-4 flex flex-wrap items-center gap-2 border-y bg-background/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
             {/* Search — the one primary control, wider than the chips. */}
             <div className="relative flex-1 min-w-[200px] max-w-[360px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -1286,7 +1289,14 @@ export default function RecruitPipelinePage() {
         })()}
 
         {/* Candidatures — list or kanban */}
-        <div ref={candidaturesRef} className="scroll-mt-56" />
+        {/* scroll-margin-top is the offset scrollIntoView will leave above
+            this anchor when the chip-click handler scrolls to it. We pin it
+            to the dynamic sticky stack height so chip clicks always land
+            below the sticky shells, no matter the breakpoint. */}
+        <div
+          ref={candidaturesRef}
+          style={{ scrollMarginTop: 'calc(var(--sticky-top-2) + 1rem)' }}
+        />
         {/* Empty state only gates the candidature views — the 'candidates'
             view has its own empty state, since a candidate can exist
             without any candidature yet. */}
